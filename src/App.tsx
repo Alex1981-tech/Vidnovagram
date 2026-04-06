@@ -53,6 +53,25 @@ interface ChatMessage {
   account_label: string
 }
 
+interface ClientNote {
+  id: string
+  author_id: number
+  author_name: string
+  text: string
+  created_at: string
+  updated_at?: string
+}
+
+interface QuickReply {
+  id: string
+  title: string
+  text: string
+  is_global: boolean
+  author_id: number
+  author_name: string
+  sort_order: number
+}
+
 /** Authenticated fetch with token header */
 function authFetch(url: string, token: string, opts: RequestInit = {}) {
   return fetch(url, {
@@ -195,12 +214,7 @@ const VolumeOffIcon = () => (
   </svg>
 )
 
-// Message status icons (single check = sent, double check = delivered)
-const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-)
+// Message status icon (double check = delivered)
 const DoubleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="18 6 7 17 2 12"/><polyline points="22 6 11 17"/>
@@ -268,6 +282,17 @@ function App() {
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
   const [sending, setSending] = useState(false)
+
+  // Right panel
+  const [rightTab, setRightTab] = useState<'notes' | 'quick'>('notes')
+  const [clientNotes, setClientNotes] = useState<ClientNote[]>([])
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
+  const [newNoteText, setNewNoteText] = useState('')
+  const [newQrTitle, setNewQrTitle] = useState('')
+  const [newQrText, setNewQrText] = useState('')
+  const [editingQr, setEditingQr] = useState<string | null>(null)
+  const [editQrTitle, setEditQrTitle] = useState('')
+  const [editQrText, setEditQrText] = useState('')
 
   // Sound
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -458,10 +483,103 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token])
 
+  // Load client notes
+  const loadClientNotes = useCallback(async (clientId: string) => {
+    if (!auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${clientId}/notes/`, auth.token)
+      if (resp.ok) setClientNotes(await resp.json())
+    } catch { /* ignore */ }
+  }, [auth?.token])
+
+  // Load quick replies
+  const loadQuickReplies = useCallback(async () => {
+    if (!auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/messenger/quick-replies/`, auth.token)
+      if (resp.ok) setQuickReplies(await resp.json())
+    } catch { /* ignore */ }
+  }, [auth?.token])
+
+  // Add client note
+  const addClientNote = useCallback(async () => {
+    if (!selectedClient || !newNoteText.trim() || !auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${selectedClient}/notes/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: newNoteText.trim() }),
+      })
+      if (resp.ok) {
+        setNewNoteText('')
+        loadClientNotes(selectedClient)
+      }
+    } catch { /* ignore */ }
+  }, [selectedClient, newNoteText, auth?.token, loadClientNotes])
+
+  // Delete client note
+  const deleteClientNote = useCallback(async (noteId: string) => {
+    if (!selectedClient || !auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${selectedClient}/notes/${noteId}/`, auth.token, {
+        method: 'DELETE',
+      })
+      if (resp.ok || resp.status === 204) loadClientNotes(selectedClient)
+    } catch { /* ignore */ }
+  }, [selectedClient, auth?.token, loadClientNotes])
+
+  // Add quick reply
+  const addQuickReply = useCallback(async () => {
+    if (!newQrTitle.trim() || !newQrText.trim() || !auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/messenger/quick-replies/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newQrTitle.trim(), text: newQrText.trim() }),
+      })
+      if (resp.ok) {
+        setNewQrTitle('')
+        setNewQrText('')
+        loadQuickReplies()
+      }
+    } catch { /* ignore */ }
+  }, [newQrTitle, newQrText, auth?.token, loadQuickReplies])
+
+  // Save quick reply edit
+  const saveQuickReply = useCallback(async (id: string) => {
+    if (!auth?.token) return
+    try {
+      await authFetch(`${API_BASE}/messenger/quick-replies/${id}/`, auth.token, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editQrTitle.trim(), text: editQrText.trim() }),
+      })
+      setEditingQr(null)
+      loadQuickReplies()
+    } catch { /* ignore */ }
+  }, [auth?.token, editQrTitle, editQrText, loadQuickReplies])
+
+  // Delete quick reply
+  const deleteQuickReply = useCallback(async (id: string) => {
+    if (!auth?.token) return
+    try {
+      await authFetch(`${API_BASE}/messenger/quick-replies/${id}/`, auth.token, { method: 'DELETE' })
+      loadQuickReplies()
+    } catch { /* ignore */ }
+  }, [auth?.token, loadQuickReplies])
+
+  // Insert quick reply into message input
+  const insertQuickReply = useCallback((text: string) => {
+    setMessageText(prev => prev ? prev + '\n' + text : text)
+  }, [])
+
   // Load accounts on auth
   useEffect(() => {
-    if (auth?.authorized) loadAccounts()
-  }, [auth?.authorized, loadAccounts])
+    if (auth?.authorized) {
+      loadAccounts()
+      loadQuickReplies()
+    }
+  }, [auth?.authorized, loadAccounts, loadQuickReplies])
 
   // Load contacts with debounce on search change
   useEffect(() => {
@@ -552,7 +670,8 @@ function App() {
   const selectClient = useCallback((clientId: string) => {
     setSelectedClient(clientId)
     loadMessages(clientId)
-  }, [loadMessages])
+    loadClientNotes(clientId)
+  }, [loadMessages, loadClientNotes])
 
   // Account tab click
   const handleAccountClick = useCallback((accountId: string) => {
@@ -771,6 +890,134 @@ function App() {
               <p>Оберіть чат для перегляду</p>
             </div>
           )}
+        </div>
+
+        {/* Right Panel — Notes & Quick Replies */}
+        <div className="right-panel">
+          <div className="right-panel-tabs">
+            <button
+              className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
+              onClick={() => setRightTab('notes')}
+            >
+              Нотатки
+            </button>
+            <button
+              className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
+              onClick={() => setRightTab('quick')}
+            >
+              Швидкі відповіді
+            </button>
+          </div>
+
+          <div className="right-panel-body">
+            {rightTab === 'notes' ? (
+              selectedClient ? (
+                <div className="rp-notes">
+                  <div className="rp-notes-list">
+                    {clientNotes.length === 0 && (
+                      <div className="rp-empty">Немає нотаток</div>
+                    )}
+                    {clientNotes.map(note => (
+                      <div key={note.id} className="rp-note">
+                        <div className="rp-note-header">
+                          <span className="rp-note-author">{note.author_name}</span>
+                          <span className="rp-note-date">
+                            {new Date(note.created_at).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            {' '}
+                            {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <button className="rp-delete-btn" onClick={() => deleteClientNote(note.id)} title="Видалити">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          </button>
+                        </div>
+                        <div className="rp-note-text">{note.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rp-add-form">
+                    <textarea
+                      value={newNoteText}
+                      onChange={e => setNewNoteText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addClientNote() } }}
+                      placeholder="Додати нотатку... (Ctrl+Enter)"
+                      rows={2}
+                    />
+                    <button onClick={addClientNote} disabled={!newNoteText.trim()}>
+                      <SendIcon />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rp-empty">Оберіть чат для перегляду нотаток</div>
+              )
+            ) : (
+              <div className="rp-quick">
+                <div className="rp-quick-list">
+                  {quickReplies.length === 0 && (
+                    <div className="rp-empty">Немає швидких відповідей</div>
+                  )}
+                  {quickReplies.map(qr => (
+                    <div key={qr.id} className="rp-qr-item">
+                      {editingQr === qr.id ? (
+                        <div className="rp-qr-edit">
+                          <input
+                            value={editQrTitle}
+                            onChange={e => setEditQrTitle(e.target.value)}
+                            placeholder="Назва"
+                          />
+                          <textarea
+                            value={editQrText}
+                            onChange={e => setEditQrText(e.target.value)}
+                            placeholder="Текст"
+                            rows={2}
+                          />
+                          <div className="rp-qr-edit-btns">
+                            <button className="rp-save-btn" onClick={() => saveQuickReply(qr.id)}>Зберегти</button>
+                            <button className="rp-cancel-btn" onClick={() => setEditingQr(null)}>Скасувати</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="rp-qr-header">
+                            <span className="rp-qr-title">{qr.title}</span>
+                            <div className="rp-qr-actions">
+                              <button className="rp-insert-btn" onClick={() => insertQuickReply(qr.text)} title="Вставити в повідомлення">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                              </button>
+                              <button className="rp-edit-btn" onClick={() => { setEditingQr(qr.id); setEditQrTitle(qr.title); setEditQrText(qr.text) }} title="Редагувати">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                              <button className="rp-delete-btn" onClick={() => deleteQuickReply(qr.id)} title="Видалити">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                              </button>
+                            </div>
+                          </div>
+                          <div className="rp-qr-text">{qr.text}</div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="rp-add-form rp-add-qr">
+                  <input
+                    value={newQrTitle}
+                    onChange={e => setNewQrTitle(e.target.value)}
+                    placeholder="Назва шаблону"
+                  />
+                  <textarea
+                    value={newQrText}
+                    onChange={e => setNewQrText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addQuickReply() } }}
+                    placeholder="Текст шаблону... (Ctrl+Enter)"
+                    rows={2}
+                  />
+                  <button onClick={addQuickReply} disabled={!newQrTitle.trim() || !newQrText.trim()}>
+                    <SendIcon />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
