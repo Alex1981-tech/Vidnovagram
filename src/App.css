@@ -114,18 +114,19 @@ body {
 
 .login-bg {
   position: absolute;
-  inset: 0;
+  inset: -20px;
   background: url('/login-bg.png') center/cover no-repeat;
   opacity: 0.3;
+  filter: blur(2px);
 }
 .dark .login-bg { opacity: 0.2; }
 
 .login-bg-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg,
-    color-mix(in oklch, var(--background) 90%, transparent),
-    color-mix(in oklch, var(--background) 70%, transparent)
+  background: radial-gradient(ellipse at center,
+    color-mix(in oklch, var(--background) 60%, transparent),
+    color-mix(in oklch, var(--background) 95%, transparent)
   );
 }
 
