@@ -294,6 +294,9 @@ function App() {
   const [editQrTitle, setEditQrTitle] = useState('')
   const [editQrText, setEditQrText] = useState('')
 
+  // Avatar photos
+  const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
+
   // Sound
   const [soundEnabled, setSoundEnabled] = useState(() => {
     try { return localStorage.getItem('messenger-sound') !== 'false' } catch { return true }
@@ -422,8 +425,20 @@ function App() {
       if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
-        setContacts(data.results || [])
+        const list = data.results || []
+        setContacts(list)
         setContactCount(data.count || 0)
+        // Load avatar photos
+        const ids = list.map((c: Contact) => c.client_id).join(',')
+        if (ids) {
+          try {
+            const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
+            if (pr.ok) {
+              const pm = await pr.json()
+              setPhotoMap(prev => ({ ...prev, ...pm }))
+            }
+          } catch { /* ignore */ }
+        }
       }
     } catch (e) { console.error('Contacts:', e) }
   }, [auth?.token, search, selectedAccount, logout])
@@ -767,7 +782,9 @@ function App() {
                 onClick={() => selectClient(c.client_id)}
               >
                 <div className="avatar">
-                  <UserIcon />
+                  {photoMap[c.client_id]
+                    ? <img src={`${MEDIA_BASE}/${photoMap[c.client_id]}`} className="avatar-img" alt="" />
+                    : <UserIcon />}
                 </div>
                 <div className="contact-body">
                   <div className="contact-row">
@@ -805,7 +822,9 @@ function App() {
             <>
               <div className="chat-header">
                 <div className="chat-header-avatar">
-                  <UserIcon />
+                  {selectedClient && photoMap[selectedClient]
+                    ? <img src={`${MEDIA_BASE}/${photoMap[selectedClient]}`} className="avatar-img" alt="" />
+                    : <UserIcon />}
                 </div>
                 <div className="chat-header-info">
                   <div className="chat-header-name">
