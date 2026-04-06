@@ -5,6 +5,8 @@ import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
 const WS_BASE = 'wss://cc.vidnova.app/ws'
+const TOKEN_KEY = 'vidnovagram_token'
+const AUTH_KEY = 'vidnovagram_auth'
 
 interface AuthState {
   authorized: boolean
@@ -37,8 +39,26 @@ interface ChatMessage {
   account_label: string
 }
 
+/** Authenticated fetch with token header */
+function authFetch(url: string, token: string, opts: RequestInit = {}) {
+  return fetch(url, {
+    ...opts,
+    headers: {
+      ...opts.headers as Record<string, string>,
+      'Authorization': `Token ${token}`,
+    },
+  })
+}
+
 function App() {
-  const [auth, setAuth] = useState<AuthState | null>(null)
+  const [auth, setAuth] = useState<AuthState | null>(() => {
+    // Restore from localStorage
+    try {
+      const saved = localStorage.getItem(AUTH_KEY)
+      if (saved) return JSON.parse(saved)
+    } catch { /* ignore */ }
+    return null
+  })
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -54,6 +74,15 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const selectedClientRef = useRef<string | null>(null)
+
+  // Persist auth to localStorage
+  useEffect(() => {
+    if (auth?.authorized) {
+      localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
+    } else {
+      localStorage.removeItem(AUTH_KEY)
+    }
+  }, [auth])
 
   // Keep ref in sync
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
@@ -75,76 +104,94 @@ function App() {
     })()
   }, [])
 
+  const logout = useCallback(() => {
+    setAuth(null)
+    localStorage.removeItem(AUTH_KEY)
+    localStorage.removeItem(TOKEN_KEY)
+    setContacts([])
+    setMessages([])
+    setSelectedClient(null)
+  }, [])
+
   const login = useCallback(async (username: string, password: string) => {
     setAuthLoading(true)
     setAuthError('')
     try {
-      const resp = await fetch(`${API_BASE}/auth/login/`, {
+      const resp = await fetch(`${API_BASE}/vidnovagram/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
-        credentials: 'include',
       })
       const data = await resp.json()
-      if (data.status === 'ok') {
-        setAuth({ authorized: true, name: username, token: '', accounts: [] })
+      if (data.status === 'ok' && data.token) {
+        const authState: AuthState = {
+          authorized: true,
+          name: data.name || username,
+          token: data.token,
+          accounts: [],
+        }
+        setAuth(authState)
       } else {
-        setAuthError(data.error || 'Login failed')
+        setAuthError(data.error || 'Невірний логін або пароль')
       }
     } catch {
-      setAuthError("Помилка з'єднання")
+      setAuthError("Помилка з'єднання з сервером")
     } finally {
       setAuthLoading(false)
     }
   }, [])
 
   const loadContacts = useCallback(async () => {
+    if (!auth?.token) return
     try {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (selectedAccount) params.set('account', selectedAccount)
       params.set('per_page', '50')
-      const resp = await fetch(`${API_BASE}/telegram/contacts/?${params}`, { credentials: 'include' })
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
+      if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
         setContacts(data.results || [])
       }
     } catch (e) { console.error('Contacts:', e) }
-  }, [search, selectedAccount])
+  }, [auth?.token, search, selectedAccount, logout])
 
   const loadMessages = useCallback(async (clientId: string) => {
+    if (!auth?.token) return
     try {
       const params = new URLSearchParams({ per_page: '80' })
       if (selectedAccount) params.set('account', selectedAccount)
-      const resp = await fetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, { credentials: 'include' })
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, auth.token)
+      if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
         setMessages((data.results || []).reverse())
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
       }
     } catch (e) { console.error('Messages:', e) }
-  }, [selectedAccount])
+  }, [auth?.token, selectedAccount, logout])
 
   const sendMessage = useCallback(async () => {
-    if (!selectedClient || !messageText.trim()) return
+    if (!selectedClient || !messageText.trim() || !auth?.token) return
     const fd = new FormData()
     fd.append('text', messageText.trim())
     if (selectedAccount) fd.append('account_id', selectedAccount)
     try {
-      const resp = await fetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, {
-        method: 'POST', body: fd, credentials: 'include',
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+        method: 'POST', body: fd,
       })
       if (resp.ok) {
         setMessageText('')
         loadMessages(selectedClient)
       }
     } catch (e) { console.error('Send:', e) }
-  }, [selectedClient, messageText, selectedAccount, loadMessages])
+  }, [selectedClient, messageText, selectedAccount, auth?.token, loadMessages])
 
   // WebSocket
   useEffect(() => {
-    if (!auth?.authorized) return
-    const url = auth.token ? `${WS_BASE}/messenger/?token=${auth.token}` : `${WS_BASE}/messenger/`
+    if (!auth?.authorized || !auth.token) return
+    const url = `${WS_BASE}/messenger/?token=${auth.token}`
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout>
 
@@ -199,7 +246,10 @@ function App() {
       <div className="sidebar">
         <div className="sidebar-header">
           <h1>Vidnovagram</h1>
-          <span className="user-badge">{auth.name}</span>
+          <div className="header-right">
+            <span className="user-badge">{auth.name}</span>
+            <button className="logout-btn" onClick={logout} title="Вийти">✕</button>
+          </div>
         </div>
         <input
           className="search-box"

@@ -43,7 +43,10 @@ body { background: var(--bg); height: 100vh; overflow: hidden; }
 .sidebar { width: 320px; min-width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-light); }
 .sidebar-header { padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 .sidebar-header h1 { font-size: 18px; color: var(--accent); }
+.header-right { display: flex; align-items: center; gap: 6px; }
 .user-badge { font-size: 12px; background: var(--bg-card); padding: 3px 8px; border-radius: 6px; color: var(--text-muted); }
+.logout-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; }
+.logout-btn:hover { opacity: 1; color: var(--accent); }
 .search-box { margin: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
 .search-box:focus { outline: none; border-color: var(--accent); }
 
