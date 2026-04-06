@@ -677,6 +677,7 @@ body {
 .chat-input textarea {
   flex: 1;
   resize: none;
+  overflow: hidden;
   padding: 8px 12px;
   border-radius: calc(var(--radius) - 2px);
   border: 1px solid var(--input);
@@ -685,7 +686,7 @@ body {
   font-size: 0.875rem;
   font-family: inherit;
   min-height: 38px;
-  max-height: 120px;
+  max-height: 200px;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }

@@ -307,6 +307,7 @@ function App() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -480,6 +481,7 @@ function App() {
       })
       if (resp.ok) {
         setMessageText('')
+        if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         loadMessages(selectedClient)
       }
     } catch (e) { console.error('Send:', e) }
@@ -888,8 +890,13 @@ function App() {
               {auth.isAdmin && (
                 <div className="chat-input">
                   <textarea
+                    ref={chatInputRef}
                     value={messageText}
-                    onChange={e => setMessageText(e.target.value)}
+                    onChange={e => {
+                      setMessageText(e.target.value)
+                      e.target.style.height = 'auto'
+                      e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+                    }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                     placeholder="Написати повідомлення..."
                     rows={1}
