@@ -5,8 +5,10 @@ import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
 const WS_BASE = 'wss://cc.vidnova.app/ws'
-const TOKEN_KEY = 'vidnovagram_token'
 const AUTH_KEY = 'vidnovagram_auth'
+const THEME_KEY = 'vidnovagram_theme'
+
+type Theme = 'light' | 'dark' | 'system'
 
 interface AuthState {
   authorized: boolean
@@ -50,9 +52,82 @@ function authFetch(url: string, token: string, opts: RequestInit = {}) {
   })
 }
 
+/** Theme management */
+function getSystemTheme(): 'light' | 'dark' {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function applyTheme(theme: Theme) {
+  const resolved = theme === 'system' ? getSystemTheme() : theme
+  document.documentElement.classList.toggle('dark', resolved === 'dark')
+}
+
+function getSavedTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved
+  } catch { /* ignore */ }
+  return 'system'
+}
+
+function useTheme() {
+  const [theme, setThemeState] = useState<Theme>(getSavedTheme)
+
+  const setTheme = useCallback((t: Theme) => {
+    setThemeState(t)
+    localStorage.setItem(THEME_KEY, t)
+    applyTheme(t)
+  }, [])
+
+  useEffect(() => {
+    applyTheme(theme)
+    if (theme !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = () => applyTheme('system')
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [theme])
+
+  return { theme, setTheme }
+}
+
+// SVG icons
+const SunIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+  </svg>
+)
+const MoonIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+  </svg>
+)
+const MonitorIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>
+  </svg>
+)
+const SendIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+  </svg>
+)
+
+function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
+  const cycle = () => {
+    const next: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
+    setTheme(next[theme])
+  }
+  return (
+    <button className="theme-toggle" onClick={cycle} title={`Тема: ${theme}`}>
+      {theme === 'light' ? <SunIcon /> : theme === 'dark' ? <MoonIcon /> : <MonitorIcon />}
+    </button>
+  )
+}
+
 function App() {
+  const { theme, setTheme } = useTheme()
   const [auth, setAuth] = useState<AuthState | null>(() => {
-    // Restore from localStorage
     try {
       const saved = localStorage.getItem(AUTH_KEY)
       if (saved) return JSON.parse(saved)
@@ -70,7 +145,7 @@ function App() {
   const [messageText, setMessageText] = useState('')
   const [search, setSearch] = useState('')
   const [selectedAccount, _setSelectedAccount] = useState<string>('')
-  void _setSelectedAccount // will be used for account picker UI
+  void _setSelectedAccount
   const wsRef = useRef<WebSocket | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const selectedClientRef = useRef<string | null>(null)
@@ -84,7 +159,6 @@ function App() {
     }
   }, [auth])
 
-  // Keep ref in sync
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
 
   // Check for updates on startup
@@ -107,7 +181,6 @@ function App() {
   const logout = useCallback(() => {
     setAuth(null)
     localStorage.removeItem(AUTH_KEY)
-    localStorage.removeItem(TOKEN_KEY)
     setContacts([])
     setMessages([])
     setSelectedClient(null)
@@ -124,13 +197,12 @@ function App() {
       })
       const data = await resp.json()
       if (data.status === 'ok' && data.token) {
-        const authState: AuthState = {
+        setAuth({
           authorized: true,
           name: data.name || username,
           token: data.token,
           accounts: [],
-        }
-        setAuth(authState)
+        })
       } else {
         setAuthError(data.error || 'Невірний логін або пароль')
       }
@@ -219,17 +291,35 @@ function App() {
     }
   }, [auth, loadContacts, loadMessages])
 
-  // Reload contacts on search/account change
   useEffect(() => {
     if (!auth?.authorized) return
     const t = setTimeout(loadContacts, 300)
     return () => clearTimeout(t)
   }, [search, selectedAccount, auth, loadContacts])
 
+  // Get selected contact info
+  const selectedContact = contacts.find(c => c.client_id === selectedClient)
+
+  // Group messages by date for date separators
+  const groupedMessages = messages.reduce<(ChatMessage | { type: 'date'; date: string })[]>((acc, m) => {
+    const d = new Date(m.message_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
+    if (acc.length === 0 || (acc[acc.length - 1] as ChatMessage).message_date === undefined ||
+      new Date((acc.filter(x => 'message_date' in x).pop() as ChatMessage)?.message_date || '').toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' }) !== d) {
+      // Check if last non-date entry has different date
+      const lastMsg = [...acc].reverse().find(x => 'message_date' in x) as ChatMessage | undefined
+      const lastDate = lastMsg ? new Date(lastMsg.message_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' }) : null
+      if (lastDate !== d) {
+        acc.push({ type: 'date', date: d })
+      }
+    }
+    acc.push(m)
+    return acc
+  }, [])
+
   // Update screen
   if (updateAvailable && updating) {
     return (
-      <div className="center-screen">
+      <div className="update-screen">
         <h2>Оновлення Vidnovagram...</h2>
         <p>Завантаження нової версії</p>
         <div className="spinner" />
@@ -238,7 +328,7 @@ function App() {
   }
 
   if (!auth?.authorized) {
-    return <LoginScreen onLogin={login} loading={authLoading} error={authError} />
+    return <LoginScreen onLogin={login} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
   }
 
   return (
@@ -247,6 +337,7 @@ function App() {
         <div className="sidebar-header">
           <h1>Vidnovagram</h1>
           <div className="header-right">
+            <ThemeToggle theme={theme} setTheme={setTheme} />
             <span className="user-badge">{auth.name}</span>
             <button className="logout-btn" onClick={logout} title="Вийти">✕</button>
           </div>
@@ -278,22 +369,40 @@ function App() {
       </div>
 
       <div className="chat">
-        {selectedClient ? (
+        {selectedClient && selectedContact ? (
           <>
+            <div className="chat-header">
+              <div className="chat-header-avatar">
+                {(selectedContact.full_name || selectedContact.phone).charAt(0).toUpperCase()}
+              </div>
+              <div className="chat-header-name">
+                {selectedContact.full_name || selectedContact.phone}
+              </div>
+            </div>
             <div className="chat-messages">
-              {messages.map(m => (
-                <div key={m.id} className={`msg ${m.direction}`}>
-                  <div className="msg-bubble">
-                    {m.text}
-                    {m.has_media && m.thumbnail && (
-                      <img src={`https://cc.vidnova.app/media/${m.thumbnail}`} alt="" className="msg-img" />
-                    )}
-                    <span className="msg-time">
-                      {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+              {groupedMessages.map((item, i) => {
+                if ('type' in item && item.type === 'date') {
+                  return (
+                    <div key={`date-${i}`} className="date-separator">
+                      <span>{item.date}</span>
+                    </div>
+                  )
+                }
+                const m = item as ChatMessage
+                return (
+                  <div key={m.id} className={`msg ${m.direction}`}>
+                    <div className="msg-bubble">
+                      {m.text}
+                      {m.has_media && m.thumbnail && (
+                        <img src={`https://cc.vidnova.app/media/${m.thumbnail}`} alt="" className="msg-img" />
+                      )}
+                      <span className="msg-time">
+                        {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={chatEndRef} />
             </div>
             <div className="chat-input">
@@ -303,13 +412,15 @@ function App() {
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder="Повідомлення..."
               />
-              <button onClick={sendMessage} disabled={!messageText.trim()}>➤</button>
+              <button onClick={sendMessage} disabled={!messageText.trim()}>
+                <SendIcon />
+              </button>
             </div>
           </>
         ) : (
-          <div className="center-screen">
-            <div style={{ fontSize: 64, opacity: 0.2 }}>💬</div>
-            <p style={{ opacity: 0.5 }}>Виберіть чат</p>
+          <div className="empty-chat">
+            <div className="empty-chat-icon">💬</div>
+            <p>Виберіть чат</p>
           </div>
         )}
       </div>
@@ -317,21 +428,60 @@ function App() {
   )
 }
 
-function LoginScreen({ onLogin, loading, error }: {
-  onLogin: (u: string, p: string) => void; loading: boolean; error: string
+function LoginScreen({ onLogin, loading, error, theme, setTheme }: {
+  onLogin: (u: string, p: string) => void
+  loading: boolean
+  error: string
+  theme: Theme
+  setTheme: (t: Theme) => void
 }) {
   const [u, setU] = useState('')
   const [p, setP] = useState('')
-  const submit = () => onLogin(u, p)
+  const submit = () => { if (u && p) onLogin(u, p) }
+
   return (
-    <div className="center-screen">
+    <div className="login-wrapper">
+      <div className="login-bg" />
+      <div className="login-bg-overlay" />
       <div className="login-card">
-        <h1>Vidnovagram</h1>
-        <p>Месенджер клініки Віднова</p>
-        {error && <div className="error">{error}</div>}
-        <input placeholder="Логін" value={u} onChange={e => setU(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
-        <input type="password" placeholder="Пароль" value={p} onChange={e => setP(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
-        <button onClick={submit} disabled={loading}>{loading ? 'Вхід...' : 'Увійти'}</button>
+        <div className="login-card-header">
+          <img src="/logo.png" alt="Vidnovagram" className="login-logo" />
+          <h1>Vidnovagram</h1>
+          <p>Месенджер клініки Віднова</p>
+        </div>
+
+        {error && <div className="login-error">{error}</div>}
+
+        <div className="login-field">
+          <label>Логін</label>
+          <input
+            type="text"
+            placeholder="Ім'я користувача"
+            value={u}
+            onChange={e => setU(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            autoFocus
+          />
+        </div>
+
+        <div className="login-field">
+          <label>Пароль</label>
+          <input
+            type="password"
+            placeholder="Введіть пароль"
+            value={p}
+            onChange={e => setP(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+          />
+        </div>
+
+        <button className="login-btn" onClick={submit} disabled={loading || !u || !p}>
+          {loading ? 'Вхід...' : 'Увійти'}
+        </button>
+
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '0.25rem' }}>
+          <ThemeToggle theme={theme} setTheme={setTheme} />
+        </div>
       </div>
     </div>
   )

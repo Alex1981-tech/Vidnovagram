@@ -1,6 +1,6 @@
 [package]
 name = "vidnovagram"
-version = "0.2.0"
+version = "0.3.0"
 description = "Vidnovagram — multi-messenger desktop app for Vidnova Clinic"
 authors = ["Alex <alex1981tech@gmail.com>"]
 license = "MIT"
