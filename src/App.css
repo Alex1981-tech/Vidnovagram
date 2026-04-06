@@ -739,26 +739,38 @@ body {
   min-width: 250px;
   border-left: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--sidebar-bg);
 }
 
 .right-panel-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--topbar-bg);
+  padding: 6px 0;
+  gap: 2px;
+  width: 48px;
+  min-width: 48px;
+  align-items: center;
 }
 .rp-tab {
-  flex: 1;
-  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
   background: none;
   border: none;
   color: var(--muted-foreground);
   font-family: inherit;
-  font-size: 0.8125rem;
+  font-size: 0.5625rem;
   font-weight: 500;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
-  border-bottom: 2px solid transparent;
+  border-radius: 6px;
+  width: 42px;
+  border-left: 2px solid transparent;
 }
 .rp-tab:hover {
   color: var(--foreground);
@@ -766,7 +778,12 @@ body {
 }
 .rp-tab.active {
   color: var(--primary);
-  border-bottom-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-left-color: var(--primary);
+}
+.rp-tab-label {
+  line-height: 1.1;
+  text-align: center;
 }
 
 .right-panel-body {
@@ -774,6 +791,7 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .rp-empty {

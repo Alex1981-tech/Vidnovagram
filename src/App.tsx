@@ -911,20 +911,24 @@ function App() {
           )}
         </div>
 
-        {/* Right Panel — Notes & Quick Replies */}
+        {/* Right Panel — vertical tabs */}
         <div className="right-panel">
           <div className="right-panel-tabs">
             <button
               className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
               onClick={() => setRightTab('notes')}
+              title="Нотатки"
             >
-              Нотатки
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span className="rp-tab-label">Нотатки</span>
             </button>
             <button
               className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
               onClick={() => setRightTab('quick')}
+              title="Швидкі відповіді"
             >
-              Швидкі відповіді
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span className="rp-tab-label">Шаблони</span>
             </button>
           </div>
 
