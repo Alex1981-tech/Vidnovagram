@@ -314,6 +314,37 @@ function App() {
   // Lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
+  // Resizable panels
+  const [sidebarWidth, setSidebarWidth] = useState(320)
+  const [rightPanelWidth, setRightPanelWidth] = useState(300)
+  const resizingRef = useRef<'sidebar' | 'right' | null>(null)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(0)
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return
+      const dx = e.clientX - startXRef.current
+      if (resizingRef.current === 'sidebar') {
+        setSidebarWidth(Math.max(220, Math.min(500, startWidthRef.current + dx)))
+      } else {
+        setRightPanelWidth(Math.max(200, Math.min(500, startWidthRef.current - dx)))
+      }
+    }
+    const onMouseUp = () => { resizingRef.current = null; document.body.style.cursor = '' ; document.body.style.userSelect = '' }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp) }
+  }, [])
+
+  const startResize = (panel: 'sidebar' | 'right', e: React.MouseEvent) => {
+    resizingRef.current = panel
+    startXRef.current = e.clientX
+    startWidthRef.current = panel === 'sidebar' ? sidebarWidth : rightPanelWidth
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
   // Persist auth
   useEffect(() => {
     if (auth?.authorized) {
@@ -765,7 +796,8 @@ function App() {
       {/* Main content */}
       <div className="main-content">
         {/* Sidebar with contacts */}
-        <div className="sidebar">
+        <div className="sidebar" style={{ width: sidebarWidth }}>
+          <div className="resize-handle" onMouseDown={e => startResize('sidebar', e)} />
           <div className="sidebar-search">
             <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
@@ -785,7 +817,7 @@ function App() {
               >
                 <div className="avatar">
                   {photoMap[c.client_id]
-                    ? <img src={`${MEDIA_BASE}/${photoMap[c.client_id]}`} className="avatar-img" alt="" />
+                    ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
                     : <UserIcon />}
                 </div>
                 <div className="contact-body">
@@ -825,7 +857,7 @@ function App() {
               <div className="chat-header">
                 <div className="chat-header-avatar">
                   {selectedClient && photoMap[selectedClient]
-                    ? <img src={`${MEDIA_BASE}/${photoMap[selectedClient]}`} className="avatar-img" alt="" />
+                    ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
                 </div>
                 <div className="chat-header-info">
@@ -918,27 +950,9 @@ function App() {
           )}
         </div>
 
-        {/* Right Panel — vertical tabs */}
-        <div className="right-panel">
-          <div className="right-panel-tabs">
-            <button
-              className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
-              onClick={() => setRightTab('notes')}
-              title="Нотатки"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              <span className="rp-tab-label">Нотатки</span>
-            </button>
-            <button
-              className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
-              onClick={() => setRightTab('quick')}
-              title="Швидкі відповіді"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span className="rp-tab-label">Шаблони</span>
-            </button>
-          </div>
-
+        {/* Right Panel: [content | vertical-tabs] */}
+        <div className="right-panel" style={{ width: rightPanelWidth }}>
+          <div className="resize-handle" onMouseDown={e => startResize('right', e)} />
           <div className="right-panel-body">
             {rightTab === 'notes' ? (
               selectedClient ? (
@@ -1047,6 +1061,24 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+          <div className="right-panel-tabs">
+            <button
+              className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
+              onClick={() => setRightTab('notes')}
+              title="Нотатки"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span className="rp-tab-label">Нотатки</span>
+            </button>
+            <button
+              className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
+              onClick={() => setRightTab('quick')}
+              title="Швидкі відповіді"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span className="rp-tab-label">Шаблони</span>
+            </button>
           </div>
         </div>
       </div>
