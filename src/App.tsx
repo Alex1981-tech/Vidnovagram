@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
 const WS_BASE = 'wss://cc.vidnova.app/ws'
+const MEDIA_BASE = 'https://cc.vidnova.app/media'
 const AUTH_KEY = 'vidnovagram_auth'
 const THEME_KEY = 'vidnovagram_theme'
+const READ_TS_KEY = 'vidnovagram_read_ts'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -14,8 +17,15 @@ interface AuthState {
   authorized: boolean
   name: string
   token: string
-  accounts: { id: string; label: string; phone: string; type: string; name: string }[]
-  operatorId?: number
+  isAdmin: boolean
+}
+
+interface Account {
+  id: string
+  label: string
+  phone: string
+  status: string
+  type: 'telegram' | 'whatsapp'
 }
 
 interface Contact {
@@ -26,11 +36,13 @@ interface Contact {
   last_message_date: string
   last_message_text: string
   last_message_direction: string
+  has_telegram?: boolean
+  has_whatsapp?: boolean
 }
 
 interface ChatMessage {
   id: number | string
-  source?: string
+  source?: 'telegram' | 'whatsapp'
   direction: 'sent' | 'received'
   text: string
   has_media: boolean
@@ -52,7 +64,8 @@ function authFetch(url: string, token: string, opts: RequestInit = {}) {
   })
 }
 
-/** Theme management */
+// ===== Theme =====
+
 function getSystemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
@@ -91,7 +104,61 @@ function useTheme() {
   return { theme, setTheme }
 }
 
-// SVG icons
+// ===== Read timestamps (unread tracking) =====
+
+function getReadTs(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(READ_TS_KEY) || '{}')
+  } catch { return {} }
+}
+
+function setReadTs(clientId: string, ts: string) {
+  const all = getReadTs()
+  all[clientId] = ts
+  localStorage.setItem(READ_TS_KEY, JSON.stringify(all))
+}
+
+// ===== Date formatting =====
+
+function formatContactDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86400000)
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+
+  const time = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
+  if (msgDay.getTime() === today.getTime()) return time
+  if (msgDay.getTime() === yesterday.getTime()) return `Вчора`
+  return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })
+}
+
+function formatDateSeparator(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86400000)
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+
+  if (msgDay.getTime() === today.getTime()) return 'Сьогодні'
+  if (msgDay.getTime() === yesterday.getTime()) return 'Вчора'
+  return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// ===== SVG Icons =====
+
+const TelegramIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.692-1.653-1.123-2.678-1.799-1.185-.781-.417-1.21.258-1.911.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.492-1.302.487-.429-.008-1.252-.242-1.865-.442-.751-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635.099-.002.321.023.465.141.12.099.153.232.168.327.016.094.036.31.02.478z"/>
+  </svg>
+)
+
+const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+)
+
 const SunIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
@@ -112,6 +179,49 @@ const SendIcon = () => (
     <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
   </svg>
 )
+const UserIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+  </svg>
+)
+const VolumeOnIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+  </svg>
+)
+const VolumeOffIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>
+  </svg>
+)
+
+// Message status icons (single check = sent, double check = delivered)
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+const DoubleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="18 6 7 17 2 12"/><polyline points="22 6 11 17"/>
+  </svg>
+)
+
+// Notification helper
+async function showNotification(title: string, body: string) {
+  try {
+    let granted = await isPermissionGranted()
+    if (!granted) {
+      const perm = await requestPermission()
+      granted = perm === 'granted'
+    }
+    if (granted) {
+      sendNotification({ title, body })
+    }
+  } catch (e) {
+    console.log('Notification error:', e)
+  }
+}
 
 function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
   const cycle = () => {
@@ -119,11 +229,13 @@ function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) =
     setTheme(next[theme])
   }
   return (
-    <button className="theme-toggle" onClick={cycle} title={`Тема: ${theme}`}>
+    <button className="icon-btn" onClick={cycle} title={`Тема: ${theme}`}>
       {theme === 'light' ? <SunIcon /> : theme === 'dark' ? <MoonIcon /> : <MonitorIcon />}
     </button>
   )
 }
+
+// ===== Main App =====
 
 function App() {
   const { theme, setTheme } = useTheme()
@@ -139,18 +251,41 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [updating, setUpdating] = useState(false)
 
+  // Accounts
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [selectedAccount, setSelectedAccount] = useState<string>('')
+
+  // Contacts
   const [contacts, setContacts] = useState<Contact[]>([])
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [contactCount, setContactCount] = useState(0)
+
+  // Messages
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messageText, setMessageText] = useState('')
-  const [search, setSearch] = useState('')
-  const [selectedAccount, _setSelectedAccount] = useState<string>('')
-  void _setSelectedAccount
+  const [msgCount, setMsgCount] = useState(0)
+  const [clientName, setClientName] = useState('')
+  const [clientPhone, setClientPhone] = useState('')
+  const [sending, setSending] = useState(false)
+
+  // Sound
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem('messenger-sound') !== 'false' } catch { return true }
+  })
+
+  // Unread tracking
+  const [updates, setUpdates] = useState<Record<string, { last_date: string; last_received: string }>>({})
+
   const wsRef = useRef<WebSocket | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const selectedClientRef = useRef<string | null>(null)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Persist auth to localStorage
+  // Lightbox
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+
+  // Persist auth
   useEffect(() => {
     if (auth?.authorized) {
       localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
@@ -160,6 +295,11 @@ function App() {
   }, [auth])
 
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
+
+  // Sound toggle persist
+  useEffect(() => {
+    localStorage.setItem('messenger-sound', String(soundEnabled))
+  }, [soundEnabled])
 
   // Check for updates on startup
   useEffect(() => {
@@ -184,6 +324,7 @@ function App() {
     setContacts([])
     setMessages([])
     setSelectedClient(null)
+    setAccounts([])
   }, [])
 
   const login = useCallback(async (username: string, password: string) => {
@@ -201,7 +342,7 @@ function App() {
           authorized: true,
           name: data.name || username,
           token: data.token,
-          accounts: [],
+          isAdmin: data.is_admin || false,
         })
       } else {
         setAuthError(data.error || 'Невірний логін або пароль')
@@ -213,22 +354,56 @@ function App() {
     }
   }, [])
 
+  // Load accounts (TG + WA)
+  const loadAccounts = useCallback(async () => {
+    if (!auth?.token) return
+    try {
+      const [tgResp, waResp] = await Promise.all([
+        authFetch(`${API_BASE}/telegram/accounts/`, auth.token),
+        authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token),
+      ])
+      const tgAccounts: Account[] = []
+      const waAccounts: Account[] = []
+
+      if (tgResp.ok) {
+        const tgData = await tgResp.json()
+        for (const a of (Array.isArray(tgData) ? tgData : tgData.results || [])) {
+          if (a.status === 'active') {
+            tgAccounts.push({ id: a.id, label: a.label, phone: a.phone, status: a.status, type: 'telegram' })
+          }
+        }
+      }
+      if (waResp.ok) {
+        const waData = await waResp.json()
+        for (const a of (Array.isArray(waData) ? waData : waData.results || [])) {
+          if (a.status === 'connected') {
+            waAccounts.push({ id: a.id, label: a.label, phone: a.phone, status: a.status, type: 'whatsapp' })
+          }
+        }
+      }
+
+      setAccounts([...tgAccounts, ...waAccounts])
+    } catch (e) { console.error('Accounts:', e) }
+  }, [auth?.token])
+
+  // Load contacts
   const loadContacts = useCallback(async () => {
     if (!auth?.token) return
     try {
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ per_page: '50' })
       if (search) params.set('search', search)
       if (selectedAccount) params.set('account', selectedAccount)
-      params.set('per_page', '50')
       const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
       if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
         setContacts(data.results || [])
+        setContactCount(data.count || 0)
       }
     } catch (e) { console.error('Contacts:', e) }
   }, [auth?.token, search, selectedAccount, logout])
 
+  // Load messages
   const loadMessages = useCallback(async (clientId: string) => {
     if (!auth?.token) return
     try {
@@ -238,14 +413,24 @@ function App() {
       if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
-        setMessages((data.results || []).reverse())
+        const msgs = (data.results || []).reverse()
+        setMessages(msgs)
+        setMsgCount(data.count || 0)
+        setClientName(data.client_name || '')
+        setClientPhone(data.client_phone || '')
+        // Mark as read
+        if (msgs.length > 0) {
+          setReadTs(clientId, msgs[msgs.length - 1].message_date)
+        }
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
       }
     } catch (e) { console.error('Messages:', e) }
   }, [auth?.token, selectedAccount, logout])
 
+  // Send message
   const sendMessage = useCallback(async () => {
-    if (!selectedClient || !messageText.trim() || !auth?.token) return
+    if (!selectedClient || !messageText.trim() || !auth?.token || sending) return
+    setSending(true)
     const fd = new FormData()
     fd.append('text', messageText.trim())
     if (selectedAccount) fd.append('account_id', selectedAccount)
@@ -258,7 +443,41 @@ function App() {
         loadMessages(selectedClient)
       }
     } catch (e) { console.error('Send:', e) }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, loadMessages])
+    finally { setSending(false) }
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages])
+
+  // Fetch unread updates
+  const loadUpdates = useCallback(async () => {
+    if (!auth?.token) return
+    try {
+      const since = new Date(Date.now() - 86400000 * 7).toISOString()
+      const resp = await authFetch(`${API_BASE}/telegram/messenger-updates/?since=${since}`, auth.token)
+      if (resp.ok) {
+        setUpdates(await resp.json())
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token])
+
+  // Load accounts on auth
+  useEffect(() => {
+    if (auth?.authorized) loadAccounts()
+  }, [auth?.authorized, loadAccounts])
+
+  // Load contacts with debounce on search change
+  useEffect(() => {
+    if (!auth?.authorized) return
+    clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(loadContacts, 300)
+    return () => clearTimeout(searchTimerRef.current)
+  }, [search, selectedAccount, auth?.authorized, loadContacts])
+
+  // Poll updates every 15s
+  useEffect(() => {
+    if (!auth?.authorized) return
+    loadUpdates()
+    const iv = setInterval(loadUpdates, 15000)
+    return () => clearInterval(iv)
+  }, [auth?.authorized, loadUpdates])
 
   // WebSocket
   useEffect(() => {
@@ -273,10 +492,20 @@ function App() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          if (data.type === 'new_message' && data.client_id === selectedClientRef.current) {
-            loadMessages(data.client_id)
+          if (data.type === 'new_message') {
+            if (data.client_id === selectedClientRef.current) {
+              loadMessages(data.client_id)
+            } else if (soundEnabled && data.direction === 'received') {
+              // Show Windows notification for messages in other chats
+              showNotification(
+                data.client_name || data.phone || 'Нове повідомлення',
+                data.text?.slice(0, 100) || 'Нове повідомлення'
+              )
+            }
+            loadContacts()
+            loadUpdates()
           }
-          if (data.type === 'contact_update' || data.type === 'new_message') {
+          if (data.type === 'contact_update') {
             loadContacts()
           }
         } catch { /* ignore */ }
@@ -289,37 +518,53 @@ function App() {
       clearTimeout(reconnectTimer)
       ws?.close(1000)
     }
-  }, [auth, loadContacts, loadMessages])
+  }, [auth, loadContacts, loadMessages, loadUpdates])
 
-  useEffect(() => {
-    if (!auth?.authorized) return
-    const t = setTimeout(loadContacts, 300)
-    return () => clearTimeout(t)
-  }, [search, selectedAccount, auth, loadContacts])
+  // Compute unread (uses updates for external change detection)
+  const isUnread = useCallback((contact: Contact) => {
+    if (!contact.last_message_date || contact.last_message_direction !== 'received') return false
+    const readTs = getReadTs()
+    const read = readTs[contact.client_id]
+    // Check server updates too
+    const serverUpdate = updates[contact.client_id]
+    const lastReceived = serverUpdate?.last_received
+    const latestDate = lastReceived && lastReceived > contact.last_message_date ? lastReceived : contact.last_message_date
+    if (!read) return true
+    return new Date(latestDate) > new Date(read)
+  }, [updates])
 
   // Get selected contact info
   const selectedContact = contacts.find(c => c.client_id === selectedClient)
 
-  // Group messages by date for date separators
-  const groupedMessages = messages.reduce<(ChatMessage | { type: 'date'; date: string })[]>((acc, m) => {
-    const d = new Date(m.message_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
-    if (acc.length === 0 || (acc[acc.length - 1] as ChatMessage).message_date === undefined ||
-      new Date((acc.filter(x => 'message_date' in x).pop() as ChatMessage)?.message_date || '').toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' }) !== d) {
-      // Check if last non-date entry has different date
-      const lastMsg = [...acc].reverse().find(x => 'message_date' in x) as ChatMessage | undefined
-      const lastDate = lastMsg ? new Date(lastMsg.message_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' }) : null
-      if (lastDate !== d) {
-        acc.push({ type: 'date', date: d })
-      }
+  // Group messages by date
+  const groupedMessages: (ChatMessage | { type: 'date'; date: string })[] = []
+  let lastDateStr = ''
+  for (const m of messages) {
+    const d = formatDateSeparator(m.message_date)
+    if (d !== lastDateStr) {
+      groupedMessages.push({ type: 'date', date: d })
+      lastDateStr = d
     }
-    acc.push(m)
-    return acc
+    groupedMessages.push(m)
+  }
+
+  // Select client handler
+  const selectClient = useCallback((clientId: string) => {
+    setSelectedClient(clientId)
+    loadMessages(clientId)
+  }, [loadMessages])
+
+  // Account tab click
+  const handleAccountClick = useCallback((accountId: string) => {
+    setSelectedAccount(prev => prev === accountId ? '' : accountId)
+    setSelectedClient(null)
+    setMessages([])
   }, [])
 
   // Update screen
   if (updateAvailable && updating) {
     return (
-      <div className="update-screen">
+      <div className="center-screen">
         <h2>Оновлення Vidnovagram...</h2>
         <p>Завантаження нової версії</p>
         <div className="spinner" />
@@ -333,100 +578,213 @@ function App() {
 
   return (
     <div className="app">
-      <div className="sidebar">
-        <div className="sidebar-header">
-          <h1>Vidnovagram</h1>
-          <div className="header-right">
-            <ThemeToggle theme={theme} setTheme={setTheme} />
-            <span className="user-badge">{auth.name}</span>
-            <button className="logout-btn" onClick={logout} title="Вийти">✕</button>
-          </div>
+      {/* Top Bar with accounts */}
+      <div className="top-bar">
+        <div className="top-bar-left">
+          <TelegramIcon size={22} color="#2AABEE" />
+          <WhatsAppIcon size={22} color="#25D366" />
+          <button className="icon-btn" onClick={() => setSoundEnabled(!soundEnabled)} title={soundEnabled ? 'Вимкнути звук' : 'Увімкнути звук'}>
+            {soundEnabled ? <VolumeOnIcon /> : <VolumeOffIcon />}
+          </button>
+          {/* "Месенджер" tab */}
+          <button
+            className={`account-tab ${!selectedAccount ? 'active' : ''}`}
+            onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
+          >
+            Месенджер
+          </button>
         </div>
-        <input
-          className="search-box"
-          placeholder="Пошук..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <div className="contact-list">
-          {contacts.map(c => (
-            <div
-              key={c.client_id}
-              className={`contact ${selectedClient === c.client_id ? 'active' : ''}`}
-              onClick={() => { setSelectedClient(c.client_id); loadMessages(c.client_id) }}
+
+        <div className="account-tabs">
+          {accounts.map(acc => (
+            <button
+              key={acc.id}
+              className={`account-tab ${selectedAccount === acc.id ? 'active' : ''}`}
+              onClick={() => handleAccountClick(acc.id)}
             >
-              <div className="avatar">{(c.full_name || c.phone).charAt(0).toUpperCase()}</div>
-              <div className="contact-body">
-                <div className="contact-name">{c.full_name || c.phone}</div>
-                <div className="contact-preview">{c.last_message_text?.slice(0, 50)}</div>
-              </div>
-              <div className="contact-time">
-                {c.last_message_date && new Date(c.last_message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            </div>
+              <span className="account-tab-icon">
+                {acc.type === 'telegram'
+                  ? <TelegramIcon size={14} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
+                  : <WhatsAppIcon size={14} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
+                }
+              </span>
+              <span className="account-tab-label">{acc.label}</span>
+              <span className="account-tab-phone">{acc.phone}</span>
+              <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+            </button>
           ))}
+        </div>
+
+        <div className="top-bar-right">
+          <ThemeToggle theme={theme} setTheme={setTheme} />
+          <span className="user-badge">{auth.name}</span>
+          <button className="icon-btn logout" onClick={logout} title="Вийти">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
         </div>
       </div>
 
-      <div className="chat">
-        {selectedClient && selectedContact ? (
-          <>
-            <div className="chat-header">
-              <div className="chat-header-avatar">
-                {(selectedContact.full_name || selectedContact.phone).charAt(0).toUpperCase()}
+      {/* Main content */}
+      <div className="main-content">
+        {/* Sidebar with contacts */}
+        <div className="sidebar">
+          <div className="sidebar-search">
+            <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              placeholder="Пошук контактів..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="contact-list">
+            {contacts.map(c => (
+              <div
+                key={c.client_id}
+                className={`contact ${selectedClient === c.client_id ? 'active' : ''}`}
+                onClick={() => selectClient(c.client_id)}
+              >
+                <div className="avatar">
+                  <UserIcon />
+                </div>
+                <div className="contact-body">
+                  <div className="contact-row">
+                    <span className="contact-name">{c.full_name || c.phone}</span>
+                    {isUnread(c) && <span className="unread-dot" />}
+                    <span className="contact-time">
+                      {c.last_message_date && formatContactDate(c.last_message_date)}
+                    </span>
+                  </div>
+                  <div className="contact-row">
+                    <span className="contact-preview">
+                      {c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}
+                      {c.last_message_text?.slice(0, 60) || 'Медіа'}
+                    </span>
+                  </div>
+                  <div className="contact-meta">
+                    <span className="contact-phone">{c.phone}</span>
+                    <span className="contact-icons">
+                      {c.has_telegram !== false && <TelegramIcon size={12} color="#2AABEE" />}
+                      {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="chat-header-name">
-                {selectedContact.full_name || selectedContact.phone}
+            ))}
+          </div>
+          <div className="sidebar-footer">
+            {contactCount} контактів
+          </div>
+        </div>
+
+        {/* Chat area */}
+        <div className="chat">
+          {selectedClient && selectedContact ? (
+            <>
+              <div className="chat-header">
+                <div className="chat-header-avatar">
+                  <UserIcon />
+                </div>
+                <div className="chat-header-info">
+                  <div className="chat-header-name">
+                    {clientName || selectedContact.full_name || selectedContact.phone}
+                  </div>
+                  <div className="chat-header-phone">{clientPhone || selectedContact.phone}</div>
+                </div>
+                <div className="chat-header-right">
+                  <span className="msg-count-badge">{msgCount} повідомлень</span>
+                </div>
               </div>
-            </div>
-            <div className="chat-messages">
-              {groupedMessages.map((item, i) => {
-                if ('type' in item && item.type === 'date') {
+              <div className="chat-messages">
+                {groupedMessages.map((item, i) => {
+                  if ('type' in item && item.type === 'date') {
+                    return (
+                      <div key={`date-${i}`} className="date-separator">
+                        <span>{item.date}</span>
+                      </div>
+                    )
+                  }
+                  const m = item as ChatMessage
                   return (
-                    <div key={`date-${i}`} className="date-separator">
-                      <span>{item.date}</span>
+                    <div key={m.id} className={`msg ${m.direction}`}>
+                      <div className="msg-bubble">
+                        {m.has_media && m.thumbnail && (
+                          <img
+                            src={`${MEDIA_BASE}/${m.thumbnail}`}
+                            alt=""
+                            className="msg-media"
+                            onClick={() => setLightboxSrc(m.media_file ? `${MEDIA_BASE}/${m.media_file}` : `${MEDIA_BASE}/${m.thumbnail}`)}
+                          />
+                        )}
+                        {m.has_media && !m.thumbnail && m.media_type && (
+                          <div className="msg-media-placeholder">
+                            {m.media_type === 'voice' ? '🎤 Голосове' : m.media_type === 'video' ? '🎬 Відео' : m.media_type === 'document' ? '📎 Файл' : '📷 Медіа'}
+                          </div>
+                        )}
+                        {m.text && <div className="msg-text">{m.text}</div>}
+                        <div className="msg-footer">
+                          <span className="msg-source">
+                            {m.source === 'whatsapp'
+                              ? <WhatsAppIcon size={10} color="#25D366" />
+                              : <TelegramIcon size={10} color="#2AABEE" />
+                            }
+                          </span>
+                          <span className="msg-time">
+                            {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {m.direction === 'sent' && (
+                            <span className="msg-status">
+                              <DoubleCheckIcon color="var(--primary)" />
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )
-                }
-                const m = item as ChatMessage
-                return (
-                  <div key={m.id} className={`msg ${m.direction}`}>
-                    <div className="msg-bubble">
-                      {m.text}
-                      {m.has_media && m.thumbnail && (
-                        <img src={`https://cc.vidnova.app/media/${m.thumbnail}`} alt="" className="msg-img" />
-                      )}
-                      <span className="msg-time">
-                        {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-              <div ref={chatEndRef} />
+                })}
+                <div ref={chatEndRef} />
+              </div>
+              {auth.isAdmin && (
+                <div className="chat-input">
+                  <textarea
+                    value={messageText}
+                    onChange={e => setMessageText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                    placeholder="Написати повідомлення..."
+                    rows={1}
+                  />
+                  <button onClick={sendMessage} disabled={!messageText.trim() || sending}>
+                    {sending ? <div className="spinner-sm" /> : <SendIcon />}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="empty-chat">
+              <div className="empty-chat-icons">
+                <TelegramIcon size={48} color="var(--muted-foreground)" />
+                <WhatsAppIcon size={48} color="var(--muted-foreground)" />
+              </div>
+              <p>Оберіть чат для перегляду</p>
             </div>
-            <div className="chat-input">
-              <textarea
-                value={messageText}
-                onChange={e => setMessageText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="Повідомлення..."
-              />
-              <button onClick={sendMessage} disabled={!messageText.trim()}>
-                <SendIcon />
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="empty-chat">
-            <div className="empty-chat-icon">💬</div>
-            <p>Виберіть чат</p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Lightbox */}
+      {lightboxSrc && (
+        <div className="lightbox" onClick={() => setLightboxSrc(null)}>
+          <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }
+
+// ===== Login Screen =====
 
 function LoginScreen({ onLogin, loading, error, theme, setTheme }: {
   onLogin: (u: string, p: string) => void
