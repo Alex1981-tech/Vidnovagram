@@ -503,7 +503,7 @@ function App() {
       if (resp.status === 401) { logout(); return }
       if (resp.ok) {
         const data = await resp.json()
-        const msgs = (data.results || []).reverse()
+        const msgs = data.results || []
         setMessages(msgs)
         setMsgCount(data.count || 0)
         setClientName(data.client_name || '')
