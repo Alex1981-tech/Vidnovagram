@@ -2675,40 +2675,42 @@ function App() {
                 <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
               ))}
             </select>
-            <input
-              className="forward-modal-search"
-              placeholder="Пошук за ім'ям або телефоном..."
-              value={addContactName}
-              onChange={e => {
-                setAddContactName(e.target.value)
-                searchAddContactSuggestions(e.target.value)
-              }}
-              onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
-              autoFocus
-            />
             <div style={{ position: 'relative' }}>
               <input
                 className="forward-modal-search"
-                placeholder="Номер телефону"
-                value={addContactPhone}
+                placeholder="Пошук за ім'ям або телефоном..."
+                value={addContactName}
                 onChange={e => {
-                  setAddContactPhone(e.target.value)
-                  setAddContactAvail(null)
-                  checkPhoneAvail(e.target.value)
-                  if (e.target.value.length >= 2) searchAddContactSuggestions(e.target.value)
+                  setAddContactName(e.target.value)
+                  searchAddContactSuggestions(e.target.value)
                 }}
                 onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
-                style={{ marginTop: 8, paddingRight: 60 }}
+                autoFocus
               />
-              {addContactAvail && (
-                <div className="phone-avail-badges">
-                  {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
-                  {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
-                  {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
-                </div>
-              )}
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="forward-modal-search"
+                  placeholder="Номер телефону"
+                  value={addContactPhone}
+                  onChange={e => {
+                    setAddContactPhone(e.target.value)
+                    setAddContactAvail(null)
+                    checkPhoneAvail(e.target.value)
+                    if (e.target.value.length >= 2) searchAddContactSuggestions(e.target.value)
+                  }}
+                  onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
+                  style={{ marginTop: 8, paddingRight: 60 }}
+                />
+                {addContactAvail && (
+                  <div className="phone-avail-badges">
+                    {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
+                    {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
+                    {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
+                  </div>
+                )}
+              </div>
               {addContactShowSuggestions && addContactSuggestions.length > 0 && (
                 <div className="add-contact-suggestions">
                   {addContactSuggestions.map(s => (
