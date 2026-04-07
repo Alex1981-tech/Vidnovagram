@@ -47,7 +47,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEExNDQ5OThEMDNEQkU5NjIKUldSaTZkc0RqWmxFb1RDcnZMdHNhY1NCZGlIRHRMRG1lcm1FTGVvRkpsREowYXQ0Y0xjeHI0ckcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI2RTQ4RDJBQ0I0MzQ0RTMKUldUalJFUExLbzNrSnZvT1MyNVZ3VFQ3d3NidWVBeG9XK0ozaGUwdit5OWFyQVVzQVNCUE1qeUIK",
       "endpoints": [
         "https://github.com/Alex1981-tech/Vidnovagram/releases/latest/download/latest.json"
       ]
