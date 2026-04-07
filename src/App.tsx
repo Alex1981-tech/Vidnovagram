@@ -1223,7 +1223,8 @@ function App() {
 
       // Select the account and client
       if (acctId !== selectedAccount) setSelectedAccount(acctId)
-      selectClient(clientId)
+      setSelectedClient(clientId)
+      loadMessages(clientId)
       loadContacts()
 
     } catch {
@@ -1231,7 +1232,7 @@ function App() {
     } finally {
       setAddContactLoading(false)
     }
-  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, selectClient, loadContacts])
+  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, loadMessages, loadContacts])
 
   // Add contact to specific messenger account
   const addContact = useCallback(async () => {
