@@ -131,6 +131,14 @@ interface ChatMessage {
   operator_name?: string
 }
 
+interface LinkPreview {
+  url: string
+  title: string
+  description: string
+  image: string
+  site_name: string
+}
+
 interface ClientNote {
   id: string
   author_id: number
@@ -351,6 +359,73 @@ function setReadTs(clientId: string, ts: string) {
 }
 
 // ===== Date formatting =====
+
+// ===== URL detection & linkify =====
+
+const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi
+
+function extractFirstUrl(text: string): string | null {
+  const m = text.match(URL_REGEX)
+  return m ? m[0] : null
+}
+
+function Linkify({ text, onLinkClick }: { text: string; onLinkClick: (url: string) => void }) {
+  const parts = text.split(URL_REGEX)
+  const urls = text.match(URL_REGEX) || []
+  const result: React.ReactNode[] = []
+  parts.forEach((part, i) => {
+    if (part) result.push(part)
+    if (urls[i]) {
+      result.push(
+        <a key={i} className="msg-link" onClick={e => { e.preventDefault(); e.stopPropagation(); onLinkClick(urls[i]) }}>
+          {urls[i].length > 60 ? urls[i].slice(0, 57) + '...' : urls[i]}
+        </a>
+      )
+    }
+  })
+  return <>{result}</>
+}
+
+function LinkPreviewCard({ url, token, onClick }: { url: string; token: string; onClick: (u: string) => void }) {
+  const [preview, setPreview] = useState<LinkPreview | null>(null)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!url || loaded) return
+    setLoaded(true)
+    const cached = linkPreviewCacheRef.current.get(url)
+    if (cached !== undefined) { setPreview(cached); return }
+    authFetch(`${API_BASE}/messenger/link-preview/?url=${encodeURIComponent(url)}`, token)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: LinkPreview | null) => {
+        if (data && data.title) {
+          linkPreviewCacheRef.current.set(url, data)
+          setPreview(data)
+        } else {
+          linkPreviewCacheRef.current.set(url, null)
+        }
+      })
+      .catch(() => { linkPreviewCacheRef.current.set(url, null) })
+  }, [url, token, loaded])
+
+  if (!preview) return null
+
+  return (
+    <div className="link-preview" onClick={e => { e.stopPropagation(); onClick(url) }}>
+      {preview.image && (
+        <img src={preview.image} alt="" className="link-preview-img" onError={e => (e.currentTarget.style.display = 'none')} />
+      )}
+      <div className="link-preview-body">
+        {preview.site_name && <span className="link-preview-site">{preview.site_name}</span>}
+        <span className="link-preview-title">{preview.title}</span>
+        {preview.description && <span className="link-preview-desc">{preview.description}</span>}
+      </div>
+    </div>
+  )
+}
+
+// Shared cache ref (set inside App component, used by LinkPreviewCard)
+let linkPreviewCacheRef: React.MutableRefObject<Map<string, LinkPreview | null>> = { current: new Map() }
 
 function formatContactDate(dateStr: string): string {
   const d = new Date(dateStr)
@@ -590,6 +665,8 @@ function App() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const notifAudioRef = useRef<HTMLAudioElement | null>(null)
+  const _linkPreviewCache = useRef<Map<string, LinkPreview | null>>(new Map())
+  linkPreviewCacheRef = _linkPreviewCache
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
@@ -2088,10 +2165,10 @@ function App() {
             {contacts.map(c => (
               <div
                 key={c.client_id}
-                className={`contact ${selectedClient === c.client_id ? 'active' : ''}`}
+                className={`contact ${selectedClient === c.client_id ? 'active' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
                 onClick={() => selectClient(c.client_id)}
               >
-                <div className="avatar">
+                <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
                   {photoMap[c.client_id]
                     ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
                     : <UserIcon />}
@@ -2414,7 +2491,8 @@ function App() {
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
                         )}
-                        {m.text && <div className="msg-text">{m.text}</div>}
+                        {m.text && <div className="msg-text"><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         <div className="msg-footer">
                           <span className="msg-source">
                             {m.source === 'whatsapp'
