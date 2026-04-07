@@ -903,7 +903,7 @@ function App() {
     const fd = new FormData()
     if (text) fd.append('text', text)
     if (fileToSend) {
-      const name = fileToSend instanceof File ? fileToSend.name : (mediaType === 'voice' ? 'voice.ogg' : 'video.webm')
+      const name = fileToSend instanceof File ? fileToSend.name : (mediaType === 'voice' ? 'voice.webm' : 'video.webm')
       fd.append('file', fileToSend, name)
     }
     if (mediaType) fd.append('media_type', mediaType)
@@ -918,6 +918,10 @@ function App() {
         setAttachedPreview(null)
         if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         loadMessages(selectedClient)
+      } else {
+        const err = await resp.text().catch(() => '')
+        console.error('Send failed:', resp.status, err)
+        alert(`Помилка відправки: ${resp.status}`)
       }
     } catch (e) { console.error('Send:', e) }
     finally { setSending(false) }
@@ -986,7 +990,10 @@ function App() {
       setRecordingType('voice')
       setRecordingTime(0)
       recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
-    } catch (e) { console.error('Mic access denied:', e) }
+    } catch (e) {
+      console.error('Mic access denied:', e)
+      alert('Не вдалося отримати доступ до мікрофону')
+    }
   }, [])
 
   // Video note (circle) recording
@@ -994,16 +1001,10 @@ function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 384, height: 384, facingMode: 'user' }, audio: true })
       streamRef.current = stream
-      setIsRecording(true)
       setRecordingType('video')
       setRecordingTime(0)
-      // Video preview will be set via ref in modal
-      setTimeout(() => {
-        if (videoPreviewRef.current && stream.active) {
-          videoPreviewRef.current.srcObject = stream
-          videoPreviewRef.current.play().catch(() => {})
-        }
-      }, 100)
+      setIsRecording(true) // triggers modal render, then useEffect attaches stream to video element
+
       const recorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm'
       })
@@ -1012,7 +1013,10 @@ function App() {
       recorder.start(200)
       mediaRecorderRef.current = recorder
       recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
-    } catch (e) { console.error('Camera access denied:', e) }
+    } catch (e) {
+      console.error('Camera access denied:', e)
+      alert('Не вдалося отримати доступ до камери')
+    }
   }, [])
 
   const stopRecording = useCallback((send: boolean) => {
@@ -1041,8 +1045,7 @@ function App() {
       if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
 
       if (send && recordedChunksRef.current.length > 0) {
-        const mimeType = recordingType === 'voice' ? 'audio/ogg' : 'video/webm'
-        const blob = new Blob(recordedChunksRef.current, { type: mimeType })
+        const blob = new Blob(recordedChunksRef.current, { type: recordedChunksRef.current[0]?.type || (recordingType === 'voice' ? 'audio/webm' : 'video/webm') })
         const mediaTypeHint = recordingType === 'voice' ? 'voice' : 'video_note'
         sendMessage(blob, mediaTypeHint)
       }
@@ -1051,6 +1054,24 @@ function App() {
     }
     recorder.stop()
   }, [recordingType, sendMessage])
+
+  // Attach video stream to preview element when recording modal mounts
+  useEffect(() => {
+    if (isRecording && recordingType === 'video' && streamRef.current) {
+      // Retry a few times until the ref is attached (modal rendering delay)
+      let attempts = 0
+      const tryAttach = () => {
+        if (videoPreviewRef.current && streamRef.current?.active) {
+          videoPreviewRef.current.srcObject = streamRef.current
+          videoPreviewRef.current.play().catch(() => {})
+        } else if (attempts < 10) {
+          attempts++
+          setTimeout(tryAttach, 50)
+        }
+      }
+      tryAttach()
+    }
+  }, [isRecording, recordingType])
 
   // Forward mode
   const toggleMsgSelection = useCallback((msgId: number | string) => {
