@@ -536,6 +536,11 @@ function App() {
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [isPlaceholder, setIsPlaceholder] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkSearch, setLinkSearch] = useState('')
+  const [linkResults, setLinkResults] = useState<{id: string; phone: string; full_name: string; calls_count: number}[]>([])
+  const [linkLoading, setLinkLoading] = useState(false)
   const [sending, setSending] = useState(false)
 
   // Right panel
@@ -580,6 +585,7 @@ function App() {
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const linkSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -610,6 +616,9 @@ function App() {
   const [forwardSearch, setForwardSearch] = useState('')
   const [forwardContacts, setForwardContacts] = useState<Contact[]>([])
   const [forwardAccount, setForwardAccount] = useState<string>('')
+
+  // New chat client info (for contacts not yet in messenger list)
+  const [newChatClient, setNewChatClient] = useState<{ client_id: string; phone: string; full_name: string } | null>(null)
 
   // Add contact modal
   const [showAddContact, setShowAddContact] = useState(false)
@@ -874,6 +883,7 @@ function App() {
         setHasOlderMessages(totalPages > 1)
         setClientName(data.client_name || '')
         setClientPhone(data.client_phone || '')
+        setIsPlaceholder(data.is_placeholder || false)
         if (msgs.length > 0) {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
         }
@@ -890,6 +900,43 @@ function App() {
       }
     } catch (e) { console.error('Messages:', e) }
   }, [auth?.token, selectedAccount, logout])
+
+  // Link placeholder to real client
+  const searchClientsForLink = useCallback(async (q: string) => {
+    if (!auth?.token || q.length < 2) { setLinkResults([]); return }
+    try {
+      const res = await fetch(`${API_BASE}/clients/?search=${encodeURIComponent(q)}&page_size=20`, {
+        headers: { Authorization: `Token ${auth.token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setLinkResults(data.results || [])
+      }
+    } catch (e) { console.error('Search clients:', e) }
+  }, [auth?.token])
+
+  const handleLinkClient = useCallback(async (targetId: string) => {
+    if (!auth?.token || !selectedClient) return
+    setLinkLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/telegram/link-client/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Token ${auth.token}` },
+        body: JSON.stringify({ placeholder_id: selectedClient, target_id: targetId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setShowLinkModal(false)
+        setLinkSearch('')
+        setSelectedClient(data.target_id)
+        setIsPlaceholder(false)
+        loadMessages(data.target_id)
+        // Reload contacts
+        loadContacts()
+      }
+    } catch (e) { console.error('Link client:', e) }
+    setLinkLoading(false)
+  }, [auth?.token, selectedClient, loadMessages])
 
   const loadOlderMessages = useCallback(async () => {
     if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages) return
@@ -1239,10 +1286,13 @@ function App() {
         } catch { /* non-critical */ }
       }
 
+      // Save new chat client info so chat renders even without messages
+      setNewChatClient({ client_id: clientId, phone: data.phone, full_name: addContactName.trim() || data.full_name || '' })
+
       // Close modal and open chat
       setShowAddContact(false)
       setAddContactName(''); setAddContactPhone(''); setAddContactResult('')
-      setAddContactSuggestions([]); setAddContactShowSuggestions(false)
+      setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null)
 
       // Select the account and client
       if (acctId !== selectedAccount) setSelectedAccount(acctId)
@@ -1283,6 +1333,8 @@ function App() {
           if (m.already) statusText = `Контакт вже є в ${acctLabel}`
           else if (m.added) statusText = `Контакт додано в ${acctLabel}`
           if (data.created) statusText += ' (новий в базі)'
+          // Save new chat client info so chat renders even without messages
+          setNewChatClient({ client_id: data.client_id, phone: data.phone, full_name: addContactName.trim() || data.full_name || '' })
           // Close modal and open chat with this contact
           setShowAddContact(false)
           setAddContactName(''); setAddContactPhone(''); setAddContactResult('')
@@ -1738,8 +1790,26 @@ function App() {
   }, [])
   useEffect(() => { addToastRef.current = addToast }, [addToast])
 
-  // Get selected contact info
+  // Get selected contact info (fallback to newChatClient for contacts without messages)
   const selectedContact = contacts.find(c => c.client_id === selectedClient)
+  const chatContact = selectedContact || (selectedClient && newChatClient?.client_id === selectedClient ? {
+    client_id: newChatClient.client_id,
+    phone: newChatClient.phone,
+    full_name: newChatClient.full_name,
+    last_message_date: '',
+    last_message_text: '',
+    last_direction: '' as const,
+    msg_count: 0,
+    source: '' as const,
+    account_label: '',
+    account_phone: '',
+  } : null)
+  // Clear newChatClient when contact appears in the real list
+  useEffect(() => {
+    if (newChatClient && contacts.some(c => c.client_id === newChatClient.client_id)) {
+      setNewChatClient(null)
+    }
+  }, [contacts, newChatClient])
 
   // Group messages by date
   const groupedMessages: (ChatMessage | { type: 'date'; date: string })[] = []
@@ -1959,7 +2029,7 @@ function App() {
 
         {/* Chat area */}
         <div className="chat">
-          {selectedClient && selectedContact ? (
+          {selectedClient && chatContact ? (
             <>
               <div className="chat-header">
                 <div className="chat-header-avatar">
@@ -1969,14 +2039,73 @@ function App() {
                 </div>
                 <div className="chat-header-info">
                   <div className="chat-header-name">
-                    {clientName || selectedContact.full_name || selectedContact.phone}
+                    {clientName || chatContact?.full_name || chatContact?.phone}
                   </div>
-                  <div className="chat-header-phone">{clientPhone || selectedContact.phone}</div>
+                  <div className="chat-header-phone">{clientPhone || chatContact?.phone}</div>
                 </div>
                 <div className="chat-header-right">
                   <span className="msg-count-badge">{msgCount} повідомлень</span>
                 </div>
               </div>
+
+              {/* Placeholder banner */}
+              {isPlaceholder && (
+                <div className="placeholder-banner">
+                  <span>Номер прихований у пацієнта в Telegram</span>
+                  <button className="placeholder-link-btn" onClick={() => { setShowLinkModal(true); setLinkSearch(''); setLinkResults([]) }}>
+                    Прив'язати
+                  </button>
+                </div>
+              )}
+
+              {/* Link client modal */}
+              {showLinkModal && (
+                <div className="link-modal-overlay" onClick={() => setShowLinkModal(false)}>
+                  <div className="link-modal" onClick={e => e.stopPropagation()}>
+                    <div className="link-modal-header">
+                      <h3>Прив'язати до пацієнта</h3>
+                      <button className="link-modal-close" onClick={() => setShowLinkModal(false)}>✕</button>
+                    </div>
+                    <div className="link-modal-search">
+                      <input
+                        type="text"
+                        placeholder="Пошук за ім'ям або телефоном..."
+                        value={linkSearch}
+                        onChange={e => {
+                          const v = e.target.value
+                          setLinkSearch(v)
+                          clearTimeout(linkSearchTimerRef.current)
+                          linkSearchTimerRef.current = setTimeout(() => searchClientsForLink(v), 300)
+                        }}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="link-modal-results">
+                      {linkResults.map(c => (
+                        <button
+                          key={c.id}
+                          className="link-modal-item"
+                          onClick={() => handleLinkClient(c.id)}
+                          disabled={linkLoading}
+                        >
+                          <div className="link-modal-item-avatar"><UserIcon /></div>
+                          <div className="link-modal-item-info">
+                            <div className="link-modal-item-name">{c.full_name || c.phone}</div>
+                            <div className="link-modal-item-phone">{c.phone}{c.calls_count > 0 ? ` · ${c.calls_count} дзвінків` : ''}</div>
+                          </div>
+                        </button>
+                      ))}
+                      {linkSearch.length >= 2 && linkResults.length === 0 && (
+                        <div className="link-modal-empty">Не знайдено</div>
+                      )}
+                      {linkSearch.length < 2 && (
+                        <div className="link-modal-empty">Введіть ім'я або телефон</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="chat-messages">
                 {hasOlderMessages && (
                   <div className="load-older-wrap">
