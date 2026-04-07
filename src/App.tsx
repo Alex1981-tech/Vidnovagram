@@ -657,7 +657,7 @@ function App() {
   const [updates, setUpdates] = useState<Record<string, { last_date: string; last_received: string }>>({})
 
   // In-app toast notifications
-  const [toasts, setToasts] = useState<{ id: number; clientId: string; sender: string; account: string; text: string; hasMedia: boolean; mediaType: string; time: number }[]>([])
+  const [toasts, setToasts] = useState<{ id: number; clientId: string; accountId: string; sender: string; account: string; text: string; hasMedia: boolean; mediaType: string; time: number }[]>([])
   const toastIdRef = useRef(0)
 
   // Per-account unread counts (from WS events)
@@ -1837,7 +1837,7 @@ function App() {
   const loadMessagesRef = useRef(loadMessages)
   const loadUpdatesRef = useRef(loadUpdates)
   const soundEnabledRef = useRef(soundEnabled)
-  const addToastRef = useRef<(clientId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => void>(() => {})
+  const addToastRef = useRef<(clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => void>(() => {})
   useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
@@ -1885,7 +1885,7 @@ function App() {
                 // Windows notification
                 showNotification(`${sender} → ${account}`, body || '📎 Медіа')
                 // In-app toast
-                addToastRef.current(clientId, sender, account, body, !!msg.has_media, msg.media_type || '')
+                addToastRef.current(clientId, accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
 
                 // Track per-account unread
                 if (accountId) {
@@ -1950,9 +1950,9 @@ function App() {
   const unreadCount = useMemo(() => contacts.filter(c => isUnread(c)).length, [contacts, isUnread])
 
   // Add in-app toast
-  const addToast = useCallback((clientId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => {
+  const addToast = useCallback((clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => {
     const id = ++toastIdRef.current
-    setToasts(prev => [...prev.slice(-4), { id, clientId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
+    setToasts(prev => [...prev.slice(-4), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
     // Auto-remove after 6s
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 6000)
   }, [])
@@ -3083,6 +3083,8 @@ function App() {
               key={t.id}
               className="toast-item"
               onClick={() => {
+                // Clear account filter so client is visible, then select
+                setSelectedAccount('')
                 selectClient(t.clientId)
                 setToasts(prev => prev.filter(x => x.id !== t.id))
               }}
