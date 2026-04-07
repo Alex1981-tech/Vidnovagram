@@ -18,7 +18,8 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
   '0.7.3': [
-    'Додавання контакту — вибір конкретного акаунту (TG/WA)',
+    'Новий чат — написати будь-кому за номером телефону (TG/WA)',
+    'Додавання контакту в конкретний акаунт (TG/WA)',
     'Автодоповнення з бази при введенні імені або телефону',
     'Виправлено відправку голосових та відеоповідомлень (помилка 500)',
   ],
@@ -1165,7 +1166,7 @@ function App() {
 
   // Add contact
   const searchAddContactSuggestions = useCallback((q: string) => {
-    if (!auth?.token || q.length < 2) { setAddContactSuggestions([]); return }
+    if (!auth?.token || q.length < 2) { setAddContactSuggestions([]); setAddContactShowSuggestions(false); return }
     clearTimeout(addContactSugTimer.current)
     addContactSugTimer.current = setTimeout(async () => {
       try {
@@ -1179,6 +1180,60 @@ function App() {
     }, 300)
   }, [auth?.token])
 
+  // Start new chat: find/create client by phone, then open chat
+  const startNewChat = useCallback(async () => {
+    if (!auth?.token || !addContactPhone.trim()) return
+    const acctId = addContactAccount || selectedAccount
+    if (!acctId) { setAddContactResult('Оберіть акаунт'); return }
+    setAddContactLoading(true)
+    setAddContactResult('')
+    try {
+      // Create/find client via new-chat POST
+      const resp = await authFetch(`${API_BASE}/telegram/new-chat/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: addContactPhone.trim() }),
+      })
+      const data = await resp.json()
+      if (!resp.ok) { setAddContactResult(data.error || 'Помилка'); return }
+
+      // Update client name if provided and client is new or has no name
+      if (addContactName.trim() && (data.is_new || !data.full_name)) {
+        // Name will be set when we add contact to TG account below
+      }
+
+      const clientId = data.client_id
+
+      // For TG accounts — also add contact in Telegram
+      const acct = accounts.find(a => a.id === acctId)
+      if (acct?.type === 'telegram') {
+        try {
+          await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: addContactPhone.trim(), name: addContactName.trim(), account_id: acctId }),
+          })
+        } catch { /* non-critical */ }
+      }
+
+      // Close modal and open chat
+      setShowAddContact(false)
+      setAddContactName(''); setAddContactPhone(''); setAddContactResult('')
+      setAddContactSuggestions([]); setAddContactShowSuggestions(false)
+
+      // Select the account and client
+      if (acctId !== selectedAccount) setSelectedAccount(acctId)
+      selectClient(clientId)
+      loadContacts()
+
+    } catch {
+      setAddContactResult('Помилка зʼєднання')
+    } finally {
+      setAddContactLoading(false)
+    }
+  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, selectClient, loadContacts])
+
+  // Add contact to specific messenger account
   const addContact = useCallback(async () => {
     if (!auth?.token || !addContactPhone.trim()) return
     const acctId = addContactAccount || selectedAccount
@@ -1812,9 +1867,9 @@ function App() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <button className="add-contact-btn" onClick={() => setShowAddContact(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-            Додати контакт
+          <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+            Новий чат
           </button>
           <div className="contact-list">
             {contacts.map(c => (
@@ -2433,11 +2488,11 @@ function App() {
         </div>
       )}
 
-      {/* Add Contact Modal */}
+      {/* New Chat / Add Contact Modal */}
       {showAddContact && (
         <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
-          <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 360 }}>
-            <h3>Додати контакт</h3>
+          <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 380 }}>
+            <h3>Новий чат</h3>
             <select
               className="forward-modal-search"
               value={addContactAccount || selectedAccount}
@@ -2452,7 +2507,7 @@ function App() {
             <div style={{ position: 'relative' }}>
               <input
                 className="forward-modal-search"
-                placeholder="Ім'я або телефон"
+                placeholder="Пошук за ім'ям або телефоном..."
                 value={addContactName}
                 onChange={e => {
                   setAddContactName(e.target.value)
@@ -2498,10 +2553,17 @@ function App() {
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 className="tpl-btn-primary"
+                onClick={startNewChat}
+                disabled={addContactLoading || !addContactPhone.trim() || !(addContactAccount || selectedAccount)}
+              >
+                {addContactLoading ? 'Зачекайте...' : 'Написати'}
+              </button>
+              <button
+                className="tpl-btn-secondary"
                 onClick={addContact}
                 disabled={addContactLoading || !addContactPhone.trim() || !(addContactAccount || selectedAccount)}
               >
-                {addContactLoading ? 'Додаю...' : 'Додати'}
+                Додати в акаунт
               </button>
               <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
                 Скасувати
