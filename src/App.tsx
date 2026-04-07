@@ -6,7 +6,6 @@ import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
 const WS_BASE = 'wss://cc.vidnova.app/ws'
-const MEDIA_BASE = 'https://cc.vidnova.app/media'
 const AUTH_KEY = 'vidnovagram_auth'
 const THEME_KEY = 'vidnovagram_theme'
 const READ_TS_KEY = 'vidnovagram_read_ts'
