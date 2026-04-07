@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
@@ -1624,12 +1624,12 @@ function App() {
   const loadMessagesRef = useRef(loadMessages)
   const loadUpdatesRef = useRef(loadUpdates)
   const soundEnabledRef = useRef(soundEnabled)
-  const addToastRef = useRef(addToast)
+  const addToastRef = useRef<(clientId: string, title: string, text: string) => void>(() => {})
   useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
-  useEffect(() => { addToastRef.current = addToast }, [addToast])
+  // addToastRef updated below after addToast is defined
 
   // WebSocket — stable connection, only depends on auth.token
   useEffect(() => {
@@ -1736,6 +1736,7 @@ function App() {
     // Auto-remove after 5s
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
   }, [])
+  useEffect(() => { addToastRef.current = addToast }, [addToast])
 
   // Get selected contact info
   const selectedContact = contacts.find(c => c.client_id === selectedClient)
