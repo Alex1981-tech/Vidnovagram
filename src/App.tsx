@@ -1277,7 +1277,7 @@ function App() {
                     )
                   }
                   return (
-                    <div key={m.id} className={`msg ${m.direction}`}>
+                    <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}`}>
                       <div className="msg-bubble">
                         {/* Photo with thumbnail → click to view full */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && (

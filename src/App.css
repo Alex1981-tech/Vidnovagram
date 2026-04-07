@@ -738,6 +738,7 @@ body {
   position: relative;
   word-break: break-word;
 }
+/* Telegram (default) — blue accent */
 .msg.sent .msg-bubble {
   background: var(--sent-bubble);
   color: var(--sent-text);
@@ -747,6 +748,23 @@ body {
   background: var(--received-bubble);
   color: var(--received-text);
   border-bottom-left-radius: 4px;
+}
+/* WhatsApp — green accent */
+.msg.src-whatsapp.sent .msg-bubble {
+  background: oklch(0.92 0.06 145);
+  color: oklch(0.2 0.03 150);
+}
+.msg.src-whatsapp.received .msg-bubble {
+  background: oklch(0.96 0.02 145);
+  color: oklch(0.25 0.02 150);
+}
+.dark .msg.src-whatsapp.sent .msg-bubble {
+  background: oklch(0.32 0.1 150);
+  color: oklch(0.95 0.02 150);
+}
+.dark .msg.src-whatsapp.received .msg-bubble {
+  background: oklch(0.22 0.03 150);
+  color: oklch(0.9 0.02 150);
 }
 
 .msg-text {
