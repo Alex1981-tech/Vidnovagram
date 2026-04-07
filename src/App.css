@@ -1042,39 +1042,43 @@ body {
 .call-card {
   display: flex;
   gap: 10px;
-  align-items: flex-start;
-  margin: 6px auto;
-  max-width: 420px;
-  padding: 10px 14px;
-  background: color-mix(in oklch, var(--muted) 60%, transparent);
-  border: 1px solid var(--border);
+  align-items: center;
+  margin: 4px 20px;
+  width: calc(100% - 40px);
+  padding: 8px 14px;
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
   border-radius: var(--radius);
   font-size: 0.8125rem;
 }
 .call-card-icon {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  background: color-mix(in oklch, var(--primary) 18%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px;
 }
 .call-card-body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .call-card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 3px;
+  gap: 8px;
+  white-space: nowrap;
 }
 .call-card-label {
   font-weight: 600;
-  color: var(--foreground);
+  color: var(--primary);
   font-size: 0.8125rem;
 }
 .call-card-time {
@@ -1083,10 +1087,11 @@ body {
 }
 .call-card-details {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
+  flex-wrap: nowrap;
+  gap: 8px;
   color: var(--muted-foreground);
   font-size: 0.75rem;
+  align-items: center;
 }
 .call-card-direction {
   font-weight: 500;
@@ -1101,28 +1106,31 @@ body {
 .call-card-operator {
   color: var(--foreground);
 }
+.call-card-audio-wrap {
+  flex-shrink: 0;
+  margin-left: auto;
+}
 .call-card-audio {
-  width: 100%;
-  height: 32px;
-  margin-top: 6px;
+  height: 28px;
+  width: 200px;
   border-radius: 4px;
 }
 .call-card-play-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 4px 10px;
-  font-size: 0.75rem;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
   color: var(--primary);
-  background: color-mix(in oklch, var(--primary) 8%, transparent);
-  border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent);
   border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
   transition: background 0.15s;
+  white-space: nowrap;
 }
 .call-card-play-btn:hover {
-  background: color-mix(in oklch, var(--primary) 15%, transparent);
+  background: color-mix(in oklch, var(--primary) 22%, transparent);
 }
 .call-card-play-btn:disabled {
   opacity: 0.5;
