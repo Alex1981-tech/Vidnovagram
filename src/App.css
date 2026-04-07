@@ -1039,29 +1039,46 @@ body {
 }
 
 /* === Call Cards === */
+.call-card-wrapper {
+  margin: 4px 20px;
+  width: calc(100% - 40px);
+}
 .call-card {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin: 4px 20px;
-  width: calc(100% - 40px);
   padding: 8px 14px;
-  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 14%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
+  border: 1px solid color-mix(in oklch, oklch(0.8 0.15 85) 25%, transparent);
   border-radius: var(--radius);
   font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.call-card:hover {
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 22%, transparent);
+}
+.dark .call-card {
+  background: color-mix(in oklch, oklch(0.7 0.15 85) 16%, transparent);
+  border-color: color-mix(in oklch, oklch(0.7 0.15 85) 28%, transparent);
+}
+.dark .call-card:hover {
+  background: color-mix(in oklch, oklch(0.7 0.15 85) 24%, transparent);
 }
 .call-card-icon {
   flex-shrink: 0;
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: color-mix(in oklch, var(--primary) 18%, transparent);
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 22%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.dark .call-card-icon {
+  background: color-mix(in oklch, oklch(0.7 0.15 85) 22%, transparent);
 }
 .call-card-body {
   flex: 1;
@@ -1078,8 +1095,11 @@ body {
 }
 .call-card-label {
   font-weight: 600;
-  color: var(--primary);
+  color: oklch(0.7 0.15 85);
   font-size: 0.8125rem;
+}
+.dark .call-card-label {
+  color: oklch(0.8 0.15 85);
 }
 .call-card-time {
   color: var(--muted-foreground);
@@ -1110,31 +1130,158 @@ body {
   flex-shrink: 0;
   margin-left: auto;
 }
-.call-card-audio {
-  height: 28px;
-  width: 200px;
-  border-radius: 4px;
-}
 .call-card-play-btn {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 3px 10px;
   font-size: 0.7rem;
-  color: var(--primary);
-  background: color-mix(in oklch, var(--primary) 12%, transparent);
-  border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent);
+  color: oklch(0.7 0.15 85);
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 14%, transparent);
+  border: 1px solid color-mix(in oklch, oklch(0.8 0.15 85) 35%, transparent);
   border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
 }
+.dark .call-card-play-btn {
+  color: oklch(0.8 0.15 85);
+  background: color-mix(in oklch, oklch(0.7 0.15 85) 16%, transparent);
+  border-color: color-mix(in oklch, oklch(0.7 0.15 85) 35%, transparent);
+}
 .call-card-play-btn:hover {
-  background: color-mix(in oklch, var(--primary) 22%, transparent);
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 25%, transparent);
 }
 .call-card-play-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+/* Expanded audio player below card */
+.call-card-audio-expanded {
+  padding: 6px 14px 10px;
+  background: color-mix(in oklch, oklch(0.8 0.15 85) 8%, transparent);
+  border: 1px solid color-mix(in oklch, oklch(0.8 0.15 85) 20%, transparent);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.dark .call-card-audio-expanded {
+  background: color-mix(in oklch, oklch(0.7 0.15 85) 10%, transparent);
+  border-color: color-mix(in oklch, oklch(0.7 0.15 85) 22%, transparent);
+}
+.call-card-audio-expanded audio {
+  width: 100%;
+  height: 36px;
+  border-radius: 4px;
+}
+.call-card.has-audio-open {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* === Voice Messages === */
+.msg-voice {
+  margin-bottom: 4px;
+}
+.msg-voice-audio {
+  width: 100%;
+  max-width: 260px;
+  height: 32px;
+  border-radius: 6px;
+}
+.msg-voice-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
+  border-radius: 8px;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.msg-voice-btn:hover {
+  background: color-mix(in oklch, var(--primary) 20%, transparent);
+}
+
+/* === Video Messages (round videos) === */
+.msg-video {
+  position: relative;
+  max-width: 240px;
+  max-height: 240px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--muted);
+  aspect-ratio: 1;
+}
+.msg-video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.msg-video-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.msg-video-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  border: none;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.msg-video-btn:hover {
+  background: rgba(0,0,0,0.5);
+}
+
+/* === Document Messages === */
+.msg-document {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  max-width: 280px;
+}
+.msg-document:hover {
+  background: color-mix(in oklch, var(--muted) 80%, transparent);
+}
+.msg-doc-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+.msg-doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.msg-doc-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-doc-action {
+  font-size: 0.6875rem;
+  color: var(--primary);
+  font-weight: 500;
 }
 
 /* === Lightbox === */
