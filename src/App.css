@@ -1813,12 +1813,12 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  width: 540px;
+  width: 900px;
   max-width: 92vw;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: 80vh;
+  max-height: 90vh;
 }
 .tpl-edit-header {
   display: flex;
@@ -1891,8 +1891,8 @@ body {
 }
 .tpl-edit-textarea {
   width: 100%;
-  min-height: 100px;
-  max-height: 300px;
+  min-height: 300px;
+  max-height: 60vh;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
