@@ -95,6 +95,7 @@ interface ChatMessage {
   thumbnail: string
   message_date: string
   account_label: string
+  is_read?: boolean
   // Call-specific fields
   call_id?: string
   duration_seconds?: number
@@ -139,12 +140,15 @@ function authFetch(url: string, token: string, opts: RequestInit = {}) {
   })
 }
 
-// ===== IndexedDB thumbnail/avatar cache =====
-const CACHE_DB_NAME = 'vidnovagram_media_cache'
-const CACHE_DB_VERSION = 1
+// ===== IndexedDB cache (media, messages, contacts) =====
+const CACHE_DB_NAME = 'vidnovagram_cache'
+const CACHE_DB_VERSION = 2
 const THUMB_STORE = 'thumbnails'  // key: mediaPath, value: { blob: ArrayBuffer, type: string, ts: number }
 const AVATAR_STORE = 'avatars'    // key: clientId, value: { blob: ArrayBuffer, type: string, ts: number }
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days
+const MSG_STORE = 'messages'      // key: clientId, value: { messages: ChatMessage[], count: number, client_name: string, client_phone: string, ts: number }
+const CONTACTS_STORE = 'contacts' // key: accountId|'all', value: { contacts: Contact[], count: number, ts: number }
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days (media)
+const MSG_CACHE_TTL = 24 * 60 * 60 * 1000  // 24 hours (messages)
 
 function openCacheDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -153,6 +157,8 @@ function openCacheDB(): Promise<IDBDatabase> {
       const db = req.result
       if (!db.objectStoreNames.contains(THUMB_STORE)) db.createObjectStore(THUMB_STORE)
       if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE)
+      if (!db.objectStoreNames.contains(MSG_STORE)) db.createObjectStore(MSG_STORE)
+      if (!db.objectStoreNames.contains(CONTACTS_STORE)) db.createObjectStore(CONTACTS_STORE)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -185,6 +191,34 @@ async function putCache(store: string, key: string, blob: Blob): Promise<void> {
     const db = await openCacheDB()
     const tx = db.transaction(store, 'readwrite')
     tx.objectStore(store).put({ blob: ab, type: blob.type, ts: Date.now() }, key)
+  } catch { /* ignore */ }
+}
+
+// JSON data cache (messages, contacts)
+async function getJsonCache<T>(store: string, key: string, ttl = MSG_CACHE_TTL): Promise<T | null> {
+  try {
+    const db = await openCacheDB()
+    return new Promise((resolve) => {
+      const tx = db.transaction(store, 'readonly')
+      const req = tx.objectStore(store).get(key)
+      req.onsuccess = () => {
+        const val = req.result
+        if (val && (Date.now() - val.ts) < ttl) {
+          resolve(val as T)
+        } else {
+          resolve(null)
+        }
+      }
+      req.onerror = () => resolve(null)
+    })
+  } catch { return null }
+}
+
+async function putJsonCache(store: string, key: string, data: Record<string, unknown>): Promise<void> {
+  try {
+    const db = await openCacheDB()
+    const tx = db.transaction(store, 'readwrite')
+    tx.objectStore(store).put({ ...data, ts: Date.now() }, key)
   } catch { /* ignore */ }
 }
 
@@ -365,7 +399,12 @@ const VolumeOffIcon = () => (
   </svg>
 )
 
-// Message status icon (double check = delivered)
+// Message status icons
+const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
 const DoubleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="18 6 7 17 2 12"/><polyline points="22 6 11 17"/>
@@ -626,9 +665,20 @@ function App() {
     } catch (e) { console.error('Accounts:', e) }
   }, [auth?.token])
 
-  // Load contacts
+  // Load contacts (cache-first: show from IndexedDB, then refresh from server)
   const loadContacts = useCallback(async () => {
     if (!auth?.token) return
+    const cacheKey = `${selectedAccount || 'all'}_${search || ''}`
+
+    // Phase 0: instant load from cache (only for no-search default view)
+    if (!search) {
+      const cached = await getJsonCache<{ contacts: Contact[]; count: number }>(CONTACTS_STORE, cacheKey)
+      if (cached) {
+        setContacts(cached.contacts)
+        setContactCount(cached.count)
+      }
+    }
+
     try {
       const params = new URLSearchParams({ per_page: '50' })
       if (search) params.set('search', search)
@@ -640,6 +690,12 @@ function App() {
         const list = data.results || []
         setContacts(list)
         setContactCount(data.count || 0)
+
+        // Save to cache (only default view without search)
+        if (!search) {
+          putJsonCache(CONTACTS_STORE, cacheKey, { contacts: list, count: data.count || 0 })
+        }
+
         // Load avatar photos: IndexedDB cache first, then server
         const ids = list.map((c: Contact) => c.client_id).join(',')
         if (ids) {
@@ -674,9 +730,25 @@ function App() {
     } catch (e) { console.error('Contacts:', e) }
   }, [auth?.token, search, selectedAccount, logout])
 
-  // Load messages
+  // Load messages (cache-first: show from IndexedDB, then refresh from server)
   const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
     if (!auth?.token) return
+    const cacheKey = `${clientId}_${selectedAccount || 'all'}`
+
+    // Phase 0: instant load from cache (only on first open — scrollToEnd=true)
+    if (scrollToEnd) {
+      const cached = await getJsonCache<{ messages: ChatMessage[]; count: number; client_name: string; client_phone: string }>(MSG_STORE, cacheKey)
+      if (cached && cached.messages.length > 0) {
+        setMessages(cached.messages)
+        setMsgCount(cached.count)
+        setMsgPage(1)
+        setHasOlderMessages(Math.ceil(cached.count / 200) > 1)
+        setClientName(cached.client_name || '')
+        setClientPhone(cached.client_phone || '')
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30)
+      }
+    }
+
     try {
       const params = new URLSearchParams({ per_page: '200', page: '1' })
       if (selectedAccount) params.set('account', selectedAccount)
@@ -704,6 +776,13 @@ function App() {
         if (scrollToEnd) {
           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
         }
+        // Save to cache
+        putJsonCache(MSG_STORE, cacheKey, {
+          messages: msgs,
+          count: data.count || 0,
+          client_name: data.client_name || '',
+          client_phone: data.client_phone || '',
+        })
       }
     } catch (e) { console.error('Messages:', e) }
   }, [auth?.token, selectedAccount, logout])
@@ -1552,7 +1631,12 @@ function App() {
                           </span>
                           {m.direction === 'sent' && (
                             <span className="msg-status">
-                              <DoubleCheckIcon color="var(--primary)" />
+                              {m.is_read
+                                ? <DoubleCheckIcon color="var(--primary)" />
+                                : m.is_read === false
+                                  ? <DoubleCheckIcon color="var(--muted-foreground)" />
+                                  : <SingleCheckIcon color="var(--muted-foreground)" />
+                              }
                             </span>
                           )}
                         </div>
