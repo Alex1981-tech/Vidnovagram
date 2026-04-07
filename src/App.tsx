@@ -561,6 +561,8 @@ function App() {
   const [newTplText, setNewTplText] = useState('')
   const [newTplMedia, setNewTplMedia] = useState<File | null>(null)
   const [previewTpl, setPreviewTpl] = useState<QuickReply | null>(null)
+  const [tplEditText, setTplEditText] = useState('')
+  const [tplIncludeMedia, setTplIncludeMedia] = useState(true)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -1537,15 +1539,38 @@ function App() {
   }, [auth?.token, loadTemplateCategories])
 
   // Send template to current chat
-  const sendTemplate = useCallback(async (tpl: QuickReply) => {
+  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null) => {
     if (!selectedClient || !auth?.token) return
     setPreviewTpl(null)
     try {
       const acctId = selectedAccount || ''
+      // If media included, download it and send as multipart
+      if (mediaUrl) {
+        try {
+          const mediaResp = await authFetch(`https://cc.vidnova.app${mediaUrl}`, auth.token)
+          if (mediaResp.ok) {
+            const blob = await mediaResp.blob()
+            const ext = mediaUrl.split('.').pop() || 'bin'
+            const fd = new FormData()
+            fd.append('text', text)
+            fd.append('account_id', acctId)
+            fd.append('file', blob, `template.${ext}`)
+            const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+              method: 'POST',
+              body: fd,
+            })
+            if (resp.ok) { loadMessages(selectedClient); return }
+            const err = await resp.json().catch(() => ({}))
+            console.error('sendTemplate media error:', resp.status, err)
+            return
+          }
+        } catch (e) { console.error('sendTemplate media download error:', e) }
+      }
+      // Text only
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: tpl.text, account_id: acctId }),
+        body: JSON.stringify({ text, account_id: acctId }),
       })
       if (resp.ok) {
         loadMessages(selectedClient)
@@ -2569,7 +2594,7 @@ function App() {
                       {expandedCats.has(cat.id) && (
                         <div className="tpl-cat-body">
                           {cat.templates.map(tpl => (
-                            <div key={tpl.id} className="tpl-item" onClick={() => setPreviewTpl(tpl)}>
+                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
                               {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
                               <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} title="Видалити">
@@ -2898,30 +2923,45 @@ function App() {
       {/* Template Preview Modal */}
       {previewTpl && (
         <div className="modal-overlay" onClick={() => setPreviewTpl(null)}>
-          <div className="tpl-preview-modal" onClick={e => e.stopPropagation()}>
-            <div className="tpl-preview-header">
-              <span>Попередній перегляд</span>
+          <div className="tpl-edit-modal" onClick={e => e.stopPropagation()}>
+            <div className="tpl-edit-header">
+              <span>{previewTpl.title}</span>
               <button onClick={() => setPreviewTpl(null)}>✕</button>
             </div>
-            <div className="tpl-preview-body">
-              <div className="tpl-preview-bubble">
-                {previewTpl.media_file && (
-                  <div className="tpl-preview-media">
-                    {previewTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
-                      <img src={`https://cc.vidnova.app${previewTpl.media_file}`} alt="" />
-                    ) : (
-                      <div className="tpl-preview-file">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-                        <span>Файл</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="tpl-preview-text">{previewTpl.text}</div>
-              </div>
+            <div className="tpl-edit-body">
+              {/* Media preview with remove */}
+              {previewTpl.media_file && tplIncludeMedia && (
+                <div className="tpl-edit-media">
+                  {previewTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                    <img src={`https://cc.vidnova.app${previewTpl.media_file}`} alt="" />
+                  ) : previewTpl.media_file.match(/\.(mp4|webm|mov)/i) ? (
+                    <div className="tpl-edit-file-tag">🎬 Відео</div>
+                  ) : (
+                    <div className="tpl-edit-file-tag">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                      {previewTpl.media_file.split('/').pop()}
+                    </div>
+                  )}
+                  <button className="tpl-edit-media-remove" onClick={() => setTplIncludeMedia(false)} title="Видалити вкладення">✕</button>
+                </div>
+              )}
+              {/* Editable text */}
+              <textarea
+                className="tpl-edit-textarea"
+                value={tplEditText}
+                onChange={e => setTplEditText(e.target.value)}
+                rows={Math.max(4, tplEditText.split('\n').length + 1)}
+              />
             </div>
-            <div className="tpl-preview-footer">
-              <button className="tpl-btn-send" onClick={() => sendTemplate(previewTpl)} disabled={!selectedClient}>
+            <div className="tpl-edit-footer">
+              <span className="tpl-edit-hint">
+                {chatContact?.full_name || chatContact?.phone || ''}
+              </span>
+              <button
+                className="tpl-btn-send"
+                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null)}
+                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file))}
+              >
                 <SendIcon /> Відправити
               </button>
             </div>
