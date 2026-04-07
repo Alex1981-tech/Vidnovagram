@@ -1348,6 +1348,48 @@ body {
   color: oklch(0.55 0 0);
 }
 
+/* Phone availability badges */
+.phone-avail-badges {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.avail-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+.avail-badge.tg {
+  background: oklch(0.88 0.08 230);
+  color: oklch(0.35 0.15 230);
+}
+.avail-badge.wa {
+  background: oklch(0.88 0.08 155);
+  color: oklch(0.3 0.15 155);
+}
+.avail-badge.none {
+  background: oklch(0.9 0 0);
+  color: oklch(0.5 0 0);
+}
+.dark .avail-badge.tg {
+  background: oklch(0.3 0.08 230);
+  color: oklch(0.75 0.12 230);
+}
+.dark .avail-badge.wa {
+  background: oklch(0.3 0.08 155);
+  color: oklch(0.75 0.12 155);
+}
+.dark .avail-badge.none {
+  background: oklch(0.25 0 0);
+  color: oklch(0.55 0 0);
+}
+
 /* Context menu */
 .ctx-menu-overlay {
   position: fixed;

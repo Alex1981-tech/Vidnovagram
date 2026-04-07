@@ -613,7 +613,9 @@ function App() {
   const [addContactAccount, setAddContactAccount] = useState('')
   const [addContactSuggestions, setAddContactSuggestions] = useState<{ client_id: string; phone: string; full_name: string }[]>([])
   const [addContactShowSuggestions, setAddContactShowSuggestions] = useState(false)
+  const [addContactAvail, setAddContactAvail] = useState<{ whatsapp?: boolean; telegram?: boolean } | null>(null)
   const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const addContactCheckTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -1178,6 +1180,20 @@ function App() {
         }
       } catch { /* ignore */ }
     }, 300)
+  }, [auth?.token])
+
+  // Check phone availability in messengers (debounced)
+  const checkPhoneAvail = useCallback((phone: string) => {
+    if (!auth?.token) return
+    const clean = phone.replace(/[\s\-\(\)\+]/g, '')
+    if (clean.length < 10) { setAddContactAvail(null); return }
+    clearTimeout(addContactCheckTimer.current)
+    addContactCheckTimer.current = setTimeout(async () => {
+      try {
+        const resp = await authFetch(`${API_BASE}/telegram/check-phone/?phone=${encodeURIComponent(clean)}`, auth.token)
+        if (resp.ok) setAddContactAvail(await resp.json())
+      } catch { /* ignore */ }
+    }, 500)
   }, [auth?.token])
 
   // Start new chat: find/create client by phone, then open chat
@@ -2491,7 +2507,7 @@ function App() {
 
       {/* New Chat / Add Contact Modal */}
       {showAddContact && (
-        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
+        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null) }}>
           <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 380 }}>
             <h3>Новий чат</h3>
             <select
@@ -2527,6 +2543,7 @@ function App() {
                         setAddContactPhone(s.phone)
                         setAddContactShowSuggestions(false)
                         setAddContactSuggestions([])
+                        checkPhoneAvail(s.phone)
                       }}
                     >
                       <span className="suggestion-name">{s.full_name || '—'}</span>
@@ -2536,16 +2553,27 @@ function App() {
                 </div>
               )}
             </div>
-            <input
-              className="forward-modal-search"
-              placeholder="Номер телефону"
-              value={addContactPhone}
-              onChange={e => {
-                setAddContactPhone(e.target.value)
-                if (e.target.value.length >= 3 && !addContactName) searchAddContactSuggestions(e.target.value)
-              }}
-              style={{ marginTop: 8 }}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                className="forward-modal-search"
+                placeholder="Номер телефону"
+                value={addContactPhone}
+                onChange={e => {
+                  setAddContactPhone(e.target.value)
+                  setAddContactAvail(null)
+                  checkPhoneAvail(e.target.value)
+                  if (e.target.value.length >= 3 && !addContactName) searchAddContactSuggestions(e.target.value)
+                }}
+                style={{ marginTop: 8, paddingRight: 60 }}
+              />
+              {addContactAvail && (
+                <div className="phone-avail-badges">
+                  {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
+                  {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
+                  {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
+                </div>
+              )}
+            </div>
             {addContactResult && (
               <div className={`add-contact-result ${addContactResult.includes('Помилка') ? 'warn' : 'ok'}`}>
                 {addContactResult}
@@ -2566,7 +2594,7 @@ function App() {
               >
                 Додати в акаунт
               </button>
-              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
+              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null) }}>
                 Скасувати
               </button>
             </div>
