@@ -17,6 +17,16 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.6.0': [
+    'Шаблони повідомлень — категорії з кольорами',
+    'Шаблони — прикріплення медіа (фото, відео, документи)',
+    'Попередній перегляд шаблону з кнопкою Відправити',
+    'Пагінація повідомлень — завантаження старіших',
+    'Кольорові бульки — синій TG, зелений WhatsApp',
+    'WebSocket — реальний час в чаті',
+    'Сповіщення Windows',
+    'Конвертація голосових OGG→WAV',
+  ],
   '0.5.1': [
     'Фото повідомлення — відображення та лайтбокс',
     'Документи/PDF — збереження на диск та відкриття',
@@ -101,13 +111,20 @@ interface ClientNote {
   updated_at?: string
 }
 
+interface TemplateCategory {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+  templates: QuickReply[]
+}
+
 interface QuickReply {
   id: string
+  category_id: string
   title: string
   text: string
-  is_global: boolean
-  author_id: number
-  author_name: string
+  media_file: string | null
   sort_order: number
 }
 
@@ -425,13 +442,18 @@ function App() {
   // Right panel
   const [rightTab, setRightTab] = useState<'notes' | 'quick'>('notes')
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([])
-  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
+  const [templateCategories, setTemplateCategories] = useState<TemplateCategory[]>([])
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
   const [newNoteText, setNewNoteText] = useState('')
-  const [newQrTitle, setNewQrTitle] = useState('')
-  const [newQrText, setNewQrText] = useState('')
-  const [editingQr, setEditingQr] = useState<string | null>(null)
-  const [editQrTitle, setEditQrTitle] = useState('')
-  const [editQrText, setEditQrText] = useState('')
+  // Template modals
+  const [showCatModal, setShowCatModal] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatColor, setNewCatColor] = useState('#6366f1')
+  const [showTplModal, setShowTplModal] = useState<string | null>(null) // category_id
+  const [newTplTitle, setNewTplTitle] = useState('')
+  const [newTplText, setNewTplText] = useState('')
+  const [newTplMedia, setNewTplMedia] = useState<File | null>(null)
+  const [previewTpl, setPreviewTpl] = useState<QuickReply | null>(null)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -751,12 +773,17 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token])
 
-  // Load quick replies
-  const loadQuickReplies = useCallback(async () => {
+  // Load template categories with templates
+  const loadTemplateCategories = useCallback(async () => {
     if (!auth?.token) return
     try {
-      const resp = await authFetch(`${API_BASE}/messenger/quick-replies/`, auth.token)
-      if (resp.ok) setQuickReplies(await resp.json())
+      const resp = await authFetch(`${API_BASE}/messenger/template-categories/`, auth.token)
+      if (resp.ok) {
+        const cats: TemplateCategory[] = await resp.json()
+        setTemplateCategories(cats)
+        // Auto-expand all categories on first load
+        if (cats.length > 0) setExpandedCats(prev => prev.size === 0 ? new Set(cats.map(c => c.id)) : prev)
+      }
     } catch { /* ignore */ }
   }, [auth?.token])
 
@@ -787,45 +814,88 @@ function App() {
     } catch { /* ignore */ }
   }, [selectedClient, auth?.token, loadClientNotes])
 
-  // Add quick reply
-  const addQuickReply = useCallback(async () => {
-    if (!newQrTitle.trim() || !newQrText.trim() || !auth?.token) return
+  // Add template category
+  const addCategory = useCallback(async () => {
+    if (!newCatName.trim() || !auth?.token) return
     try {
-      const resp = await authFetch(`${API_BASE}/messenger/quick-replies/`, auth.token, {
+      const resp = await authFetch(`${API_BASE}/messenger/template-categories/`, auth.token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newQrTitle.trim(), text: newQrText.trim() }),
+        body: JSON.stringify({ name: newCatName.trim(), color: newCatColor }),
       })
       if (resp.ok) {
-        setNewQrTitle('')
-        setNewQrText('')
-        loadQuickReplies()
+        setNewCatName('')
+        setNewCatColor('#6366f1')
+        setShowCatModal(false)
+        loadTemplateCategories()
       }
     } catch { /* ignore */ }
-  }, [newQrTitle, newQrText, auth?.token, loadQuickReplies])
+  }, [newCatName, newCatColor, auth?.token, loadTemplateCategories])
 
-  // Save quick reply edit
-  const saveQuickReply = useCallback(async (id: string) => {
+  // Delete category
+  const deleteCategory = useCallback(async (id: string) => {
     if (!auth?.token) return
     try {
-      await authFetch(`${API_BASE}/messenger/quick-replies/${id}/`, auth.token, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editQrTitle.trim(), text: editQrText.trim() }),
-      })
-      setEditingQr(null)
-      loadQuickReplies()
+      await authFetch(`${API_BASE}/messenger/template-categories/${id}/`, auth.token, { method: 'DELETE' })
+      loadTemplateCategories()
     } catch { /* ignore */ }
-  }, [auth?.token, editQrTitle, editQrText, loadQuickReplies])
+  }, [auth?.token, loadTemplateCategories])
 
-  // Delete quick reply
-  const deleteQuickReply = useCallback(async (id: string) => {
+  // Add template to category
+  const addTemplate = useCallback(async () => {
+    if (!newTplTitle.trim() || !newTplText.trim() || !showTplModal || !auth?.token) return
+    try {
+      const formData = new FormData()
+      formData.append('title', newTplTitle.trim())
+      formData.append('text', newTplText.trim())
+      formData.append('category_id', showTplModal)
+      if (newTplMedia) formData.append('media_file', newTplMedia)
+
+      const resp = await fetch(`${API_BASE}/messenger/quick-replies/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${auth.token}` },
+        body: formData,
+      })
+      if (resp.ok) {
+        setNewTplTitle('')
+        setNewTplText('')
+        setNewTplMedia(null)
+        setShowTplModal(null)
+        loadTemplateCategories()
+      }
+    } catch { /* ignore */ }
+  }, [newTplTitle, newTplText, newTplMedia, showTplModal, auth?.token, loadTemplateCategories])
+
+  // Delete template
+  const deleteTemplate = useCallback(async (id: string) => {
     if (!auth?.token) return
     try {
       await authFetch(`${API_BASE}/messenger/quick-replies/${id}/`, auth.token, { method: 'DELETE' })
-      loadQuickReplies()
+      loadTemplateCategories()
     } catch { /* ignore */ }
-  }, [auth?.token, loadQuickReplies])
+  }, [auth?.token, loadTemplateCategories])
+
+  // Send template to current chat
+  const sendTemplate = useCallback(async (tpl: QuickReply) => {
+    if (!selectedClient || !auth?.token) return
+    // Insert text into message and send
+    setMessageText(tpl.text)
+    setPreviewTpl(null)
+    // Auto-send after a tick
+    setTimeout(async () => {
+      try {
+        const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: tpl.text }),
+        })
+        if (resp.ok) {
+          setMessageText('')
+          loadMessages(selectedClient)
+        }
+      } catch { /* ignore */ }
+    }, 50)
+  }, [selectedClient, auth?.token, loadMessages])
 
   // Load call audio via auth → blob URL
   const loadCallAudio = useCallback(async (callId: string, mediaPath: string) => {
@@ -914,18 +984,22 @@ function App() {
     setMediaLoading(prev => ({ ...prev, [docKey]: false }))
   }, [auth?.token])
 
-  // Insert quick reply into message input
-  const insertQuickReply = useCallback((text: string) => {
-    setMessageText(prev => prev ? prev + '\n' + text : text)
+  // Toggle category expand/collapse
+  const toggleCat = useCallback((id: string) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }, [])
 
   // Load accounts on auth
   useEffect(() => {
     if (auth?.authorized) {
       loadAccounts()
-      loadQuickReplies()
+      loadTemplateCategories()
     }
-  }, [auth?.authorized, loadAccounts, loadQuickReplies])
+  }, [auth?.authorized, loadAccounts, loadTemplateCategories])
 
   // Load contacts with debounce on search change
   useEffect(() => {
@@ -1566,66 +1640,44 @@ function App() {
             ) : (
               <div className="rp-quick">
                 <div className="rp-quick-list">
-                  {quickReplies.length === 0 && (
-                    <div className="rp-empty">Немає швидких відповідей</div>
+                  {templateCategories.length === 0 && (
+                    <div className="rp-empty">Немає шаблонів</div>
                   )}
-                  {quickReplies.map(qr => (
-                    <div key={qr.id} className="rp-qr-item">
-                      {editingQr === qr.id ? (
-                        <div className="rp-qr-edit">
-                          <input
-                            value={editQrTitle}
-                            onChange={e => setEditQrTitle(e.target.value)}
-                            placeholder="Назва"
-                          />
-                          <textarea
-                            value={editQrText}
-                            onChange={e => setEditQrText(e.target.value)}
-                            placeholder="Текст"
-                            rows={2}
-                          />
-                          <div className="rp-qr-edit-btns">
-                            <button className="rp-save-btn" onClick={() => saveQuickReply(qr.id)}>Зберегти</button>
-                            <button className="rp-cancel-btn" onClick={() => setEditingQr(null)}>Скасувати</button>
-                          </div>
+                  {templateCategories.map(cat => (
+                    <div key={cat.id} className="tpl-cat">
+                      <div className="tpl-cat-header" style={{ borderLeftColor: cat.color }} onClick={() => toggleCat(cat.id)}>
+                        <svg className={`tpl-chevron ${expandedCats.has(cat.id) ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                        <span className="tpl-cat-name" style={{ color: cat.color }}>{cat.name}</span>
+                        <span className="tpl-cat-count">{cat.templates.length}</span>
+                        <div className="tpl-cat-actions">
+                          <button className="tpl-add-btn" onClick={e => { e.stopPropagation(); setShowTplModal(cat.id); setNewTplTitle(''); setNewTplText(''); setNewTplMedia(null) }} title="Додати шаблон">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+                          </button>
+                          <button className="rp-delete-btn" onClick={e => { e.stopPropagation(); deleteCategory(cat.id) }} title="Видалити категорію">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          </button>
                         </div>
-                      ) : (
-                        <>
-                          <div className="rp-qr-header">
-                            <span className="rp-qr-title">{qr.title}</span>
-                            <div className="rp-qr-actions">
-                              <button className="rp-insert-btn" onClick={() => insertQuickReply(qr.text)} title="Вставити в повідомлення">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                              </button>
-                              <button className="rp-edit-btn" onClick={() => { setEditingQr(qr.id); setEditQrTitle(qr.title); setEditQrText(qr.text) }} title="Редагувати">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
-                              <button className="rp-delete-btn" onClick={() => deleteQuickReply(qr.id)} title="Видалити">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                      </div>
+                      {expandedCats.has(cat.id) && (
+                        <div className="tpl-cat-body">
+                          {cat.templates.map(tpl => (
+                            <div key={tpl.id} className="tpl-item" onClick={() => setPreviewTpl(tpl)}>
+                              <span className="tpl-item-title">{tpl.title}</span>
+                              {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
+                              <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} title="Видалити">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                               </button>
                             </div>
-                          </div>
-                          <div className="rp-qr-text">{qr.text}</div>
-                        </>
+                          ))}
+                        </div>
                       )}
                     </div>
                   ))}
                 </div>
-                <div className="rp-add-form rp-add-qr">
-                  <input
-                    value={newQrTitle}
-                    onChange={e => setNewQrTitle(e.target.value)}
-                    placeholder="Назва шаблону"
-                  />
-                  <textarea
-                    value={newQrText}
-                    onChange={e => setNewQrText(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addQuickReply() } }}
-                    placeholder="Текст шаблону... (Ctrl+Enter)"
-                    rows={2}
-                  />
-                  <button onClick={addQuickReply} disabled={!newQrTitle.trim() || !newQrText.trim()}>
-                    <SendIcon />
+                <div className="tpl-bottom-btn">
+                  <button onClick={() => { setShowCatModal(true); setNewCatName(''); setNewCatColor('#6366f1') }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+                    Додати категорію
                   </button>
                 </div>
               </div>
@@ -1656,6 +1708,98 @@ function App() {
       {lightboxSrc && (
         <div className="lightbox" onClick={() => setLightboxSrc(null)}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* Add Category Modal */}
+      {showCatModal && (
+        <div className="modal-overlay" onClick={() => setShowCatModal(false)}>
+          <div className="tpl-modal" onClick={e => e.stopPropagation()}>
+            <h3>Нова категорія</h3>
+            <input
+              value={newCatName}
+              onChange={e => setNewCatName(e.target.value)}
+              placeholder="Назва категорії"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') addCategory() }}
+            />
+            <div className="tpl-color-row">
+              <span>Колір:</span>
+              <div className="tpl-colors">
+                {['#6366f1','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#64748b'].map(c => (
+                  <button key={c} className={`tpl-color-dot ${newCatColor === c ? 'active' : ''}`} style={{ background: c }} onClick={() => setNewCatColor(c)} />
+                ))}
+              </div>
+            </div>
+            <div className="tpl-modal-btns">
+              <button className="tpl-btn-primary" onClick={addCategory} disabled={!newCatName.trim()}>Створити</button>
+              <button className="tpl-btn-secondary" onClick={() => setShowCatModal(false)}>Скасувати</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Template Modal */}
+      {showTplModal && (
+        <div className="modal-overlay" onClick={() => setShowTplModal(null)}>
+          <div className="tpl-modal" onClick={e => e.stopPropagation()}>
+            <h3>Новий шаблон</h3>
+            <input
+              value={newTplTitle}
+              onChange={e => setNewTplTitle(e.target.value)}
+              placeholder="Коротка назва"
+              autoFocus
+            />
+            <textarea
+              value={newTplText}
+              onChange={e => setNewTplText(e.target.value)}
+              placeholder="Текст повідомлення..."
+              rows={4}
+            />
+            <label className="tpl-media-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              {newTplMedia ? newTplMedia.name : 'Прикріпити медіа'}
+              <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => setNewTplMedia(e.target.files?.[0] || null)} hidden />
+            </label>
+            <div className="tpl-modal-btns">
+              <button className="tpl-btn-primary" onClick={addTemplate} disabled={!newTplTitle.trim() || !newTplText.trim()}>Додати</button>
+              <button className="tpl-btn-secondary" onClick={() => setShowTplModal(null)}>Скасувати</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Preview Modal */}
+      {previewTpl && (
+        <div className="modal-overlay" onClick={() => setPreviewTpl(null)}>
+          <div className="tpl-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="tpl-preview-header">
+              <span>Попередній перегляд</span>
+              <button onClick={() => setPreviewTpl(null)}>✕</button>
+            </div>
+            <div className="tpl-preview-body">
+              <div className="tpl-preview-bubble">
+                {previewTpl.media_file && (
+                  <div className="tpl-preview-media">
+                    {previewTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                      <img src={`https://cc.vidnova.app${previewTpl.media_file}`} alt="" />
+                    ) : (
+                      <div className="tpl-preview-file">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                        <span>Файл</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="tpl-preview-text">{previewTpl.text}</div>
+              </div>
+            </div>
+            <div className="tpl-preview-footer">
+              <button className="tpl-btn-send" onClick={() => sendTemplate(previewTpl)} disabled={!selectedClient}>
+                <SendIcon /> Відправити
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
