@@ -17,6 +17,11 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.7.3': [
+    'Додавання контакту — вибір конкретного акаунту (TG/WA)',
+    'Автодоповнення з бази при введенні імені або телефону',
+    'Виправлено відправку голосових та відеоповідомлень (помилка 500)',
+  ],
   '0.7.2': [
     'Виправлено запис та відправку голосових повідомлень',
     'Виправлено запис відеокружків — превʼю камери працює',
@@ -604,6 +609,10 @@ function App() {
   const [addContactPhone, setAddContactPhone] = useState('')
   const [addContactLoading, setAddContactLoading] = useState(false)
   const [addContactResult, setAddContactResult] = useState<string>('')
+  const [addContactAccount, setAddContactAccount] = useState('')
+  const [addContactSuggestions, setAddContactSuggestions] = useState<{ client_id: string; phone: string; full_name: string }[]>([])
+  const [addContactShowSuggestions, setAddContactShowSuggestions] = useState(false)
+  const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -1155,27 +1164,53 @@ function App() {
   }, [auth?.token, selectedMsgIds, selectedClient, messages, forwardAccount, selectedAccount, exitForwardMode])
 
   // Add contact
+  const searchAddContactSuggestions = useCallback((q: string) => {
+    if (!auth?.token || q.length < 2) { setAddContactSuggestions([]); return }
+    clearTimeout(addContactSugTimer.current)
+    addContactSugTimer.current = setTimeout(async () => {
+      try {
+        const resp = await authFetch(`${API_BASE}/telegram/new-chat/?q=${encodeURIComponent(q)}`, auth.token)
+        if (resp.ok) {
+          const data = await resp.json()
+          setAddContactSuggestions(data)
+          setAddContactShowSuggestions(data.length > 0)
+        }
+      } catch { /* ignore */ }
+    }, 300)
+  }, [auth?.token])
+
   const addContact = useCallback(async () => {
     if (!auth?.token || !addContactPhone.trim()) return
+    const acctId = addContactAccount || selectedAccount
+    if (!acctId) { setAddContactResult('Оберіть акаунт'); return }
     setAddContactLoading(true)
     setAddContactResult('')
     try {
       const resp = await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: addContactPhone.trim(), name: addContactName.trim() }),
+        body: JSON.stringify({ phone: addContactPhone.trim(), name: addContactName.trim(), account_id: acctId }),
       })
       const data = await resp.json()
       if (resp.ok) {
-        const tgStatus = data.telegram ? 'Telegram знайдено ✓' : 'Telegram не знайдено'
-        setAddContactResult(`Контакт ${data.created ? 'створено' : 'вже існує'}. ${tgStatus}`)
-        // Refresh contacts after 1.5s
+        const acct = accounts.find(a => a.id === acctId)
+        const acctLabel = acct ? acct.label : ''
+        const m = data.messenger || {}
+        let statusText = ''
+        if (m.error) {
+          statusText = `Помилка: ${m.error}`
+        } else if (m.already) {
+          statusText = `Контакт вже є в ${acctLabel}`
+        } else if (m.added) {
+          statusText = `Контакт додано в ${acctLabel}`
+        }
+        if (data.created) statusText += ' (новий в базі)'
+        setAddContactResult(statusText)
         setTimeout(() => {
           loadContacts()
           setShowAddContact(false)
-          setAddContactName('')
-          setAddContactPhone('')
-          setAddContactResult('')
+          setAddContactName(''); setAddContactPhone(''); setAddContactResult('')
+          setAddContactSuggestions([]); setAddContactShowSuggestions(false)
         }, 2000)
       } else {
         setAddContactResult(data.error || 'Помилка')
@@ -1185,7 +1220,7 @@ function App() {
     } finally {
       setAddContactLoading(false)
     }
-  }, [auth?.token, addContactPhone, addContactName])
+  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, loadContacts])
 
   // Fetch unread updates
   const loadUpdates = useCallback(async () => {
@@ -2400,25 +2435,63 @@ function App() {
 
       {/* Add Contact Modal */}
       {showAddContact && (
-        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult('') }}>
-          <div className="forward-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
+          <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 360 }}>
             <h3>Додати контакт</h3>
-            <input
+            <select
               className="forward-modal-search"
-              placeholder="Ім'я"
-              value={addContactName}
-              onChange={e => setAddContactName(e.target.value)}
-              autoFocus
-            />
+              value={addContactAccount || selectedAccount}
+              onChange={e => setAddContactAccount(e.target.value)}
+              style={{ marginBottom: 8 }}
+            >
+              <option value="">-- Оберіть акаунт --</option>
+              {accounts.filter(a => a.status === 'active' || a.status === 'connected').map(a => (
+                <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
+              ))}
+            </select>
+            <div style={{ position: 'relative' }}>
+              <input
+                className="forward-modal-search"
+                placeholder="Ім'я або телефон"
+                value={addContactName}
+                onChange={e => {
+                  setAddContactName(e.target.value)
+                  searchAddContactSuggestions(e.target.value)
+                }}
+                onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
+                autoFocus
+              />
+              {addContactShowSuggestions && addContactSuggestions.length > 0 && (
+                <div className="add-contact-suggestions">
+                  {addContactSuggestions.map(s => (
+                    <div key={s.client_id} className="add-contact-suggestion-item"
+                      onMouseDown={() => {
+                        setAddContactName(s.full_name)
+                        setAddContactPhone(s.phone)
+                        setAddContactShowSuggestions(false)
+                        setAddContactSuggestions([])
+                      }}
+                    >
+                      <span className="suggestion-name">{s.full_name || '—'}</span>
+                      <span className="suggestion-phone">{s.phone}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <input
               className="forward-modal-search"
               placeholder="Номер телефону"
               value={addContactPhone}
-              onChange={e => setAddContactPhone(e.target.value)}
+              onChange={e => {
+                setAddContactPhone(e.target.value)
+                if (e.target.value.length >= 3 && !addContactName) searchAddContactSuggestions(e.target.value)
+              }}
               style={{ marginTop: 8 }}
             />
             {addContactResult && (
-              <div className={`add-contact-result ${addContactResult.includes('не знайдено') ? 'warn' : 'ok'}`}>
+              <div className={`add-contact-result ${addContactResult.includes('Помилка') ? 'warn' : 'ok'}`}>
                 {addContactResult}
               </div>
             )}
@@ -2426,11 +2499,11 @@ function App() {
               <button
                 className="tpl-btn-primary"
                 onClick={addContact}
-                disabled={addContactLoading || !addContactPhone.trim()}
+                disabled={addContactLoading || !addContactPhone.trim() || !(addContactAccount || selectedAccount)}
               >
                 {addContactLoading ? 'Додаю...' : 'Додати'}
               </button>
-              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult('') }}>
+              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false) }}>
                 Скасувати
               </button>
             </div>

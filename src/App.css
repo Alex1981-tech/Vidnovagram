@@ -1305,6 +1305,49 @@ body {
   color: oklch(0.75 0.1 70);
 }
 
+/* Add contact suggestions dropdown */
+.add-contact-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: oklch(0.98 0 0);
+  border: 1px solid oklch(0.85 0 0);
+  border-radius: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 2px;
+}
+.dark .add-contact-suggestions {
+  background: oklch(0.22 0 0);
+  border-color: oklch(0.35 0 0);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.add-contact-suggestion-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  gap: 8px;
+}
+.add-contact-suggestion-item:hover {
+  background: oklch(0.94 0.02 260);
+}
+.dark .add-contact-suggestion-item:hover {
+  background: oklch(0.28 0.02 260);
+}
+.suggestion-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.suggestion-phone {
+  font-size: 12px;
+  color: oklch(0.55 0 0);
+}
+
 /* Context menu */
 .ctx-menu-overlay {
   position: fixed;
