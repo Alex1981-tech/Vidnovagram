@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://cc.vidnova.app wss://cc.vidnova.app; img-src 'self' https://cc.vidnova.app data: blob:; media-src 'self' data: blob: mediastream:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://cc.vidnova.app wss://cc.vidnova.app; img-src 'self' https: data: blob:; media-src 'self' data: blob: mediastream:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
