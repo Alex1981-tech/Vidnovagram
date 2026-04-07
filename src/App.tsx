@@ -18,6 +18,9 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
   '0.7.3': [
+    'Сповіщення — бейдж непрочитаних на лівій панелі',
+    'Спливаючі тости нових повідомлень (клік → перехід у чат)',
+    'Звук сповіщення для нових повідомлень',
     'Новий чат — написати будь-кому за номером телефону (TG/WA)',
     'Додавання контакту в конкретний акаунт (TG/WA)',
     'Автодоповнення з бази при введенні імені або телефону',
@@ -567,6 +570,10 @@ function App() {
 
   // Unread tracking
   const [updates, setUpdates] = useState<Record<string, { last_date: string; last_received: string }>>({})
+
+  // In-app toast notifications
+  const [toasts, setToasts] = useState<{ id: number; clientId: string; title: string; text: string; time: number }[]>([])
+  const toastIdRef = useRef(0)
 
   const wsRef = useRef<WebSocket | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -1250,7 +1257,7 @@ function App() {
     }
   }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, loadMessages, loadContacts])
 
-  // Add contact to specific messenger account
+  // Add contact to specific messenger account, then open the chat
   const addContact = useCallback(async () => {
     if (!auth?.token || !addContactPhone.trim()) return
     const acctId = addContactAccount || selectedAccount
@@ -1271,19 +1278,20 @@ function App() {
         let statusText = ''
         if (m.error) {
           statusText = `Помилка: ${m.error}`
-        } else if (m.already) {
-          statusText = `Контакт вже є в ${acctLabel}`
-        } else if (m.added) {
-          statusText = `Контакт додано в ${acctLabel}`
-        }
-        if (data.created) statusText += ' (новий в базі)'
-        setAddContactResult(statusText)
-        setTimeout(() => {
-          loadContacts()
+          setAddContactResult(statusText)
+        } else {
+          if (m.already) statusText = `Контакт вже є в ${acctLabel}`
+          else if (m.added) statusText = `Контакт додано в ${acctLabel}`
+          if (data.created) statusText += ' (новий в базі)'
+          // Close modal and open chat with this contact
           setShowAddContact(false)
           setAddContactName(''); setAddContactPhone(''); setAddContactResult('')
-          setAddContactSuggestions([]); setAddContactShowSuggestions(false)
-        }, 2000)
+          setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null)
+          if (acctId !== selectedAccount) setSelectedAccount(acctId)
+          setSelectedClient(data.client_id)
+          loadMessages(data.client_id)
+          loadContacts()
+        }
       } else {
         setAddContactResult(data.error || 'Помилка')
       }
@@ -1292,7 +1300,7 @@ function App() {
     } finally {
       setAddContactLoading(false)
     }
-  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, loadContacts])
+  }, [auth?.token, addContactPhone, addContactName, addContactAccount, selectedAccount, accounts, loadContacts, loadMessages])
 
   // Fetch unread updates
   const loadUpdates = useCallback(async () => {
@@ -1616,10 +1624,12 @@ function App() {
   const loadMessagesRef = useRef(loadMessages)
   const loadUpdatesRef = useRef(loadUpdates)
   const soundEnabledRef = useRef(soundEnabled)
+  const addToastRef = useRef(addToast)
   useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
+  useEffect(() => { addToastRef.current = addToast }, [addToast])
 
   // WebSocket — stable connection, only depends on auth.token
   useEffect(() => {
@@ -1651,18 +1661,20 @@ function App() {
               loadMessagesRef.current(clientId, true)
             }
 
-            // Notification for received messages (Windows toast)
+            // Notification for received messages
             if (msg.direction === 'received' || data.source) {
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
-                showNotification(
-                  msg.client_name || msg.account_label || 'Нове повідомлення',
-                  msg.text?.slice(0, 120) || '📎 Медіа'
-                )
+                const title = msg.client_name || msg.account_label || 'Нове повідомлення'
+                const body = msg.text?.slice(0, 120) || '📎 Медіа'
+                // Windows notification (when minimized/background)
+                showNotification(title, body)
+                // In-app toast (when app is visible)
+                addToastRef.current(clientId, title, body)
               }
               // Play sound for new received messages
               if (soundEnabledRef.current && !isCurrentChat) {
-                try { new Audio('data:audio/wav;base64,UklGRl9vT19telegramXZmb3JtYXQAAA==').play().catch(() => {}) } catch {}
+                try { new Audio('data:audio/wav;base64,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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGIAYQALAH7+af7s/5ucqanage/8dvth/5ae2wuhaj7afphh/kwgkag0au/4d/yi/cmhvguea773q/ol++0ijq5dbz2dpco+cyi8r41pgpll/3kfge1jkegpexzxfcbr2ipk1g4bx1/3oxqhaqll0b5kdifru0zbpk+ose8sv+i3idibmb87x1zf4eiarm24l4v9o2vtmhucmb0wq6zglgfzw69fm0cjtdrbdmhmsowtkzmznxdft+4simjmii6d8rthozbriwgomlbkxxhbo7zjqk9e48piyudg/kniiwoafzd3zfp/gjb4zsibj+u3w3m115qmoni0tmat5ep2zwrtwfo9g2gy3ig3btze08wd3fqcdyfvmiaeelpz/1j7os+gdeqav2y7gepnnhs6w1if2ax7gmtmm+ahb29bmgt6ubryphzjug//y3tkuzz7rjhqymhmtqg0m5crng9a/+fkgizogjlf+onkozqnhzqjykqyxorjg72zru9a+7hkxmjhck4akbuibzydy/fxlizezryj3+4zxe82x4/0loszbmlkv0uwq0btsvfh1gqaygcplb9xf7cyn2j0arsukmm8ofo/ii1rzoduyhdyiuqs+8etfpgs+c03v0thyzmigodirezc7m9nx+a84nrjishqj15npwzlxpnrj0l2auqw/z5j3outwt91kf/jiojs0actvkzgbfvabfkr4ycrrfvts+m9m7dcvlddnlikmkustzttx5/rbis4zzson/d3yl8354fijkstamzkxxu7z0dhrwo8igiixxytbcx3hhc1b2sf+oyqpm2chtvrylq7nroqfdtatyjcqfl7rw8+b0nty9bo8mmspiwbv3tzmdttoaxum7zlehhx3/triznrnprchljkvprhl6mxonnssf9asdwzjsj+qchnzqznddhqashkiaynrzl81dtsc9j6kst4s/ely0o8ex6zfrv1phdibuzrcwk/z7a+cxo4omhbyrdmw8zwfdr0wlqye1ffu8wvsxnczhjas3r1xh8usiym/uiy/wf2fbn7eixcyssbzgpfq7tgdct0xpwkbnlmz0qnqip4p/mb9ps/wslgjoicicb5kdbpzarlpg66lf0vlxot6mlpknou8/abczk9kpoed7rzenckgi3j84y7h3v9v7ur86c6fcrgd/clrsqw+d2zthuxpachucyqya6abdb2myx3tefoykmsjobxplb0qjpc+tefeiwvy1udfhkvs2n1vz5kcemm3ukef532rtno+ekcrmrlzfrkkxvu9ht0hjuubddmbwrqwo84jnnqng7/zijmdmziizzteflzexjoqy/lk4wgrwy7bxql9kq8soadtl1kq0hpt/pznhaewtxjquzmh/+94dvks6s5lwpps6sl4isn+kiz7vtt/tphkiyasjrazdzswh3bwd9cekmvocy/tf0wlpjenveosvri5wd73mls541er3ir8dm+ulkadg2ujmlt/5bukpeti8gqtxonin0ixsbxwnmmkstwz244jnwtcl+0kirzohi0/9tdg2zsvilwqyk0exvbef7ifrkdg87w4y4zbykvui4+erzk7ab/5si64xmybc+h/yjm/p5dimacaxloitfuwr0gruzfoqgwwv2iakbdtgjna0nokb6snal2kcfcwgjdsmqukzd8eqcsvfd7trrntz2nx27xq3luqjyaic4flst+fabbikssy8gcd1mdhrvuttdrhrk9anmww/6bfu4nsj+t0bySu4h33/ud+t1e3l3wbri+8pmbui80rzwniwsk0snsiojdyjh+hn1kjf+/x3hkkpprzhp/kffl9fg6byidimbjb4rqvfc2m7b6pp5eyknbye7bltntnim4qn/vhxej9kykvpj39dzhozecrgimyszmds7vfnuk3uj28hr9jq0egapa5mha8uuoarcc8cstfyv4aucknvlqy2it8hmauszhepcpugs+zovnipcgggbsead3cxpkwrkggqicrlu9jfhvd9h8twndirhhs8i2+2c3rrkmpzxfzihvhfz/tpm+9457pvfyrvchnkpbvvf4iripfxsdvwetxtcblrteodbhnf+xvhhrsu8vw/53thj+9/b+saeh2xdfb0j+mb5ap3eg9phwiy9gmm7x3isupqalsverzdevx78oca5ovxtgjogvoahqqm8w/l1of5+dqpdruffewebpe2l5ifthai0faoagw8e+ulomoz/9j8jebiifeehd/pb5pzqd/zid3qzvxioajzt6oy78iqday3ygiom//gq6jxp3vy7cu4w8bsibdzynohseeh9pw9sfxyqrf5a7khpx/khbgqtsbukckf4dovq6wt5iwo3fuwswwp38pvq7+9v/ycpgbwqdjxr9jo+p6yb1cwujeistaaajz9wntzu7t+pekwbo7dycCV/o47g3ytalbldssmwur/epwf+5u9/ofrhcrea8gtvfj7uxwlfxqclgrxg3qaprzro7g9libzq1zeauj8fuz8yxwsvk3bgsnnq5bbnt3r/bs8/v9ygk9d/ekwf/d9c/x9vzmaismpg4jb537ifpt8gf7lazadil6qji+llyovuc/wijdg3ccpn++/v78/x40qk+crsLrAWR+9t0spwf/nkfuguHCbkb9vjO9ND39f/9b9ikvwz6/lh3yfxb+vmciqlicrsdzmut9o73w/1cbugwgfpaot5+/bw+yyavgaqco0eq/7y+bl4u/znalsHKAdxAk38pfi5+b3+agqqb1ifkwao+zl5rvvqaesfTgZRA1X+jppp+qr9yqjzbf0eaghr/bb6xptx/1qd/qr0a9d/b/xs+1p90gcoaxqe7wgu/mb8evzb/rebbapmwqqafp7b/kn93f8fasgrxqg8/wl+pp3b/owa2whpacoas/9h/oz+lf+/afebbaelaFT/C/9h/wmAgACSAEoA8P/D/9H/9f8=').play().catch(() => {}) } catch {}
               }
             }
 
@@ -1713,6 +1725,17 @@ function App() {
     if (!read) return true
     return new Date(latestDate) > new Date(read)
   }, [updates])
+
+  // Total unread count
+  const unreadCount = useMemo(() => contacts.filter(c => isUnread(c)).length, [contacts, isUnread])
+
+  // Add in-app toast
+  const addToast = useCallback((clientId: string, title: string, text: string) => {
+    const id = ++toastIdRef.current
+    setToasts(prev => [...prev.slice(-4), { id, clientId, title, text, time: Date.now() }])
+    // Auto-remove after 5s
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
+  }, [])
 
   // Get selected contact info
   const selectedContact = contacts.find(c => c.client_id === selectedClient)
@@ -1795,6 +1818,7 @@ function App() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
+            {unreadCount > 0 && <span className="rail-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
           </button>
           {/* Account icons */}
           {accounts.map(acc => (
@@ -2521,19 +2545,40 @@ function App() {
                 <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
               ))}
             </select>
+            <input
+              className="forward-modal-search"
+              placeholder="Пошук за ім'ям або телефоном..."
+              value={addContactName}
+              onChange={e => {
+                setAddContactName(e.target.value)
+                searchAddContactSuggestions(e.target.value)
+              }}
+              onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
+              autoFocus
+            />
             <div style={{ position: 'relative' }}>
               <input
                 className="forward-modal-search"
-                placeholder="Пошук за ім'ям або телефоном..."
-                value={addContactName}
+                placeholder="Номер телефону"
+                value={addContactPhone}
                 onChange={e => {
-                  setAddContactName(e.target.value)
-                  searchAddContactSuggestions(e.target.value)
+                  setAddContactPhone(e.target.value)
+                  setAddContactAvail(null)
+                  checkPhoneAvail(e.target.value)
+                  if (e.target.value.length >= 2) searchAddContactSuggestions(e.target.value)
                 }}
                 onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
-                autoFocus
+                style={{ marginTop: 8, paddingRight: 60 }}
               />
+              {addContactAvail && (
+                <div className="phone-avail-badges">
+                  {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
+                  {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
+                  {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
+                </div>
+              )}
               {addContactShowSuggestions && addContactSuggestions.length > 0 && (
                 <div className="add-contact-suggestions">
                   {addContactSuggestions.map(s => (
@@ -2550,27 +2595,6 @@ function App() {
                       <span className="suggestion-phone">{s.phone}</span>
                     </div>
                   ))}
-                </div>
-              )}
-            </div>
-            <div style={{ position: 'relative' }}>
-              <input
-                className="forward-modal-search"
-                placeholder="Номер телефону"
-                value={addContactPhone}
-                onChange={e => {
-                  setAddContactPhone(e.target.value)
-                  setAddContactAvail(null)
-                  checkPhoneAvail(e.target.value)
-                  if (e.target.value.length >= 3 && !addContactName) searchAddContactSuggestions(e.target.value)
-                }}
-                style={{ marginTop: 8, paddingRight: 60 }}
-              />
-              {addContactAvail && (
-                <div className="phone-avail-badges">
-                  {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
-                  {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
-                  {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
                 </div>
               )}
             </div>
@@ -2719,6 +2743,32 @@ function App() {
               <button className="whats-new-btn" onClick={() => setShowWhatsNew(false)}>Зрозуміло</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast notifications — bottom-right */}
+      {toasts.length > 0 && (
+        <div className="toast-container">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className="toast-item"
+              onClick={() => {
+                selectClient(t.clientId)
+                setToasts(prev => prev.filter(x => x.id !== t.id))
+              }}
+            >
+              <div className="toast-title">{t.title}</div>
+              <div className="toast-text">{t.text}</div>
+              <button
+                className="toast-close"
+                onClick={e => {
+                  e.stopPropagation()
+                  setToasts(prev => prev.filter(x => x.id !== t.id))
+                }}
+              >×</button>
+            </div>
+          ))}
         </div>
       )}
     </div>
