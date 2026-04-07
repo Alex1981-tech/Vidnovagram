@@ -104,7 +104,9 @@ interface ChatMessage {
   thumbnail: string
   message_date: string
   account_label: string
+  account_id?: string
   is_read?: boolean
+  tg_message_id?: number
   // Call-specific fields
   call_id?: string
   duration_seconds?: number
@@ -358,13 +360,10 @@ function formatDateSeparator(dateStr: string): string {
   return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-/** Render contact name: surname in violet for employees */
+/** Render contact name: full name in violet for employees */
 function ContactName({ name, isEmployee }: { name: string; isEmployee?: boolean }) {
   if (!isEmployee || !name.trim()) return <>{name}</>
-  const parts = name.trim().split(/\s+/)
-  if (parts.length <= 1) return <span className="employee-name">{name}</span>
-  // First word = surname
-  return <><span className="employee-surname">{parts[0]}</span> {parts.slice(1).join(' ')}</>
+  return <span className="employee-name">{name}</span>
 }
 
 // ===== SVG Icons =====
@@ -590,6 +589,13 @@ function App() {
   const [forwardSearch, setForwardSearch] = useState('')
   const [forwardContacts, setForwardContacts] = useState<Contact[]>([])
   const [forwardAccount, setForwardAccount] = useState<string>('')
+
+  // Add contact modal
+  const [showAddContact, setShowAddContact] = useState(false)
+  const [addContactName, setAddContactName] = useState('')
+  const [addContactPhone, setAddContactPhone] = useState('')
+  const [addContactLoading, setAddContactLoading] = useState(false)
+  const [addContactResult, setAddContactResult] = useState<string>('')
 
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -1088,11 +1094,15 @@ function App() {
 
   const executeForward = useCallback(async (toClientId: string) => {
     if (!auth?.token || selectedMsgIds.size === 0 || !selectedClient) return
-    // Get tg_message_ids from selected messages
-    const tgMsgIds = messages
-      .filter(m => selectedMsgIds.has(m.id) && m.source === 'telegram')
-      .map(m => m.id)
-    if (tgMsgIds.length === 0) return
+    // Get tg_message_ids from selected TG messages
+    const selectedTgMsgs = messages.filter(m => selectedMsgIds.has(m.id) && m.source === 'telegram' && m.tg_message_id)
+    const tgMsgIds = selectedTgMsgs.map(m => m.tg_message_id!)
+    if (tgMsgIds.length === 0) {
+      alert('Вибрані повідомлення не можна переслати (тільки Telegram)')
+      return
+    }
+    // Use the account from the first selected message, or the selected forward account
+    const sourceAccountId = forwardAccount || selectedTgMsgs[0]?.account_id || selectedAccount || ''
 
     try {
       const resp = await authFetch(`${API_BASE}/telegram/forward/`, auth.token, {
@@ -1102,15 +1112,51 @@ function App() {
           message_ids: tgMsgIds,
           from_client_id: selectedClient,
           to_client_id: toClientId,
-          account_id: forwardAccount || selectedAccount || '',
+          account_id: sourceAccountId,
         }),
       })
       if (resp.ok) {
         setShowForwardModal(false)
         exitForwardMode()
+      } else {
+        const err = await resp.json().catch(() => ({}))
+        alert(err.error || 'Помилка пересилання')
       }
     } catch (e) { console.error('Forward:', e) }
   }, [auth?.token, selectedMsgIds, selectedClient, messages, forwardAccount, selectedAccount, exitForwardMode])
+
+  // Add contact
+  const addContact = useCallback(async () => {
+    if (!auth?.token || !addContactPhone.trim()) return
+    setAddContactLoading(true)
+    setAddContactResult('')
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: addContactPhone.trim(), name: addContactName.trim() }),
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        const tgStatus = data.telegram ? 'Telegram знайдено ✓' : 'Telegram не знайдено'
+        setAddContactResult(`Контакт ${data.created ? 'створено' : 'вже існує'}. ${tgStatus}`)
+        // Refresh contacts after 1.5s
+        setTimeout(() => {
+          loadContacts()
+          setShowAddContact(false)
+          setAddContactName('')
+          setAddContactPhone('')
+          setAddContactResult('')
+        }, 2000)
+      } else {
+        setAddContactResult(data.error || 'Помилка')
+      }
+    } catch {
+      setAddContactResult('Помилка зʼєднання')
+    } finally {
+      setAddContactLoading(false)
+    }
+  }, [auth?.token, addContactPhone, addContactName])
 
   // Fetch unread updates
   const loadUpdates = useCallback(async () => {
@@ -1702,6 +1748,10 @@ function App() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
+          <button className="add-contact-btn" onClick={() => setShowAddContact(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            Додати контакт
+          </button>
           <div className="contact-list">
             {contacts.map(c => (
               <div
@@ -2285,7 +2335,7 @@ function App() {
               <label>Акаунт:</label>
               <select value={forwardAccount} onChange={e => { setForwardAccount(e.target.value); searchForwardContacts(forwardSearch) }}>
                 <option value="">Той самий</option>
-                {accounts.filter(a => a.type === 'telegram' && a.status === 'active').map(a => (
+                {accounts.filter(a => a.status === 'active').map(a => (
                   <option key={a.id} value={a.id}>{a.label || a.phone}</option>
                 ))}
               </select>
@@ -2315,6 +2365,46 @@ function App() {
               {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
             </div>
             <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Contact Modal */}
+      {showAddContact && (
+        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult('') }}>
+          <div className="forward-modal" onClick={e => e.stopPropagation()}>
+            <h3>Додати контакт</h3>
+            <input
+              className="forward-modal-search"
+              placeholder="Ім'я"
+              value={addContactName}
+              onChange={e => setAddContactName(e.target.value)}
+              autoFocus
+            />
+            <input
+              className="forward-modal-search"
+              placeholder="Номер телефону"
+              value={addContactPhone}
+              onChange={e => setAddContactPhone(e.target.value)}
+              style={{ marginTop: 8 }}
+            />
+            {addContactResult && (
+              <div className={`add-contact-result ${addContactResult.includes('не знайдено') ? 'warn' : 'ok'}`}>
+                {addContactResult}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                className="tpl-btn-primary"
+                onClick={addContact}
+                disabled={addContactLoading || !addContactPhone.trim()}
+              >
+                {addContactLoading ? 'Додаю...' : 'Додати'}
+              </button>
+              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult('') }}>
+                Скасувати
+              </button>
+            </div>
           </div>
         </div>
       )}

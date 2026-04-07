@@ -1244,15 +1244,65 @@ body {
 .recording-modal-send:hover { opacity: 0.9; }
 
 /* Employee name styling */
-.employee-surname {
+.employee-name {
   color: oklch(0.586 0.22 292);
   font-weight: 600;
 }
-.dark .employee-surname {
+.dark .employee-name {
   color: oklch(0.72 0.19 292);
 }
-.contact-name.employee {
-  /* subtle violet tint on entire row */
+
+/* Add contact button */
+.add-contact-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 6px 12px;
+  border: 1px dashed oklch(0.7 0.02 250);
+  border-radius: 8px;
+  background: transparent;
+  color: oklch(0.55 0.05 250);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.add-contact-btn:hover {
+  background: oklch(0.95 0.01 250);
+  border-color: oklch(0.55 0.1 250);
+}
+.dark .add-contact-btn {
+  border-color: oklch(0.4 0.02 250);
+  color: oklch(0.65 0.05 250);
+}
+.dark .add-contact-btn:hover {
+  background: oklch(0.25 0.01 250);
+  border-color: oklch(0.55 0.08 250);
+}
+
+/* Add contact result */
+.add-contact-result {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.add-contact-result.ok {
+  background: oklch(0.94 0.05 145);
+  color: oklch(0.35 0.1 145);
+}
+.add-contact-result.warn {
+  background: oklch(0.94 0.05 70);
+  color: oklch(0.4 0.1 70);
+}
+.dark .add-contact-result.ok {
+  background: oklch(0.25 0.05 145);
+  color: oklch(0.75 0.1 145);
+}
+.dark .add-contact-result.warn {
+  background: oklch(0.25 0.05 70);
+  color: oklch(0.75 0.1 70);
 }
 
 /* Context menu */
