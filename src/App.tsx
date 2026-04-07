@@ -526,6 +526,9 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [contactCount, setContactCount] = useState(0)
+  const [contactPage, setContactPage] = useState(1)
+  const [loadingMoreContacts, setLoadingMoreContacts] = useState(false)
+  const [hasMoreContacts, setHasMoreContacts] = useState(false)
 
   // Messages
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -803,6 +806,8 @@ function App() {
         const list = data.results || []
         setContacts(list)
         setContactCount(data.count || 0)
+        setContactPage(1)
+        setHasMoreContacts(!!data.next)
 
         // Save to cache (only default view without search)
         if (!search) {
@@ -842,6 +847,49 @@ function App() {
       }
     } catch (e) { console.error('Contacts:', e) }
   }, [auth?.token, search, selectedAccount, logout])
+
+  // Load more contacts (infinite scroll)
+  const loadMoreContacts = useCallback(async () => {
+    if (!auth?.token || loadingMoreContacts || !hasMoreContacts) return
+    const nextPage = contactPage + 1
+    setLoadingMoreContacts(true)
+    try {
+      const params = new URLSearchParams({ per_page: '50', page: String(nextPage) })
+      if (search) params.set('search', search)
+      if (selectedAccount) params.set('account', selectedAccount)
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        const list = data.results || []
+        setContacts(prev => [...prev, ...list])
+        setContactPage(nextPage)
+        setHasMoreContacts(!!data.next)
+
+        // Load avatars for new contacts
+        const ids = list.map((c: Contact) => c.client_id).join(',')
+        if (ids) {
+          try {
+            const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
+            if (pr.ok) {
+              const pm: Record<string, string> = await pr.json()
+              for (const [cid, path] of Object.entries(pm)) {
+                if (photoMap[cid]) continue
+                authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
+                  .then(r => r.ok ? r.blob() : null)
+                  .then(blob => {
+                    if (blob) {
+                      putCache(AVATAR_STORE, cid, blob)
+                      setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) }))
+                    }
+                  })
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (e) { console.error('Load more contacts:', e) }
+    finally { setLoadingMoreContacts(false) }
+  }, [auth?.token, loadingMoreContacts, hasMoreContacts, contactPage, search, selectedAccount, photoMap])
 
   // Load messages (cache-first: show from IndexedDB, then refresh from server)
   const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
@@ -1983,7 +2031,12 @@ function App() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
             Новий чат
           </button>
-          <div className="contact-list">
+          <div className="contact-list" onScroll={e => {
+            const el = e.currentTarget
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+              loadMoreContacts()
+            }
+          }}>
             {contacts.map(c => (
               <div
                 key={c.client_id}
@@ -2021,9 +2074,12 @@ function App() {
                 </div>
               </div>
             ))}
+            {loadingMoreContacts && (
+              <div className="loading-more">Завантаження...</div>
+            )}
           </div>
           <div className="sidebar-footer">
-            {contactCount} контактів
+            {contacts.length} / {contactCount} контактів
           </div>
         </div>
 
