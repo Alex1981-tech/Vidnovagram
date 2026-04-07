@@ -1134,6 +1134,115 @@ body {
 .forward-modal-phone { font-size: 0.6875rem; color: var(--muted-foreground); }
 .forward-modal-empty { text-align: center; color: var(--muted-foreground); font-size: 0.8125rem; padding: 20px; }
 
+/* Recording Modal */
+.recording-modal-overlay {
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.recording-modal {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 28px 32px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  position: relative;
+}
+.recording-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.recording-modal-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Audio equalizer bars */
+.recording-equalizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 64px;
+  width: 100%;
+}
+.eq-bar {
+  width: 8px;
+  min-height: 4px;
+  background: var(--primary);
+  border-radius: 4px;
+  transition: height 0.1s ease;
+}
+
+/* Video circle preview */
+.recording-video-circle {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid var(--destructive);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--destructive) 20%, transparent);
+}
+.recording-video-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+/* Recording modal buttons */
+.recording-modal-buttons {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+.recording-modal-cancel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--foreground);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.recording-modal-cancel:hover { opacity: 0.8; }
+.recording-modal-send {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.recording-modal-send:hover { opacity: 0.9; }
+
 /* Employee name styling */
 .employee-surname {
   color: oklch(0.586 0.22 292);

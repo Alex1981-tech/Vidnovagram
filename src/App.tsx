@@ -455,12 +455,6 @@ const XIcon = () => (
     <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
   </svg>
 )
-const StopIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <rect x="6" y="6" width="12" height="12" rx="2"/>
-  </svg>
-)
-
 // Notification helper
 async function showNotification(title: string, body: string) {
   try {
@@ -938,15 +932,44 @@ function App() {
     setAttachedPreview(null)
   }, [attachedPreview])
 
+  // Audio analyser for visualizer
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const animFrameRef = useRef<number>(0)
+  const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(0))
+  const streamRef = useRef<MediaStream | null>(null)
+
   // Voice recording
   const startVoiceRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+      streamRef.current = stream
+      // Setup analyser for visualizer
+      const audioCtx = new AudioContext()
+      const source = audioCtx.createMediaStreamSource(stream)
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 64
+      source.connect(analyser)
+      analyserRef.current = analyser
+      // Animate levels
+      const updateLevels = () => {
+        if (!analyserRef.current) return
+        const data = new Uint8Array(analyserRef.current.frequencyBinCount)
+        analyserRef.current.getByteFrequencyData(data)
+        const bars = Array.from({ length: 20 }, (_, i) => {
+          const idx = Math.floor(i * data.length / 20)
+          return data[idx] / 255
+        })
+        setAudioLevels(bars)
+        animFrameRef.current = requestAnimationFrame(updateLevels)
+      }
+      updateLevels()
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'
+      })
       recordedChunksRef.current = []
       recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
-      recorder.onstop = () => { stream.getTracks().forEach(t => t.stop()) }
-      recorder.start()
+      recorder.start(200) // collect data every 200ms
       mediaRecorderRef.current = recorder
       setIsRecording(true)
       setRecordingType('voice')
@@ -959,46 +982,63 @@ function App() {
   const startVideoRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 384, height: 384, facingMode: 'user' }, audio: true })
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream
-        videoPreviewRef.current.play()
-      }
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' })
-      recordedChunksRef.current = []
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
-      recorder.onstop = () => { stream.getTracks().forEach(t => t.stop()) }
-      recorder.start()
-      mediaRecorderRef.current = recorder
+      streamRef.current = stream
       setIsRecording(true)
       setRecordingType('video')
       setRecordingTime(0)
+      // Video preview will be set via ref in modal
+      setTimeout(() => {
+        if (videoPreviewRef.current && stream.active) {
+          videoPreviewRef.current.srcObject = stream
+          videoPreviewRef.current.play().catch(() => {})
+        }
+      }, 100)
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm'
+      })
+      recordedChunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
+      recorder.start(200)
+      mediaRecorderRef.current = recorder
       recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
     } catch (e) { console.error('Camera access denied:', e) }
   }, [])
 
-  const stopRecording = useCallback(async (send: boolean) => {
+  const stopRecording = useCallback((send: boolean) => {
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    analyserRef.current = null
+    setAudioLevels(new Array(20).fill(0))
+
     const recorder = mediaRecorderRef.current
     if (!recorder || recorder.state === 'inactive') {
+      // Cleanup stream
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
       setIsRecording(false)
+      setRecordingTime(0)
       return
     }
-    return new Promise<void>((resolve) => {
-      recorder.onstop = () => {
-        recorder.stream.getTracks().forEach(t => t.stop())
-        if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
-        if (send && recordedChunksRef.current.length > 0) {
-          const mimeType = recordingType === 'voice' ? 'audio/ogg' : 'video/webm'
-          const blob = new Blob(recordedChunksRef.current, { type: mimeType })
-          const mediaTypeHint = recordingType === 'voice' ? 'voice' : 'video_note'
-          sendMessage(blob, mediaTypeHint)
-        }
-        setIsRecording(false)
-        setRecordingTime(0)
-        resolve()
+
+    // Use onstop to collect final data and send
+    const origOnStop = recorder.onstop
+    recorder.onstop = () => {
+      if (typeof origOnStop === 'function') origOnStop.call(recorder, new Event('stop'))
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
+
+      if (send && recordedChunksRef.current.length > 0) {
+        const mimeType = recordingType === 'voice' ? 'audio/ogg' : 'video/webm'
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType })
+        const mediaTypeHint = recordingType === 'voice' ? 'voice' : 'video_note'
+        sendMessage(blob, mediaTypeHint)
       }
-      recorder.stop()
-    })
+      setIsRecording(false)
+      setRecordingTime(0)
+    }
+    recorder.stop()
   }, [recordingType, sendMessage])
 
   // Forward mode
@@ -1985,17 +2025,14 @@ function App() {
                     </div>
                   )}
                   {isRecording ? (
-                    /* Recording UI */
+                    /* Recording active — show minimal indicator, modal handles the rest */
                     <div className="recording-bar">
-                      {recordingType === 'video' && (
-                        <video ref={videoPreviewRef} className="recording-video-preview" muted playsInline />
-                      )}
                       <div className="recording-indicator">
                         <span className="recording-dot" />
-                        <span className="recording-time">{Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}</span>
+                        <span className="recording-time">
+                          {recordingType === 'voice' ? 'Запис голосу...' : 'Запис відео...'} {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}
+                        </span>
                       </div>
-                      <button className="recording-cancel" onClick={() => stopRecording(false)}><XIcon /></button>
-                      <button className="recording-stop" onClick={() => stopRecording(true)}><StopIcon /></button>
                     </div>
                   ) : (
                     /* Normal input */
@@ -2157,6 +2194,59 @@ function App() {
       </div>
 
       {/* Lightbox */}
+      {/* Recording Modal */}
+      {isRecording && (
+        <div className="modal-overlay recording-modal-overlay">
+          <div className="recording-modal" onClick={e => e.stopPropagation()}>
+            {recordingType === 'voice' ? (
+              /* Voice recording modal */
+              <>
+                <div className="recording-modal-title">
+                  <MicIcon />
+                  <span>Голосове повідомлення</span>
+                </div>
+                <div className="recording-equalizer">
+                  {audioLevels.map((level, i) => (
+                    <div
+                      key={i}
+                      className="eq-bar"
+                      style={{ height: `${Math.max(4, level * 60)}px` }}
+                    />
+                  ))}
+                </div>
+                <div className="recording-modal-time">
+                  <span className="recording-dot" />
+                  {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}
+                </div>
+              </>
+            ) : (
+              /* Video note recording modal */
+              <>
+                <div className="recording-modal-title">
+                  <VideoIcon />
+                  <span>Відеокружок</span>
+                </div>
+                <div className="recording-video-circle">
+                  <video ref={videoPreviewRef} className="recording-video-feed" autoPlay muted playsInline />
+                </div>
+                <div className="recording-modal-time">
+                  <span className="recording-dot" />
+                  {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}
+                </div>
+              </>
+            )}
+            <div className="recording-modal-buttons">
+              <button className="recording-modal-cancel" onClick={() => stopRecording(false)}>
+                <XIcon /> Скасувати
+              </button>
+              <button className="recording-modal-send" onClick={() => stopRecording(true)}>
+                <SendIcon /> Відправити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Media context menu */}
       {ctxMenu && (
         <div className="ctx-menu-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}>
