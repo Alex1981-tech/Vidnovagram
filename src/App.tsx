@@ -171,6 +171,36 @@ async function putCache(store: string, key: string, blob: Blob): Promise<void> {
   } catch { /* ignore */ }
 }
 
+/** Convert OGG/Opus blob to WAV for WebView2 (Edge) which lacks OGG support */
+async function oggToWav(blob: Blob): Promise<Blob> {
+  const ctx = new AudioContext()
+  const arrayBuf = await blob.arrayBuffer()
+  const decoded = await ctx.decodeAudioData(arrayBuf)
+  const numCh = decoded.numberOfChannels
+  const sampleRate = decoded.sampleRate
+  const length = decoded.length
+  const wavBuf = new ArrayBuffer(44 + length * numCh * 2)
+  const view = new DataView(wavBuf)
+  // WAV header
+  const writeStr = (off: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)) }
+  writeStr(0, 'RIFF'); view.setUint32(4, 36 + length * numCh * 2, true); writeStr(8, 'WAVE')
+  writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true)
+  view.setUint16(22, numCh, true); view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numCh * 2, true); view.setUint16(32, numCh * 2, true)
+  view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, length * numCh * 2, true)
+  // Interleave samples
+  let offset = 44
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numCh; ch++) {
+      const sample = Math.max(-1, Math.min(1, decoded.getChannelData(ch)[i]))
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
+      offset += 2
+    }
+  }
+  await ctx.close()
+  return new Blob([wavBuf], { type: 'audio/wav' })
+}
+
 /** Authenticated media loader — triggers blob fetch on mount */
 function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick }: {
   mediaKey: string; mediaPath: string; type: 'image'; className?: string;
@@ -623,7 +653,7 @@ function App() {
   }, [auth?.token, search, selectedAccount, logout])
 
   // Load messages
-  const loadMessages = useCallback(async (clientId: string) => {
+  const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
     if (!auth?.token) return
     try {
       const params = new URLSearchParams({ per_page: '200', page: '1' })
@@ -633,7 +663,13 @@ function App() {
       if (resp.ok) {
         const data = await resp.json()
         const msgs = data.results || []
-        setMessages(msgs)
+        setMessages(prev => {
+          // Only update if message count changed (avoid unnecessary re-renders during poll)
+          if (!scrollToEnd && prev.length === msgs.length && prev.length > 0 && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
+            return prev
+          }
+          return msgs
+        })
         setMsgCount(data.count || 0)
         setMsgPage(1)
         const totalPages = Math.ceil((data.count || 0) / 200)
@@ -643,7 +679,9 @@ function App() {
         if (msgs.length > 0) {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
         }
-        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+        if (scrollToEnd) {
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+        }
       }
     } catch (e) { console.error('Messages:', e) }
   }, [auth?.token, selectedAccount, logout])
@@ -833,7 +871,12 @@ function App() {
       const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
       const resp = await authFetch(url, auth.token)
       if (resp.ok) {
-        const blob = await resp.blob()
+        let blob = await resp.blob()
+        // Convert OGG voice messages to WAV for WebView2 compatibility
+        const isVoice = key.startsWith('voice_')
+        if (isVoice && (mediaPath.endsWith('.ogg') || blob.type.includes('ogg'))) {
+          try { blob = await oggToWav(blob) } catch (e) { console.warn('OGG convert failed:', e) }
+        }
         // Cache thumbnails locally
         if (isThumb) putCache(THUMB_STORE, mediaPath, blob)
         const blobUrl = URL.createObjectURL(blob)
@@ -900,46 +943,95 @@ function App() {
     return () => clearInterval(iv)
   }, [auth?.authorized, loadUpdates])
 
-  // WebSocket
+  // Refs for stable WS callbacks (avoid reconnecting WS on every state change)
+  const loadContactsRef = useRef(loadContacts)
+  const loadMessagesRef = useRef(loadMessages)
+  const loadUpdatesRef = useRef(loadUpdates)
+  const soundEnabledRef = useRef(soundEnabled)
+  useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
+  useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
+  useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
+  useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
+
+  // WebSocket — stable connection, only depends on auth.token
   useEffect(() => {
     if (!auth?.authorized || !auth.token) return
     const url = `${WS_BASE}/messenger/?token=${auth.token}`
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout>
+    let alive = true
 
     function connect() {
+      if (!alive) return
       ws = new WebSocket(url)
       wsRef.current = ws
+
+      ws.onopen = () => {
+        console.log('[WS] connected')
+      }
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
+
           if (data.type === 'new_message') {
-            if (data.client_id === selectedClientRef.current) {
-              loadMessages(data.client_id)
-            } else if (soundEnabled && data.direction === 'received') {
-              // Show Windows notification for messages in other chats
-              showNotification(
-                data.client_name || data.phone || 'Нове повідомлення',
-                data.text?.slice(0, 100) || 'Нове повідомлення'
-              )
+            const msg = data.message || {}
+            const clientId = data.client_id
+
+            if (clientId === selectedClientRef.current) {
+              // Current chat — reload messages, scroll to new message
+              loadMessagesRef.current(clientId, true)
             }
-            loadContacts()
-            loadUpdates()
+
+            // Notification for received messages (Windows toast)
+            if (msg.direction === 'received' || data.source) {
+              const isCurrentChat = clientId === selectedClientRef.current
+              if (!isCurrentChat) {
+                showNotification(
+                  msg.client_name || msg.account_label || 'Нове повідомлення',
+                  msg.text?.slice(0, 120) || '📎 Медіа'
+                )
+              }
+              // Play sound for new received messages
+              if (soundEnabledRef.current && !isCurrentChat) {
+                try { new Audio('data:audio/wav;base64,UklGRl9vT19telegramXZmb3JtYXQAAA==').play().catch(() => {}) } catch {}
+              }
+            }
+
+            loadContactsRef.current()
+            loadUpdatesRef.current()
           }
+
           if (data.type === 'contact_update') {
-            loadContacts()
+            loadContactsRef.current()
           }
         } catch { /* ignore */ }
       }
-      ws.onclose = () => { reconnectTimer = setTimeout(connect, 3000) }
+
+      ws.onerror = (e) => { console.log('[WS] error', e) }
+      ws.onclose = (e) => {
+        console.log('[WS] closed', e.code, e.reason)
+        wsRef.current = null
+        if (alive) reconnectTimer = setTimeout(connect, 3000)
+      }
     }
     connect()
 
+    // Polling fallback: refresh current chat every 10s in case WS missed events
+    const pollTimer = setInterval(() => {
+      if (selectedClientRef.current) {
+        loadMessagesRef.current(selectedClientRef.current, false)
+      }
+      loadContactsRef.current()
+    }, 10000)
+
     return () => {
+      alive = false
       clearTimeout(reconnectTimer)
+      clearInterval(pollTimer)
       ws?.close(1000)
     }
-  }, [auth, loadContacts, loadMessages, loadUpdates])
+  }, [auth?.authorized, auth?.token])
 
   // Compute unread (uses updates for external change detection)
   const isUnread = useCallback((contact: Contact) => {
@@ -1283,7 +1375,7 @@ function App() {
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && (
                           <AuthMedia
                             mediaKey={`thumb_${m.id}`}
-                            mediaPath={`/media/${m.thumbnail}`}
+                            mediaPath={m.thumbnail}
                             type="image"
                             className="msg-media"
                             token={auth?.token || ''}
@@ -1291,7 +1383,7 @@ function App() {
                             loadBlob={loadMediaBlob}
                             onClick={async () => {
                               if (m.media_file) {
-                                const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, `/media/${m.media_file}`)
+                                const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, m.media_file)
                                 if (blob) setLightboxSrc(blob)
                               } else if (mediaBlobMap[`thumb_${m.id}`]) {
                                 setLightboxSrc(mediaBlobMap[`thumb_${m.id}`])
@@ -1303,7 +1395,7 @@ function App() {
                         {m.has_media && !m.thumbnail && m.media_type === 'photo' && m.media_file && (
                           <AuthMedia
                             mediaKey={`full_${m.id}`}
-                            mediaPath={`/media/${m.media_file}`}
+                            mediaPath={m.media_file}
                             type="image"
                             className="msg-media"
                             token={auth?.token || ''}
@@ -1323,7 +1415,7 @@ function App() {
                             ) : (
                               <button
                                 className="msg-voice-btn"
-                                onClick={() => loadMediaBlob(`voice_${m.id}`, `/media/${m.media_file}`)}
+                                onClick={() => loadMediaBlob(`voice_${m.id}`, m.media_file)}
                                 disabled={mediaLoading[`voice_${m.id}`]}
                               >
                                 {mediaLoading[`voice_${m.id}`] ? <div className="spinner-sm" /> : '🎤'}
@@ -1346,7 +1438,7 @@ function App() {
                             ) : (
                               <button
                                 className="msg-video-btn"
-                                onClick={() => loadMediaBlob(`vid_${m.id}`, `/media/${m.media_file}`)}
+                                onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
                                 disabled={mediaLoading[`vid_${m.id}`]}
                               >
                                 {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
@@ -1358,13 +1450,13 @@ function App() {
                         )}
                         {/* Document → download button */}
                         {m.has_media && m.media_type === 'document' && m.media_file && (
-                          <div className="msg-document" onClick={() => downloadMedia(`/media/${m.media_file}`, m.media_file.split('/').pop() || 'file')}>
+                          <div className="msg-document" onClick={() => downloadMedia(m.media_file, m.media_file.split('/').pop() || 'file')}>
                             <span className="msg-doc-icon">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? '📄' : '📎'}</span>
                             <div className="msg-doc-info">
                               <span className="msg-doc-name">{m.media_file.split('/').pop() || 'Файл'}</span>
                               <span className="msg-doc-action">Зберегти та відкрити</span>
                             </div>
-                            {mediaLoading[`doc_/media/${m.media_file}`] && <div className="spinner-sm" />}
+                            {mediaLoading[`doc_${m.media_file}`] && <div className="spinner-sm" />}
                           </div>
                         )}
                         {/* Sticker / unknown media without specific handler */}
