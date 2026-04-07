@@ -89,6 +89,7 @@ interface Contact {
   last_message_direction: string
   has_telegram?: boolean
   has_whatsapp?: boolean
+  is_employee?: boolean
 }
 
 interface ChatMessage {
@@ -357,6 +358,15 @@ function formatDateSeparator(dateStr: string): string {
   return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+/** Render contact name: surname in violet for employees */
+function ContactName({ name, isEmployee }: { name: string; isEmployee?: boolean }) {
+  if (!isEmployee || !name.trim()) return <>{name}</>
+  const parts = name.trim().split(/\s+/)
+  if (parts.length <= 1) return <span className="employee-name">{name}</span>
+  // First word = surname
+  return <><span className="employee-surname">{parts[0]}</span> {parts.slice(1).join(' ')}</>
+}
+
 // ===== SVG Icons =====
 
 const TelegramIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
@@ -573,6 +583,11 @@ function App() {
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<ReturnType<typeof setInterval>>(undefined)
   const videoPreviewRef = useRef<HTMLVideoElement>(null)
+
+  // Context menu for media
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number; y: number; mediaPath: string; mediaType: string; messageId: number | string
+  } | null>(null)
 
   // Forward mode
   const [forwardMode, setForwardMode] = useState(false)
@@ -1289,6 +1304,58 @@ function App() {
     setMediaLoading(prev => ({ ...prev, [docKey]: false }))
   }, [auth?.token])
 
+  // Open media in default app (PDF → browser, images → lightbox)
+  const openMedia = useCallback(async (mediaPath: string, mediaType: string, messageId: number | string) => {
+    if (!auth?.token) return
+    const isPdf = mediaPath.toLowerCase().endsWith('.pdf')
+    const isImage = mediaType === 'photo' || /\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(mediaPath)
+
+    if (isPdf) {
+      // Open PDF URL in default browser
+      const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
+      await shellOpen(url)
+    } else if (isImage) {
+      // Open in lightbox
+      const blobKey = `full_${messageId}`
+      const existing = mediaBlobMap[blobKey]
+      if (existing) {
+        setLightboxSrc(existing)
+      } else {
+        const blob = await loadMediaBlob(blobKey, mediaPath)
+        if (blob) setLightboxSrc(blob)
+      }
+    } else {
+      // Other files — save and open
+      await downloadMedia(mediaPath, mediaPath.split('/').pop() || 'file')
+    }
+  }, [auth?.token, mediaBlobMap, loadMediaBlob, downloadMedia])
+
+  // Context menu for media files
+  const showMediaCtxMenu = useCallback((e: React.MouseEvent, mediaPath: string, mediaType: string, messageId: number | string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtxMenu({ x: e.clientX, y: e.clientY, mediaPath, mediaType, messageId })
+  }, [])
+
+  const ctxMenuOpen = useCallback(() => {
+    if (!ctxMenu) return
+    openMedia(ctxMenu.mediaPath, ctxMenu.mediaType, ctxMenu.messageId)
+    setCtxMenu(null)
+  }, [ctxMenu, openMedia])
+
+  const ctxMenuSave = useCallback(() => {
+    if (!ctxMenu) return
+    downloadMedia(ctxMenu.mediaPath, ctxMenu.mediaPath.split('/').pop() || 'file')
+    setCtxMenu(null)
+  }, [ctxMenu, downloadMedia])
+
+  const ctxMenuForward = useCallback(() => {
+    if (!ctxMenu) return
+    setForwardMode(true)
+    toggleMsgSelection(ctxMenu.messageId)
+    setCtxMenu(null)
+  }, [ctxMenu, toggleMsgSelection])
+
   // Toggle category expand/collapse
   const toggleCat = useCallback((id: string) => {
     setExpandedCats(prev => {
@@ -1609,7 +1676,9 @@ function App() {
                 </div>
                 <div className="contact-body">
                   <div className="contact-row">
-                    <span className="contact-name">{c.full_name || c.phone}</span>
+                    <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
+                      <ContactName name={c.full_name || c.phone} isEmployee={c.is_employee} />
+                    </span>
                     {isUnread(c) && <span className="unread-dot" />}
                     <span className="contact-time">
                       {c.last_message_date && formatContactDate(c.last_message_date)}
@@ -1750,7 +1819,16 @@ function App() {
                   return (
                     <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}`}
                       onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
-                      onContextMenu={!forwardMode ? (e) => { e.preventDefault(); setForwardMode(true); toggleMsgSelection(m.id) } : undefined}
+                      onContextMenu={!forwardMode ? (e) => {
+                        // If media present, show media context menu; otherwise forward mode
+                        if (m.has_media && m.media_file) {
+                          showMediaCtxMenu(e, m.media_file, m.media_type, m.id)
+                        } else {
+                          e.preventDefault()
+                          setForwardMode(true)
+                          toggleMsgSelection(m.id)
+                        }
+                      } : undefined}
                     >
                       {forwardMode && (
                         <div className={`msg-checkbox${selectedMsgIds.has(m.id) ? ' checked' : ''}`}>
@@ -1835,13 +1913,13 @@ function App() {
                             )}
                           </div>
                         )}
-                        {/* Document → download button */}
+                        {/* Document → PDF opens in browser, others save+open */}
                         {m.has_media && m.media_type === 'document' && m.media_file && (
-                          <div className="msg-document" onClick={() => downloadMedia(m.media_file, m.media_file.split('/').pop() || 'file')}>
+                          <div className="msg-document" onClick={() => openMedia(m.media_file, m.media_type, m.id)}>
                             <span className="msg-doc-icon">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? '📄' : '📎'}</span>
                             <div className="msg-doc-info">
                               <span className="msg-doc-name">{m.media_file.split('/').pop() || 'Файл'}</span>
-                              <span className="msg-doc-action">Зберегти та відкрити</span>
+                              <span className="msg-doc-action">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? 'Відкрити в браузері' : 'Зберегти та відкрити'}</span>
                             </div>
                             {mediaLoading[`doc_${m.media_file}`] && <div className="spinner-sm" />}
                           </div>
@@ -2079,6 +2157,29 @@ function App() {
       </div>
 
       {/* Lightbox */}
+      {/* Media context menu */}
+      {ctxMenu && (
+        <div className="ctx-menu-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}>
+          <div className="ctx-menu" style={{
+          top: Math.min(ctxMenu.y, window.innerHeight - 140),
+          left: Math.min(ctxMenu.x, window.innerWidth - 220),
+        }} onClick={e => e.stopPropagation()}>
+            <button className="ctx-menu-item" onClick={ctxMenuOpen}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+              Відкрити
+            </button>
+            <button className="ctx-menu-item" onClick={ctxMenuSave}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              Зберегти на комп'ютер
+            </button>
+            <button className="ctx-menu-item" onClick={ctxMenuForward}>
+              <ForwardIcon />
+              Переслати
+            </button>
+          </div>
+        </div>
+      )}
+
       {lightboxSrc && (
         <div className="lightbox" onClick={() => setLightboxSrc(null)}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />

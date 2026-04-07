@@ -1134,6 +1134,52 @@ body {
 .forward-modal-phone { font-size: 0.6875rem; color: var(--muted-foreground); }
 .forward-modal-empty { text-align: center; color: var(--muted-foreground); font-size: 0.8125rem; padding: 20px; }
 
+/* Employee name styling */
+.employee-surname {
+  color: oklch(0.586 0.22 292);
+  font-weight: 600;
+}
+.dark .employee-surname {
+  color: oklch(0.72 0.19 292);
+}
+.contact-name.employee {
+  /* subtle violet tint on entire row */
+}
+
+/* Context menu */
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 1001;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  padding: 4px 0;
+  min-width: 200px;
+}
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.ctx-menu-item:hover {
+  background: var(--accent);
+}
+
 /* === Empty State === */
 .empty-chat {
   display: flex;
