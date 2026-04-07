@@ -820,7 +820,7 @@ function App() {
         setContacts(list)
         setContactCount(data.count || 0)
         setContactPage(1)
-        setHasMoreContacts(!!data.next)
+        setHasMoreContacts(list.length >= (data.per_page || 50) && list.length < (data.count || 0))
 
         // Save to cache (only default view without search)
         if (!search) {
@@ -876,7 +876,7 @@ function App() {
         const list = data.results || []
         setContacts(prev => [...prev, ...list])
         setContactPage(nextPage)
-        setHasMoreContacts(!!data.next)
+        setHasMoreContacts(list.length >= (data.per_page || 50))
 
         // Load avatars for new contacts
         const ids = list.map((c: Contact) => c.client_id).join(',')
@@ -1798,8 +1798,8 @@ function App() {
               loadMessagesRef.current(clientId, true)
             }
 
-            // Notification for received messages
-            if (msg.direction === 'received' || data.source) {
+            // Notification for received messages only (not our own sent)
+            if (msg.direction === 'received') {
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
                 const sender = msg.client_name || msg.phone || 'Новий контакт'
