@@ -706,6 +706,25 @@ body {
   gap: 3px;
 }
 
+.load-older-wrap {
+  text-align: center;
+  padding: 8px 0 12px;
+}
+.load-older-btn {
+  background: var(--hover);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 6px 16px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.load-older-btn:hover { background: var(--border); }
+.load-older-btn:disabled { opacity: 0.5; cursor: default; }
+
 .msg { display: flex; }
 .msg.sent { justify-content: flex-end; }
 .msg.received { justify-content: flex-start; }

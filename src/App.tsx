@@ -385,6 +385,9 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messageText, setMessageText] = useState('')
   const [msgCount, setMsgCount] = useState(0)
+  const [msgPage, setMsgPage] = useState(1)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
   const [sending, setSending] = useState(false)
@@ -623,7 +626,7 @@ function App() {
   const loadMessages = useCallback(async (clientId: string) => {
     if (!auth?.token) return
     try {
-      const params = new URLSearchParams({ per_page: '80' })
+      const params = new URLSearchParams({ per_page: '200', page: '1' })
       if (selectedAccount) params.set('account', selectedAccount)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, auth.token)
       if (resp.status === 401) { logout(); return }
@@ -632,9 +635,11 @@ function App() {
         const msgs = data.results || []
         setMessages(msgs)
         setMsgCount(data.count || 0)
+        setMsgPage(1)
+        const totalPages = Math.ceil((data.count || 0) / 200)
+        setHasOlderMessages(totalPages > 1)
         setClientName(data.client_name || '')
         setClientPhone(data.client_phone || '')
-        // Mark as read
         if (msgs.length > 0) {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
         }
@@ -642,6 +647,30 @@ function App() {
       }
     } catch (e) { console.error('Messages:', e) }
   }, [auth?.token, selectedAccount, logout])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages) return
+    const nextPage = msgPage + 1
+    setLoadingOlder(true)
+    try {
+      const params = new URLSearchParams({ per_page: '200', page: String(nextPage) })
+      if (selectedAccount) params.set('account', selectedAccount)
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/messages/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        const older = data.results || []
+        if (older.length > 0) {
+          setMessages(prev => [...older, ...prev])
+          setMsgPage(nextPage)
+          const totalPages = Math.ceil((data.count || 0) / 200)
+          setHasOlderMessages(nextPage < totalPages)
+        } else {
+          setHasOlderMessages(false)
+        }
+      }
+    } catch (e) { console.error('Older messages:', e) }
+    setLoadingOlder(false)
+  }, [auth?.token, selectedClient, selectedAccount, msgPage, loadingOlder, hasOlderMessages])
 
   // Send message
   const sendMessage = useCallback(async () => {
@@ -1158,6 +1187,13 @@ function App() {
                 </div>
               </div>
               <div className="chat-messages">
+                {hasOlderMessages && (
+                  <div className="load-older-wrap">
+                    <button className="load-older-btn" onClick={loadOlderMessages} disabled={loadingOlder}>
+                      {loadingOlder ? <div className="spinner-sm" /> : '↑ Завантажити старіші'}
+                    </button>
+                  </div>
+                )}
                 {groupedMessages.map((item, i) => {
                   if ('type' in item && item.type === 'date') {
                     return (
