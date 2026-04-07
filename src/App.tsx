@@ -89,6 +89,55 @@ function authFetch(url: string, token: string, opts: RequestInit = {}) {
   })
 }
 
+// ===== IndexedDB thumbnail/avatar cache =====
+const CACHE_DB_NAME = 'vidnovagram_media_cache'
+const CACHE_DB_VERSION = 1
+const THUMB_STORE = 'thumbnails'  // key: mediaPath, value: { blob: ArrayBuffer, type: string, ts: number }
+const AVATAR_STORE = 'avatars'    // key: clientId, value: { blob: ArrayBuffer, type: string, ts: number }
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+function openCacheDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(THUMB_STORE)) db.createObjectStore(THUMB_STORE)
+      if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function getCached(store: string, key: string): Promise<string | null> {
+  try {
+    const db = await openCacheDB()
+    return new Promise((resolve) => {
+      const tx = db.transaction(store, 'readonly')
+      const req = tx.objectStore(store).get(key)
+      req.onsuccess = () => {
+        const val = req.result
+        if (val && (Date.now() - val.ts) < CACHE_TTL) {
+          const blob = new Blob([val.blob], { type: val.type || 'image/jpeg' })
+          resolve(URL.createObjectURL(blob))
+        } else {
+          resolve(null)
+        }
+      }
+      req.onerror = () => resolve(null)
+    })
+  } catch { return null }
+}
+
+async function putCache(store: string, key: string, blob: Blob): Promise<void> {
+  try {
+    const ab = await blob.arrayBuffer()
+    const db = await openCacheDB()
+    const tx = db.transaction(store, 'readwrite')
+    tx.objectStore(store).put({ blob: ab, type: blob.type, ts: Date.now() }, key)
+  } catch { /* ignore */ }
+}
+
 /** Authenticated media loader — triggers blob fetch on mount */
 function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick }: {
   mediaKey: string; mediaPath: string; type: 'image'; className?: string;
@@ -487,19 +536,31 @@ function App() {
         const list = data.results || []
         setContacts(list)
         setContactCount(data.count || 0)
-        // Load avatar photos (fetch via auth, create blob URLs)
+        // Load avatar photos: IndexedDB cache first, then server
         const ids = list.map((c: Contact) => c.client_id).join(',')
         if (ids) {
+          // Phase 1: load from local cache instantly
+          for (const c of list) {
+            if (photoMap[c.client_id]) continue
+            getCached(AVATAR_STORE, c.client_id).then(url => {
+              if (url) setPhotoMap(prev => prev[c.client_id] ? prev : { ...prev, [c.client_id]: url })
+            })
+          }
+          // Phase 2: fetch from server, update cache
           try {
             const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
             if (pr.ok) {
               const pm: Record<string, string> = await pr.json()
-              // Fetch each photo individually, update state as each loads
               for (const [cid, path] of Object.entries(pm)) {
-                if (photoMap[cid]) continue  // Already loaded
+                if (photoMap[cid]) continue
                 authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
                   .then(r => r.ok ? r.blob() : null)
-                  .then(blob => { if (blob) setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) })) })
+                  .then(blob => {
+                    if (blob) {
+                      putCache(AVATAR_STORE, cid, blob)
+                      setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) }))
+                    }
+                  })
                   .catch(() => {})
               }
             }
@@ -664,17 +725,33 @@ function App() {
     setAudioLoading(prev => ({ ...prev, [callId]: false }))
   }, [auth?.token, audioBlobMap, audioLoading])
 
-  // Load any media file via auth → blob URL (voice, video, documents, images)
+  // Load any media file via auth → blob URL
+  // Thumbnails (key starts with "thumb_") are cached in IndexedDB
+  // Full-size / other media always fetched from server
   const loadMediaBlob = useCallback(async (key: string, mediaPath: string): Promise<string | null> => {
     if (!auth?.token) return null
     if (mediaBlobMap[key]) return mediaBlobMap[key]
     if (mediaLoading[key]) return null
+
+    const isThumb = key.startsWith('thumb_')
+
+    // Check IndexedDB cache for thumbnails
+    if (isThumb) {
+      const cached = await getCached(THUMB_STORE, mediaPath)
+      if (cached) {
+        setMediaBlobMap(prev => ({ ...prev, [key]: cached }))
+        return cached
+      }
+    }
+
     setMediaLoading(prev => ({ ...prev, [key]: true }))
     try {
       const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
       const resp = await authFetch(url, auth.token)
       if (resp.ok) {
         const blob = await resp.blob()
+        // Cache thumbnails locally
+        if (isThumb) putCache(THUMB_STORE, mediaPath, blob)
         const blobUrl = URL.createObjectURL(blob)
         setMediaBlobMap(prev => ({ ...prev, [key]: blobUrl }))
         setMediaLoading(prev => ({ ...prev, [key]: false }))
