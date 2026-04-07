@@ -17,6 +17,14 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.7.0': [
+    'Відправка файлів — фото, відео, документи (кнопка 📎)',
+    'Запис голосових повідомлень (мікрофон)',
+    'Запис відеокружків (камера)',
+    'Пересилання повідомлень — вибір декількох + контакт + акаунт',
+    'Статуси прочитання — ✓ ✓✓ синій',
+    'Кешування повідомлень та контактів (IndexedDB)',
+  ],
   '0.6.0': [
     'Шаблони повідомлень — категорії з кольорами',
     'Шаблони — прикріплення медіа (фото, відео, документи)',
@@ -411,6 +419,38 @@ const DoubleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
   </svg>
 )
 
+// Attachment & media icons
+const PaperclipIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+  </svg>
+)
+const MicIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>
+  </svg>
+)
+const VideoIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>
+  </svg>
+)
+const ForwardIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
+  </svg>
+)
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+  </svg>
+)
+const StopIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <rect x="6" y="6" width="12" height="12" rx="2"/>
+  </svg>
+)
+
 // Notification helper
 async function showNotification(title: string, body: string) {
   try {
@@ -519,6 +559,28 @@ function App() {
 
   // Lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+
+  // File attachment
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Voice/video recording
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingType, setRecordingType] = useState<'voice' | 'video'>('voice')
+  const [recordingTime, setRecordingTime] = useState(0)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval>>(undefined)
+  const videoPreviewRef = useRef<HTMLVideoElement>(null)
+
+  // Forward mode
+  const [forwardMode, setForwardMode] = useState(false)
+  const [selectedMsgIds, setSelectedMsgIds] = useState<Set<number | string>>(new Set())
+  const [showForwardModal, setShowForwardModal] = useState(false)
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardContacts, setForwardContacts] = useState<Contact[]>([])
+  const [forwardAccount, setForwardAccount] = useState<string>('')
 
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -811,12 +873,20 @@ function App() {
     setLoadingOlder(false)
   }, [auth?.token, selectedClient, selectedAccount, msgPage, loadingOlder, hasOlderMessages])
 
-  // Send message
-  const sendMessage = useCallback(async () => {
-    if (!selectedClient || !messageText.trim() || !auth?.token || sending) return
+  // Send message (text, file, voice/video note)
+  const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
+    if (!selectedClient || !auth?.token || sending) return
+    const text = messageText.trim()
+    const fileToSend = file || attachedFile
+    if (!text && !fileToSend) return
     setSending(true)
     const fd = new FormData()
-    fd.append('text', messageText.trim())
+    if (text) fd.append('text', text)
+    if (fileToSend) {
+      const name = fileToSend instanceof File ? fileToSend.name : (mediaType === 'voice' ? 'voice.ogg' : 'video.webm')
+      fd.append('file', fileToSend, name)
+    }
+    if (mediaType) fd.append('media_type', mediaType)
     if (selectedAccount) fd.append('account_id', selectedAccount)
     try {
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
@@ -824,12 +894,168 @@ function App() {
       })
       if (resp.ok) {
         setMessageText('')
+        setAttachedFile(null)
+        setAttachedPreview(null)
         if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         loadMessages(selectedClient)
       }
     } catch (e) { console.error('Send:', e) }
     finally { setSending(false) }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages])
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFile])
+
+  // Handle file attachment
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAttachedFile(file)
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      setAttachedPreview(URL.createObjectURL(file))
+    } else {
+      setAttachedPreview(null)
+    }
+    // Reset input so same file can be selected again
+    e.target.value = ''
+  }, [])
+
+  const clearAttachment = useCallback(() => {
+    if (attachedPreview) URL.revokeObjectURL(attachedPreview)
+    setAttachedFile(null)
+    setAttachedPreview(null)
+  }, [attachedPreview])
+
+  // Voice recording
+  const startVoiceRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+      recordedChunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
+      recorder.onstop = () => { stream.getTracks().forEach(t => t.stop()) }
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setIsRecording(true)
+      setRecordingType('voice')
+      setRecordingTime(0)
+      recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
+    } catch (e) { console.error('Mic access denied:', e) }
+  }, [])
+
+  // Video note (circle) recording
+  const startVideoRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 384, height: 384, facingMode: 'user' }, audio: true })
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream
+        videoPreviewRef.current.play()
+      }
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' })
+      recordedChunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
+      recorder.onstop = () => { stream.getTracks().forEach(t => t.stop()) }
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setIsRecording(true)
+      setRecordingType('video')
+      setRecordingTime(0)
+      recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
+    } catch (e) { console.error('Camera access denied:', e) }
+  }, [])
+
+  const stopRecording = useCallback(async (send: boolean) => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      setIsRecording(false)
+      return
+    }
+    return new Promise<void>((resolve) => {
+      recorder.onstop = () => {
+        recorder.stream.getTracks().forEach(t => t.stop())
+        if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
+        if (send && recordedChunksRef.current.length > 0) {
+          const mimeType = recordingType === 'voice' ? 'audio/ogg' : 'video/webm'
+          const blob = new Blob(recordedChunksRef.current, { type: mimeType })
+          const mediaTypeHint = recordingType === 'voice' ? 'voice' : 'video_note'
+          sendMessage(blob, mediaTypeHint)
+        }
+        setIsRecording(false)
+        setRecordingTime(0)
+        resolve()
+      }
+      recorder.stop()
+    })
+  }, [recordingType, sendMessage])
+
+  // Forward mode
+  const toggleMsgSelection = useCallback((msgId: number | string) => {
+    setSelectedMsgIds(prev => {
+      const next = new Set(prev)
+      if (next.has(msgId)) next.delete(msgId)
+      else next.add(msgId)
+      return next
+    })
+  }, [])
+
+  const exitForwardMode = useCallback(() => {
+    setForwardMode(false)
+    setSelectedMsgIds(new Set())
+  }, [])
+
+  const openForwardModal = useCallback(async () => {
+    setShowForwardModal(true)
+    setForwardSearch('')
+    setForwardAccount(selectedAccount)
+    // Load contacts for forward
+    if (!auth?.token) return
+    try {
+      const params = new URLSearchParams({ per_page: '100' })
+      if (selectedAccount) params.set('account', selectedAccount)
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setForwardContacts(data.results || [])
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token, selectedAccount])
+
+  const searchForwardContacts = useCallback(async (q: string) => {
+    if (!auth?.token) return
+    try {
+      const params = new URLSearchParams({ per_page: '50', search: q })
+      if (forwardAccount) params.set('account', forwardAccount)
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setForwardContacts(data.results || [])
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token, forwardAccount])
+
+  const executeForward = useCallback(async (toClientId: string) => {
+    if (!auth?.token || selectedMsgIds.size === 0 || !selectedClient) return
+    // Get tg_message_ids from selected messages
+    const tgMsgIds = messages
+      .filter(m => selectedMsgIds.has(m.id) && m.source === 'telegram')
+      .map(m => m.id)
+    if (tgMsgIds.length === 0) return
+
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/forward/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_ids: tgMsgIds,
+          from_client_id: selectedClient,
+          to_client_id: toClientId,
+          account_id: forwardAccount || selectedAccount || '',
+        }),
+      })
+      if (resp.ok) {
+        setShowForwardModal(false)
+        exitForwardMode()
+      }
+    } catch (e) { console.error('Forward:', e) }
+  }, [auth?.token, selectedMsgIds, selectedClient, messages, forwardAccount, selectedAccount, exitForwardMode])
 
   // Fetch unread updates
   const loadUpdates = useCallback(async () => {
@@ -1522,7 +1748,15 @@ function App() {
                     )
                   }
                   return (
-                    <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}`}>
+                    <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}`}
+                      onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
+                      onContextMenu={!forwardMode ? (e) => { e.preventDefault(); setForwardMode(true); toggleMsgSelection(m.id) } : undefined}
+                    >
+                      {forwardMode && (
+                        <div className={`msg-checkbox${selectedMsgIds.has(m.id) ? ' checked' : ''}`}>
+                          {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
+                        </div>
+                      )}
                       <div className="msg-bubble">
                         {/* Photo with thumbnail → click to view full */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && (
@@ -1646,23 +1880,79 @@ function App() {
                 })}
                 <div ref={chatEndRef} />
               </div>
-              {auth.isAdmin && (
-                <div className="chat-input">
-                  <textarea
-                    ref={chatInputRef}
-                    value={messageText}
-                    onChange={e => {
-                      setMessageText(e.target.value)
-                      e.target.style.height = 'auto'
-                      e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
-                    }}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                    placeholder="Написати повідомлення..."
-                    rows={1}
-                  />
-                  <button onClick={sendMessage} disabled={!messageText.trim() || sending}>
-                    {sending ? <div className="spinner-sm" /> : <SendIcon />}
+              {/* Forward mode bar */}
+              {forwardMode && (
+                <div className="forward-bar">
+                  <button className="forward-bar-cancel" onClick={exitForwardMode}><XIcon /> Скасувати</button>
+                  <span className="forward-bar-count">Обрано: {selectedMsgIds.size}</span>
+                  <button className="forward-bar-send" onClick={openForwardModal} disabled={selectedMsgIds.size === 0}>
+                    <ForwardIcon /> Переслати
                   </button>
+                </div>
+              )}
+              {auth.isAdmin && !forwardMode && (
+                <div className="chat-input">
+                  <input type="file" ref={fileInputRef} hidden
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
+                    onChange={handleFileSelect} />
+                  {/* Attachment preview */}
+                  {attachedFile && (
+                    <div className="attached-preview">
+                      {attachedPreview && attachedFile.type.startsWith('image/') ? (
+                        <img src={attachedPreview} alt="" className="attached-thumb" />
+                      ) : (
+                        <span className="attached-name">{attachedFile.name}</span>
+                      )}
+                      <button className="attached-remove" onClick={clearAttachment}><XIcon /></button>
+                    </div>
+                  )}
+                  {isRecording ? (
+                    /* Recording UI */
+                    <div className="recording-bar">
+                      {recordingType === 'video' && (
+                        <video ref={videoPreviewRef} className="recording-video-preview" muted playsInline />
+                      )}
+                      <div className="recording-indicator">
+                        <span className="recording-dot" />
+                        <span className="recording-time">{Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}</span>
+                      </div>
+                      <button className="recording-cancel" onClick={() => stopRecording(false)}><XIcon /></button>
+                      <button className="recording-stop" onClick={() => stopRecording(true)}><StopIcon /></button>
+                    </div>
+                  ) : (
+                    /* Normal input */
+                    <>
+                      <button className="chat-input-btn" onClick={() => fileInputRef.current?.click()} title="Вкласти файл">
+                        <PaperclipIcon />
+                      </button>
+                      <textarea
+                        ref={chatInputRef}
+                        value={messageText}
+                        onChange={e => {
+                          setMessageText(e.target.value)
+                          e.target.style.height = 'auto'
+                          e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                        placeholder="Написати повідомлення..."
+                        rows={1}
+                      />
+                      {messageText.trim() || attachedFile ? (
+                        <button onClick={() => sendMessage()} disabled={sending}>
+                          {sending ? <div className="spinner-sm" /> : <SendIcon />}
+                        </button>
+                      ) : (
+                        <div className="chat-input-media-btns">
+                          <button className="chat-input-btn" onClick={startVoiceRecording} title="Голосове повідомлення">
+                            <MicIcon />
+                          </button>
+                          <button className="chat-input-btn" onClick={startVideoRecording} title="Відеокружок">
+                            <VideoIcon />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </>
@@ -1792,6 +2082,49 @@ function App() {
       {lightboxSrc && (
         <div className="lightbox" onClick={() => setLightboxSrc(null)}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* Forward Modal */}
+      {showForwardModal && (
+        <div className="modal-overlay" onClick={() => setShowForwardModal(false)}>
+          <div className="forward-modal" onClick={e => e.stopPropagation()}>
+            <h3>Переслати {selectedMsgIds.size} повідомлень</h3>
+            <div className="forward-modal-account">
+              <label>Акаунт:</label>
+              <select value={forwardAccount} onChange={e => { setForwardAccount(e.target.value); searchForwardContacts(forwardSearch) }}>
+                <option value="">Той самий</option>
+                {accounts.filter(a => a.type === 'telegram' && a.status === 'active').map(a => (
+                  <option key={a.id} value={a.id}>{a.label || a.phone}</option>
+                ))}
+              </select>
+            </div>
+            <input
+              className="forward-modal-search"
+              placeholder="Пошук контакту..."
+              value={forwardSearch}
+              onChange={e => { setForwardSearch(e.target.value); searchForwardContacts(e.target.value) }}
+              autoFocus
+            />
+            <div className="forward-modal-list">
+              {forwardContacts.filter(c => c.client_id !== selectedClient).map(c => (
+                <div key={c.client_id} className="forward-modal-contact" onClick={() => executeForward(c.client_id)}>
+                  <div className="forward-modal-avatar">
+                    {photoMap[c.client_id]
+                      ? <img src={photoMap[c.client_id]} alt="" />
+                      : <span>{(c.full_name || c.phone || '?')[0]}</span>
+                    }
+                  </div>
+                  <div className="forward-modal-info">
+                    <div className="forward-modal-name">{c.full_name || c.phone}</div>
+                    <div className="forward-modal-phone">{c.phone}</div>
+                  </div>
+                </div>
+              ))}
+              {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
+            </div>
+            <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
+          </div>
         </div>
       )}
 
