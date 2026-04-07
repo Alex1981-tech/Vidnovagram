@@ -240,13 +240,13 @@ body {
   background: var(--background);
 }
 
-/* === Top Bar === */
+/* === Top Bar (compact) === */
 .top-bar {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  height: 48px;
-  min-height: 48px;
+  height: 40px;
+  min-height: 40px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border);
   gap: 8px;
@@ -260,6 +260,13 @@ body {
   flex-shrink: 0;
 }
 
+.top-bar-title {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
 .top-bar-right {
   display: flex;
   align-items: center;
@@ -268,55 +275,151 @@ body {
   margin-left: auto;
 }
 
-.account-tabs {
+/* === Account Rail (vertical, left edge) === */
+.account-rail {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 8px 0;
   gap: 4px;
-  overflow-x: auto;
-  flex: 1;
-  padding: 0 4px;
-  scrollbar-width: none;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 20;
 }
-.account-tabs::-webkit-scrollbar { display: none; }
 
-.account-tab {
+.rail-icon {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 20px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-radius 0.2s;
+}
+.rail-icon:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.rail-icon.active {
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+  color: var(--primary);
+  border-radius: 8px;
+}
+
+.rail-status {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.3;
+}
+.rail-status.online {
+  background: #10b981;
+  opacity: 1;
+}
+
+/* Flyout panel — slides out on rail hover */
+.rail-flyout {
+  position: absolute;
+  top: 0;
+  left: 44px;
+  width: 220px;
+  padding: 8px;
+  background: var(--card);
   border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 4px 0 16px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+  transition: opacity 0.18s, transform 0.18s;
+}
+.account-rail:hover .rail-flyout {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.rail-flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: none;
   background: transparent;
   color: var(--foreground);
   font-family: inherit;
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-  flex-shrink: 0;
+  transition: background 0.12s;
+  text-align: left;
+  width: 100%;
 }
-.account-tab:hover {
+.rail-flyout-item:hover {
   background: var(--accent);
 }
-.account-tab.active {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border-color: var(--primary);
+.rail-flyout-item.active {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
 }
 
-.account-tab-icon {
+.rail-flyout-text {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
 }
-.account-tab-label {
-  max-width: 140px;
+.rail-flyout-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.account-tab-phone {
+.rail-flyout-phone {
   font-size: 0.6875rem;
-  opacity: 0.7;
+  color: var(--muted-foreground);
+}
+
+/* === Active Account Card (above search) === */
+.active-account-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+  background: color-mix(in oklch, var(--primary) 5%, transparent);
+  font-size: 0.8125rem;
+  min-height: 36px;
+}
+.active-account-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-account-phone {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .status-dot {

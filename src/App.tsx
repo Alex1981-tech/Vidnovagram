@@ -909,43 +909,14 @@ function App() {
 
   return (
     <div className="app">
-      {/* Top Bar with accounts */}
+      {/* Compact Top Bar */}
       <div className="top-bar">
         <div className="top-bar-left">
-          <TelegramIcon size={22} color="#2AABEE" />
-          <WhatsAppIcon size={22} color="#25D366" />
+          <span className="top-bar-title">Vidnovagram</span>
           <button className="icon-btn" onClick={() => setSoundEnabled(!soundEnabled)} title={soundEnabled ? 'Вимкнути звук' : 'Увімкнути звук'}>
             {soundEnabled ? <VolumeOnIcon /> : <VolumeOffIcon />}
           </button>
-          {/* "Месенджер" tab */}
-          <button
-            className={`account-tab ${!selectedAccount ? 'active' : ''}`}
-            onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
-          >
-            Месенджер
-          </button>
         </div>
-
-        <div className="account-tabs">
-          {accounts.map(acc => (
-            <button
-              key={acc.id}
-              className={`account-tab ${selectedAccount === acc.id ? 'active' : ''}`}
-              onClick={() => handleAccountClick(acc.id)}
-            >
-              <span className="account-tab-icon">
-                {acc.type === 'telegram'
-                  ? <TelegramIcon size={14} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
-                  : <WhatsAppIcon size={14} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
-                }
-              </span>
-              <span className="account-tab-label">{acc.label}</span>
-              <span className="account-tab-phone">{acc.phone}</span>
-              <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
-            </button>
-          ))}
-        </div>
-
         <div className="top-bar-right">
           <ThemeToggle theme={theme} setTheme={setTheme} />
           <span className="user-badge">{auth.name}</span>
@@ -959,9 +930,96 @@ function App() {
 
       {/* Main content */}
       <div className="main-content">
+        {/* Account rail — icons only, flyout on hover */}
+        <div className="account-rail">
+          {/* "All" button */}
+          <button
+            className={`rail-icon ${!selectedAccount ? 'active' : ''}`}
+            onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
+            title="Усі месенджери"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+          {/* Account icons */}
+          {accounts.map(acc => (
+            <button
+              key={acc.id}
+              className={`rail-icon ${selectedAccount === acc.id ? 'active' : ''}`}
+              onClick={() => handleAccountClick(acc.id)}
+              title={`${acc.label} ${acc.phone}`}
+            >
+              {acc.type === 'telegram'
+                ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
+                : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
+              }
+              <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+            </button>
+          ))}
+          {/* Flyout panel on hover */}
+          <div className="rail-flyout">
+            <button
+              className={`rail-flyout-item ${!selectedAccount ? 'active' : ''}`}
+              onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <div className="rail-flyout-text">
+                <span className="rail-flyout-name">Усі</span>
+                <span className="rail-flyout-phone">Месенджер</span>
+              </div>
+            </button>
+            {accounts.map(acc => (
+              <button
+                key={acc.id}
+                className={`rail-flyout-item ${selectedAccount === acc.id ? 'active' : ''}`}
+                onClick={() => handleAccountClick(acc.id)}
+              >
+                {acc.type === 'telegram'
+                  ? <TelegramIcon size={16} color="#2AABEE" />
+                  : <WhatsAppIcon size={16} color="#25D366" />
+                }
+                <div className="rail-flyout-text">
+                  <span className="rail-flyout-name">{acc.label}</span>
+                  <span className="rail-flyout-phone">{acc.phone}</span>
+                </div>
+                <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+              </button>
+            ))}
+          </div>
+        </div>
         {/* Sidebar with contacts */}
         <div className="sidebar" style={{ width: sidebarWidth }}>
           <div className="resize-handle" onMouseDown={e => startResize('sidebar', e)} />
+          {/* Active account card */}
+          {(() => {
+            const acc = selectedAccount ? accounts.find(a => a.id === selectedAccount) : null
+            return (
+              <div className="active-account-card">
+                {acc ? (
+                  <>
+                    {acc.type === 'telegram'
+                      ? <TelegramIcon size={16} color="#2AABEE" />
+                      : <WhatsAppIcon size={16} color="#25D366" />
+                    }
+                    <span className="active-account-name">{acc.label}</span>
+                    <span className="active-account-phone">{acc.phone}</span>
+                    <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span className="active-account-name">Усі месенджери</span>
+                    <span className="active-account-phone">{contacts.length} контактів</span>
+                  </>
+                )}
+              </div>
+            )
+          })()}
           <div className="sidebar-search">
             <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
