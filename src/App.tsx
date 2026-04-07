@@ -494,17 +494,14 @@ function App() {
             const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
             if (pr.ok) {
               const pm: Record<string, string> = await pr.json()
-              const blobs: Record<string, string> = {}
-              await Promise.all(Object.entries(pm).map(async ([cid, path]) => {
-                try {
-                  const imgResp = await authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
-                  if (imgResp.ok) {
-                    const blob = await imgResp.blob()
-                    blobs[cid] = URL.createObjectURL(blob)
-                  }
-                } catch { /* skip */ }
-              }))
-              setPhotoMap(prev => ({ ...prev, ...blobs }))
+              // Fetch each photo individually, update state as each loads
+              for (const [cid, path] of Object.entries(pm)) {
+                if (photoMap[cid]) continue  // Already loaded
+                authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
+                  .then(r => r.ok ? r.blob() : null)
+                  .then(blob => { if (blob) setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) })) })
+                  .catch(() => {})
+              }
             }
           } catch { /* ignore */ }
         }
