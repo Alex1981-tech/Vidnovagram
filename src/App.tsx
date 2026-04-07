@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { getVersion } from '@tauri-apps/api/app'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import './App.css'
 
@@ -9,6 +10,31 @@ const WS_BASE = 'wss://cc.vidnova.app/ws'
 const AUTH_KEY = 'vidnovagram_auth'
 const THEME_KEY = 'vidnovagram_theme'
 const READ_TS_KEY = 'vidnovagram_read_ts'
+const LAST_VERSION_KEY = 'vidnovagram_last_version'
+
+// Changelog — shown after update
+const CHANGELOG: Record<string, string[]> = {
+  '0.5.0': [
+    'Акаунти перенесено на вертикальне меню зліва',
+    'Жовті картки дзвінків Бінотел',
+    'Плеєр дзвінків — розкривається під карткою на повну ширину',
+    'Голосові повідомлення — вбудований плеєр',
+    'Відеокружки — відеоплеєр',
+    'Документи/PDF — кнопка скачування',
+    'Кешування мініатюр та аватарок (IndexedDB)',
+  ],
+  '0.4.4': [
+    'Виправлено сортування повідомлень (старіші зверху)',
+  ],
+  '0.4.3': [
+    'Виправлено прослуховування дзвінків',
+  ],
+  '0.4.0': [
+    'Картки дзвінків Бінотел у чаті',
+    'Нотатки та швидкі відповіді',
+    'Звукові сповіщення',
+  ],
+}
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -334,6 +360,8 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
+  const [currentVersion, setCurrentVersion] = useState('')
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -437,8 +465,21 @@ function App() {
   }, [soundEnabled])
 
   // Check for updates on startup
+  // Check for updates + show "What's New" after update
   useEffect(() => {
     (async () => {
+      // Get current version and check if it changed
+      try {
+        const ver = await getVersion()
+        setCurrentVersion(ver)
+        const lastVer = localStorage.getItem(LAST_VERSION_KEY)
+        if (lastVer && lastVer !== ver) {
+          setShowWhatsNew(true)
+        }
+        localStorage.setItem(LAST_VERSION_KEY, ver)
+      } catch { /* ignore */ }
+
+      // Check for new updates
       try {
         const update = await check()
         if (update) {
@@ -1440,6 +1481,34 @@ function App() {
       {lightboxSrc && (
         <div className="lightbox" onClick={() => setLightboxSrc(null)}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* What's New modal */}
+      {showWhatsNew && (
+        <div className="modal-overlay" onClick={() => setShowWhatsNew(false)}>
+          <div className="whats-new-modal" onClick={e => e.stopPropagation()}>
+            <div className="whats-new-header">
+              <h2>Vidnovagram v{currentVersion}</h2>
+              <button className="icon-btn" onClick={() => setShowWhatsNew(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="whats-new-body">
+              {CHANGELOG[currentVersion] ? (
+                <ul className="whats-new-list">
+                  {CHANGELOG[currentVersion].map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Оновлено до нової версії.</p>
+              )}
+            </div>
+            <div className="whats-new-footer">
+              <button className="whats-new-btn" onClick={() => setShowWhatsNew(false)}>Зрозуміло</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
