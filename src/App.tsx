@@ -3,6 +3,9 @@ import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeFile } from '@tauri-apps/plugin-fs'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
@@ -14,6 +17,11 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.5.1': [
+    'Фото повідомлення — відображення та лайтбокс',
+    'Документи/PDF — збереження на диск та відкриття',
+    'Плеєр дзвінка — закривається після прослуховування (кнопка ✕)',
+  ],
   '0.5.0': [
     'Акаунти перенесено на вертикальне меню зліва',
     'Жовті картки дзвінків Бінотел',
@@ -396,6 +404,7 @@ function App() {
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
   const [audioBlobMap, setAudioBlobMap] = useState<Record<string, string>>({})
   const [audioLoading, setAudioLoading] = useState<Record<string, boolean>>({})
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
   // Generic media blobs (voice, video, documents, full-size images)
   const [mediaBlobMap, setMediaBlobMap] = useState<Record<string, string>>({})
   const [mediaLoading, setMediaLoading] = useState<Record<string, boolean>>({})
@@ -753,13 +762,19 @@ function App() {
 
   // Load call audio via auth → blob URL
   const loadCallAudio = useCallback(async (callId: string, mediaPath: string) => {
-    if (!auth?.token || audioBlobMap[callId] || audioLoading[callId]) return
+    // If already loaded, just toggle expand
+    if (audioBlobMap[callId]) {
+      setExpandedCallId(prev => prev === callId ? null : callId)
+      return
+    }
+    if (!auth?.token || audioLoading[callId]) return
     setAudioLoading(prev => ({ ...prev, [callId]: true }))
     try {
       const resp = await authFetch(`${API_BASE.replace('/api', '')}${mediaPath}`, auth.token)
       if (resp.ok) {
         const blob = await resp.blob()
         setAudioBlobMap(prev => ({ ...prev, [callId]: URL.createObjectURL(blob) }))
+        setExpandedCallId(callId)
       }
     } catch { /* ignore */ }
     setAudioLoading(prev => ({ ...prev, [callId]: false }))
@@ -805,18 +820,26 @@ function App() {
   // Download a media file (open save dialog)
   const downloadMedia = useCallback(async (mediaPath: string, filename: string) => {
     if (!auth?.token) return
+    const docKey = `doc_${mediaPath}`
+    setMediaLoading(prev => ({ ...prev, [docKey]: true }))
     try {
       const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
       const resp = await authFetch(url, auth.token)
       if (resp.ok) {
         const blob = await resp.blob()
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = filename
-        a.click()
-        URL.revokeObjectURL(a.href)
+        const ext = filename.includes('.') ? filename.split('.').pop() || '' : ''
+        const filePath = await save({
+          defaultPath: filename,
+          filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : [],
+        })
+        if (filePath) {
+          const buf = new Uint8Array(await blob.arrayBuffer())
+          await writeFile(filePath, buf)
+          await shellOpen(filePath)
+        }
       }
     } catch { /* ignore */ }
+    setMediaLoading(prev => ({ ...prev, [docKey]: false }))
   }, [auth?.token])
 
   // Insert quick reply into message input
@@ -922,6 +945,7 @@ function App() {
     setSelectedClient(clientId)
     setAudioBlobMap({})
     setMediaBlobMap({})
+    setExpandedCallId(null)
     loadMessages(clientId)
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
@@ -1148,14 +1172,14 @@ function App() {
                     const mm = String(Math.floor(dur / 60)).padStart(2, '0')
                     const ss = String(dur % 60).padStart(2, '0')
                     const isIncoming = m.direction === 'incoming' || m.direction === 'received'
-                    const hasAudioOpen = !!audioBlobMap[m.call_id!]
+                    const isExpanded = expandedCallId === m.call_id
                     const canPlay = m.has_media && m.media_file
                     return (
                       <div key={m.id} className="call-card-wrapper">
                         <div
-                          className={`call-card${hasAudioOpen ? ' has-audio-open' : ''}`}
+                          className={`call-card${isExpanded ? ' has-audio-open' : ''}`}
                           onClick={() => {
-                            if (canPlay && !audioBlobMap[m.call_id!] && !audioLoading[m.call_id!]) {
+                            if (canPlay) {
                               loadCallAudio(m.call_id!, m.media_file)
                             }
                           }}
@@ -1180,7 +1204,7 @@ function App() {
                                 <span className="call-card-missed">Пропущений</span>
                               )}
                             </div>
-                            {canPlay && !hasAudioOpen && (
+                            {canPlay && !isExpanded && (
                               <div className="call-card-audio-wrap">
                                 <button
                                   className="call-card-play-btn"
@@ -1201,9 +1225,16 @@ function App() {
                             )}
                           </div>
                         </div>
-                        {hasAudioOpen && (
+                        {isExpanded && audioBlobMap[m.call_id!] && (
                           <div className="call-card-audio-expanded">
-                            <audio controls autoPlay preload="auto" src={audioBlobMap[m.call_id!]} />
+                            <audio
+                              controls
+                              autoPlay
+                              preload="auto"
+                              src={audioBlobMap[m.call_id!]}
+                              onEnded={() => setExpandedCallId(null)}
+                            />
+                            <button className="call-card-close-btn" onClick={(e) => { e.stopPropagation(); setExpandedCallId(null) }}>✕</button>
                           </div>
                         )}
                       </div>
@@ -1229,6 +1260,22 @@ function App() {
                               } else if (mediaBlobMap[`thumb_${m.id}`]) {
                                 setLightboxSrc(mediaBlobMap[`thumb_${m.id}`])
                               }
+                            }}
+                          />
+                        )}
+                        {/* Photo without thumbnail → load full image directly */}
+                        {m.has_media && !m.thumbnail && m.media_type === 'photo' && m.media_file && (
+                          <AuthMedia
+                            mediaKey={`full_${m.id}`}
+                            mediaPath={`/media/${m.media_file}`}
+                            type="image"
+                            className="msg-media"
+                            token={auth?.token || ''}
+                            blobMap={mediaBlobMap}
+                            loadBlob={loadMediaBlob}
+                            onClick={() => {
+                              const src = mediaBlobMap[`full_${m.id}`]
+                              if (src) setLightboxSrc(src)
                             }}
                           />
                         )}
@@ -1276,16 +1323,16 @@ function App() {
                         {/* Document → download button */}
                         {m.has_media && m.media_type === 'document' && m.media_file && (
                           <div className="msg-document" onClick={() => downloadMedia(`/media/${m.media_file}`, m.media_file.split('/').pop() || 'file')}>
-                            <span className="msg-doc-icon">📎</span>
+                            <span className="msg-doc-icon">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? '📄' : '📎'}</span>
                             <div className="msg-doc-info">
                               <span className="msg-doc-name">{m.media_file.split('/').pop() || 'Файл'}</span>
-                              <span className="msg-doc-action">Скачати</span>
+                              <span className="msg-doc-action">Зберегти та відкрити</span>
                             </div>
-                            {mediaLoading[`doc_${m.id}`] && <div className="spinner-sm" />}
+                            {mediaLoading[`doc_/media/${m.media_file}`] && <div className="spinner-sm" />}
                           </div>
                         )}
                         {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'document'].includes(m.media_type) && m.media_type !== 'photo' && (
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'document', 'photo'].includes(m.media_type) && !m.media_file && (
                           <div className="msg-media-placeholder">
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
