@@ -1038,6 +1038,97 @@ body {
   align-self: flex-end;
 }
 
+/* === Call Cards === */
+.call-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 6px auto;
+  max-width: 420px;
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+}
+.call-card-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.call-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.call-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+.call-card-label {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+.call-card-time {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.call-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.call-card-direction {
+  font-weight: 500;
+}
+.call-card-duration {
+  font-variant-numeric: tabular-nums;
+}
+.call-card-missed {
+  color: var(--destructive);
+  font-weight: 500;
+}
+.call-card-operator {
+  color: var(--foreground);
+}
+.call-card-audio {
+  width: 100%;
+  height: 32px;
+  margin-top: 6px;
+  border-radius: 4px;
+}
+.call-card-play-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.call-card-play-btn:hover {
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+}
+.call-card-play-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* === Lightbox === */
 .lightbox {
   position: fixed;

@@ -42,8 +42,9 @@ interface Contact {
 
 interface ChatMessage {
   id: number | string
-  source?: 'telegram' | 'whatsapp'
-  direction: 'sent' | 'received'
+  type?: 'call'
+  source?: 'telegram' | 'whatsapp' | 'binotel'
+  direction: 'sent' | 'received' | 'incoming' | 'outgoing'
   text: string
   has_media: boolean
   media_type: string
@@ -51,6 +52,11 @@ interface ChatMessage {
   thumbnail: string
   message_date: string
   account_label: string
+  // Call-specific fields
+  call_id?: string
+  duration_seconds?: number
+  disposition?: string
+  operator_name?: string
 }
 
 interface ClientNote {
@@ -296,6 +302,8 @@ function App() {
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
+  const [audioBlobMap, setAudioBlobMap] = useState<Record<string, string>>({})
+  const [audioLoading, setAudioLoading] = useState<Record<string, boolean>>({})
 
   // Sound
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -460,14 +468,24 @@ function App() {
         const list = data.results || []
         setContacts(list)
         setContactCount(data.count || 0)
-        // Load avatar photos
+        // Load avatar photos (fetch via auth, create blob URLs)
         const ids = list.map((c: Contact) => c.client_id).join(',')
         if (ids) {
           try {
             const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
             if (pr.ok) {
-              const pm = await pr.json()
-              setPhotoMap(prev => ({ ...prev, ...pm }))
+              const pm: Record<string, string> = await pr.json()
+              const blobs: Record<string, string> = {}
+              await Promise.all(Object.entries(pm).map(async ([cid, path]) => {
+                try {
+                  const imgResp = await authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
+                  if (imgResp.ok) {
+                    const blob = await imgResp.blob()
+                    blobs[cid] = URL.createObjectURL(blob)
+                  }
+                } catch { /* skip */ }
+              }))
+              setPhotoMap(prev => ({ ...prev, ...blobs }))
             }
           } catch { /* ignore */ }
         }
@@ -616,6 +634,20 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, loadQuickReplies])
 
+  // Load call audio via auth → blob URL
+  const loadCallAudio = useCallback(async (callId: string, mediaPath: string) => {
+    if (!auth?.token || audioBlobMap[callId] || audioLoading[callId]) return
+    setAudioLoading(prev => ({ ...prev, [callId]: true }))
+    try {
+      const resp = await authFetch(`${API_BASE.replace('/api', '')}${mediaPath}`, auth.token)
+      if (resp.ok) {
+        const blob = await resp.blob()
+        setAudioBlobMap(prev => ({ ...prev, [callId]: URL.createObjectURL(blob) }))
+      }
+    } catch { /* ignore */ }
+    setAudioLoading(prev => ({ ...prev, [callId]: false }))
+  }, [auth?.token, audioBlobMap, audioLoading])
+
   // Insert quick reply into message input
   const insertQuickReply = useCallback((text: string) => {
     setMessageText(prev => prev ? prev + '\n' + text : text)
@@ -717,6 +749,7 @@ function App() {
   // Select client handler
   const selectClient = useCallback((clientId: string) => {
     setSelectedClient(clientId)
+    setAudioBlobMap({})
     loadMessages(clientId)
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
@@ -880,6 +913,59 @@ function App() {
                     )
                   }
                   const m = item as ChatMessage
+                  if (m.type === 'call') {
+                    const dur = m.duration_seconds || 0
+                    const mm = String(Math.floor(dur / 60)).padStart(2, '0')
+                    const ss = String(dur % 60).padStart(2, '0')
+                    const isIncoming = m.direction === 'incoming' || m.direction === 'received'
+                    return (
+                      <div key={m.id} className="call-card">
+                        <div className="call-card-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isIncoming ? '#22c55e' : '#3b82f6'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+                            {isIncoming
+                              ? <polyline points="16 2 16 8 22 8" transform="translate(-6,2)"/>
+                              : <polyline points="22 8 22 2 16 2" transform="translate(-6,2)"/>
+                            }
+                          </svg>
+                        </div>
+                        <div className="call-card-body">
+                          <div className="call-card-header">
+                            <span className="call-card-label">Бінотел</span>
+                            <span className="call-card-time">
+                              {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <div className="call-card-details">
+                            <span className="call-card-direction">{isIncoming ? 'Вхідний' : 'Вихідний'}</span>
+                            {m.operator_name && <span className="call-card-operator">{m.operator_name}</span>}
+                            <span className="call-card-duration">{mm}:{ss}</span>
+                            {m.disposition && m.disposition !== 'ANSWER' && (
+                              <span className="call-card-missed">Пропущений</span>
+                            )}
+                          </div>
+                          {m.has_media && m.media_file && (
+                            audioBlobMap[m.call_id!] ? (
+                              <audio controls preload="auto" className="call-card-audio" src={audioBlobMap[m.call_id!]} />
+                            ) : (
+                              <button
+                                className="call-card-play-btn"
+                                onClick={() => loadCallAudio(m.call_id!, m.media_file)}
+                                disabled={audioLoading[m.call_id!]}
+                              >
+                                {audioLoading[m.call_id!] ? (
+                                  <div className="spinner-sm" />
+                                ) : (
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                )}
+                                <span>Прослухати</span>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )
+                  }
                   return (
                     <div key={m.id} className={`msg ${m.direction}`}>
                       <div className="msg-bubble">
