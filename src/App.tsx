@@ -1480,24 +1480,24 @@ function App() {
   // Send template to current chat
   const sendTemplate = useCallback(async (tpl: QuickReply) => {
     if (!selectedClient || !auth?.token) return
-    // Insert text into message and send
-    setMessageText(tpl.text)
     setPreviewTpl(null)
-    // Auto-send after a tick
-    setTimeout(async () => {
-      try {
-        const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: tpl.text }),
-        })
-        if (resp.ok) {
-          setMessageText('')
-          loadMessages(selectedClient)
-        }
-      } catch { /* ignore */ }
-    }, 50)
-  }, [selectedClient, auth?.token, loadMessages])
+    try {
+      const acctId = selectedAccount || ''
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: tpl.text, account_id: acctId }),
+      })
+      if (resp.ok) {
+        loadMessages(selectedClient)
+      } else {
+        const err = await resp.json().catch(() => ({}))
+        console.error('sendTemplate error:', resp.status, err)
+      }
+    } catch (e) {
+      console.error('sendTemplate network error:', e)
+    }
+  }, [selectedClient, selectedAccount, auth?.token, loadMessages])
 
   // Load call audio via auth → blob URL
   const loadCallAudio = useCallback(async (callId: string, mediaPath: string) => {
