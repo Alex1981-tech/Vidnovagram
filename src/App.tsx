@@ -1405,32 +1405,6 @@ function App() {
     finally { setAddToAcctChecking(false) }
   }, [auth?.token])
 
-  const addContactToAccount = useCallback(async () => {
-    if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
-    setAddToAcctAdding(true)
-    try {
-      const resp = await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: addToAcctModal.phone,
-          name: addToAcctModal.name,
-          account_id: addToAcctSelected,
-        }),
-      })
-      if (resp.ok) {
-        const data = await resp.json()
-        setAddToAcctModal(null)
-        // Navigate to chat with this client
-        setSelectedAccount('')
-        selectClient(data.client_id || addToAcctModal.clientId)
-      } else {
-        const err = await resp.json().catch(() => ({}))
-        alert(err.error || 'Помилка додавання')
-      }
-    } catch (e) { console.error('Add contact:', e) }
-    finally { setAddToAcctAdding(false) }
-  }, [auth?.token, addToAcctModal, addToAcctSelected, selectClient])
 
   const playCallAudio = useCallback(async (callId: string) => {
     if (!auth?.token) return
@@ -2489,6 +2463,32 @@ function App() {
     loadMessages(clientId)
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
+
+  const addContactToAccount = useCallback(async () => {
+    if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
+    setAddToAcctAdding(true)
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: addToAcctModal.phone,
+          name: addToAcctModal.name,
+          account_id: addToAcctSelected,
+        }),
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        setAddToAcctModal(null)
+        setSelectedAccount('')
+        selectClient(data.client_id || addToAcctModal.clientId)
+      } else {
+        const err = await resp.json().catch(() => ({}))
+        alert(err.error || 'Помилка додавання')
+      }
+    } catch (e) { console.error('Add contact:', e) }
+    finally { setAddToAcctAdding(false) }
+  }, [auth?.token, addToAcctModal, addToAcctSelected, selectClient])
 
   // === Gmail functions ===
   const loadGmailEmails = useCallback(async (accountId?: string, page = 1, searchQ = '', direction = '') => {
