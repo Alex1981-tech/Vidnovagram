@@ -1173,7 +1173,8 @@ function App() {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
         }
         if (scrollToEnd) {
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50)
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 300)
         }
         // Save to cache
         putJsonCache(MSG_STORE, cacheKey, {
@@ -2307,6 +2308,8 @@ function App() {
   // Select client handler
   const selectClient = useCallback((clientId: string) => {
     setSelectedClient(clientId)
+    setSelectedGmail(null)
+    setGmailSelectedMsg(null)
     setAudioBlobMap({})
     setMediaBlobMap({})
     setExpandedCallId(null)
