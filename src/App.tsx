@@ -2379,14 +2379,15 @@ function App() {
             const msg = data.message || {}
             const clientId = data.client_id
             const accountId = data.account_id
+            const isMediaUpdate = !!msg._media_update
 
             if (clientId === selectedClientRef.current) {
-              // Current chat — reload messages, scroll to new message
-              loadMessagesRef.current(clientId, true)
+              // Current chat — reload messages (scroll only for new messages, not media updates)
+              loadMessagesRef.current(clientId, !isMediaUpdate)
             }
 
-            // Notification for received messages only (not our own sent)
-            if (msg.direction === 'received') {
+            // Notification for received messages only (not our own sent, not media updates)
+            if (msg.direction === 'received' && !isMediaUpdate) {
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
                 const sender = msg.client_name || msg.phone || 'Новий контакт'
