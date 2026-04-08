@@ -1430,15 +1430,6 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, rpPlayingCall])
 
-  const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
-    // Set newChatClient so chat area works even if contact not in current account's list
-    if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
-    // Pick first available account if none selected
-    if (!selectedAccount && accounts.length > 0) {
-      setSelectedAccount(accounts[0].id)
-    }
-    selectClient(clientId)
-  }, [selectClient, selectedAccount, accounts])
 
   // Handle file attachment
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2476,6 +2467,14 @@ function App() {
     loadMessages(clientId)
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
+
+  const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
+    if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
+    if (!selectedAccount && accounts.length > 0) {
+      setSelectedAccount(accounts[0].id)
+    }
+    selectClient(clientId)
+  }, [selectClient, selectedAccount, accounts])
 
   const addContactToAccount = useCallback(async () => {
     if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
