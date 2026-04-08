@@ -711,11 +711,32 @@ function App() {
   const [sending, setSending] = useState(false)
 
   // Right panel
-  const [rightTabs, setRightTabs] = useState<('notes' | 'quick' | 'lab')[]>(() => {
-    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); return a } } catch {}
-    return ['notes', 'quick', 'lab']
+  type RpTab = 'notes' | 'quick' | 'lab' | 'clients'
+  const [rightTabs, setRightTabs] = useState<RpTab[]>(() => {
+    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); if (!a.includes('clients')) a.push('clients'); return a } } catch {}
+    return ['notes', 'quick', 'lab', 'clients']
   })
-  const [rightTab, setRightTab] = useState<'notes' | 'quick' | 'lab'>('notes')
+  const [rightTab, setRightTab] = useState<RpTab>('notes')
+  // Contacts tab state
+  const [rpClients, setRpClients] = useState<{ id: string; phone: string; full_name: string; calls_count: number; has_telegram: boolean; has_whatsapp?: boolean }[]>([])
+  const [rpClientSearch, setRpClientSearch] = useState('')
+  const [rpClientLoading, setRpClientLoading] = useState(false)
+  const [rpClientPage, setRpClientPage] = useState(1)
+  const [rpClientTotal, setRpClientTotal] = useState(0)
+  const [rpSelectedClient, setRpSelectedClient] = useState<string | null>(null)
+  const [rpClientCalls, setRpClientCalls] = useState<any[]>([])
+  const [rpClientMsgs, setRpClientMsgs] = useState<ChatMessage[]>([])
+  const [rpClientInfo, setRpClientInfo] = useState<{ name: string; phone: string } | null>(null)
+  const [rpClientDetailLoading, setRpClientDetailLoading] = useState(false)
+  // Add-to-account modal
+  const [addToAcctModal, setAddToAcctModal] = useState<{ phone: string; name: string; clientId: string } | null>(null)
+  const [addToAcctChecking, setAddToAcctChecking] = useState(false)
+  const [addToAcctResult, setAddToAcctResult] = useState<{ telegram: boolean; whatsapp: boolean } | null>(null)
+  const [addToAcctSelected, setAddToAcctSelected] = useState<string>('')
+  const [addToAcctAdding, setAddToAcctAdding] = useState(false)
+  // Audio playback for calls in contacts panel
+  const [rpPlayingCall, setRpPlayingCall] = useState<string | null>(null)
+  const rpAudioRef = useRef<HTMLAudioElement | null>(null)
   const dragCatRef = useRef<string | null>(null)
   const dragTabRef = useRef<string | null>(null)
   const dragLabPatientRef = useRef<LabPatient | null>(null)
@@ -752,6 +773,7 @@ function App() {
   const [editTplText, setEditTplText] = useState('')
   const [editTplMedia, setEditTplMedia] = useState<File | null>(null)
   const [editTplRemoveMedia, setEditTplRemoveMedia] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'template' | 'category'; id: string; name: string } | null>(null)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -1325,6 +1347,111 @@ function App() {
     } catch (e) { console.error('Send lab results:', e) }
     finally { setLabSending(false) }
   }, [selectedClient, auth?.token, labSendModal, labSendSelected, selectedAccount, loadMessages])
+
+  // === Right panel Contacts functions ===
+  const loadRpClients = useCallback(async (page = 1, search = '') => {
+    if (!auth?.token) return
+    setRpClientLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: '30' })
+      if (search) params.set('search', search)
+      const resp = await authFetch(`${API_BASE}/clients/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setRpClients(data.results || [])
+        setRpClientTotal(data.count || 0)
+        setRpClientPage(page)
+      }
+    } catch (e) { console.error('Load clients:', e) }
+    finally { setRpClientLoading(false) }
+  }, [auth?.token])
+
+  const loadRpClientDetail = useCallback(async (clientId: string) => {
+    if (!auth?.token) return
+    setRpSelectedClient(clientId)
+    setRpClientDetailLoading(true)
+    setRpClientCalls([])
+    setRpClientMsgs([])
+    try {
+      // Load calls and messages in parallel
+      const [callsResp, msgsResp] = await Promise.all([
+        authFetch(`${API_BASE}/clients/${clientId}/calls/?page_size=50&ordering=-call_datetime`, auth.token),
+        authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?per_page=100`, auth.token),
+      ])
+      if (callsResp.ok) {
+        const cd = await callsResp.json()
+        setRpClientCalls(cd.results || [])
+      }
+      if (msgsResp.ok) {
+        const md = await msgsResp.json()
+        setRpClientMsgs(md.results || [])
+        setRpClientInfo({ name: md.client_name || '', phone: md.client_phone || '' })
+      }
+    } catch (e) { console.error('Client detail:', e) }
+    finally { setRpClientDetailLoading(false) }
+  }, [auth?.token])
+
+  const checkPhoneMessengers = useCallback(async (phone: string) => {
+    if (!auth?.token) return
+    setAddToAcctChecking(true)
+    setAddToAcctResult(null)
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/check-phone/?phone=${encodeURIComponent(phone)}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setAddToAcctResult({ telegram: data.telegram, whatsapp: data.whatsapp })
+      }
+    } catch (e) { console.error('Check phone:', e) }
+    finally { setAddToAcctChecking(false) }
+  }, [auth?.token])
+
+  const addContactToAccount = useCallback(async () => {
+    if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
+    setAddToAcctAdding(true)
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/add-contact/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: addToAcctModal.phone,
+          name: addToAcctModal.name,
+          account_id: addToAcctSelected,
+        }),
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        setAddToAcctModal(null)
+        // Navigate to chat with this client
+        setSelectedAccount('')
+        selectClient(data.client_id || addToAcctModal.clientId)
+      } else {
+        const err = await resp.json().catch(() => ({}))
+        alert(err.error || 'Помилка додавання')
+      }
+    } catch (e) { console.error('Add contact:', e) }
+    finally { setAddToAcctAdding(false) }
+  }, [auth?.token, addToAcctModal, addToAcctSelected, selectClient])
+
+  const playCallAudio = useCallback(async (callId: string) => {
+    if (!auth?.token) return
+    if (rpPlayingCall === callId) {
+      rpAudioRef.current?.pause()
+      setRpPlayingCall(null)
+      return
+    }
+    try {
+      const resp = await authFetch(`${API_BASE.replace('/api', '')}/media/binotel/${callId}.mp3`, auth.token)
+      if (!resp.ok) { alert('Аудіо недоступне'); return }
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      if (rpAudioRef.current) { rpAudioRef.current.pause(); URL.revokeObjectURL(rpAudioRef.current.src) }
+      const audio = new Audio(url)
+      rpAudioRef.current = audio
+      audio.onended = () => setRpPlayingCall(null)
+      audio.play()
+      setRpPlayingCall(callId)
+    } catch { /* ignore */ }
+  }, [auth?.token, rpPlayingCall])
 
   // Handle file attachment
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3397,10 +3524,14 @@ function App() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               ) : rightTab === 'quick' ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              ) : rightTab === 'clients' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               ) : (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
               )}
-              {rightTab === 'notes' ? 'Нотатки' : rightTab === 'quick' ? 'Шаблони' : 'Аналізи пацієнтів'}
+              {rightTab === 'notes' ? 'Нотатки' : rightTab === 'quick' ? 'Шаблони' : rightTab === 'clients' ? (rpSelectedClient ? (
+                <><button className="rp-back-btn" onClick={() => { setRpSelectedClient(null); rpAudioRef.current?.pause(); setRpPlayingCall(null) }}>←</button>{rpClientInfo?.name || 'Контакт'}</>
+              ) : 'Контакти') : 'Аналізи пацієнтів'}
             </div>
             <div className="right-panel-body">
             {rightTab === 'notes' ? (
@@ -3580,7 +3711,7 @@ function App() {
                           <button className="tpl-add-btn" onClick={e => { e.stopPropagation(); setShowTplModal(cat.id); setNewTplTitle(''); setNewTplText(''); setNewTplMedia(null) }} title="Додати шаблон">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
                           </button>
-                          <button className="rp-delete-btn" onClick={e => { e.stopPropagation(); deleteCategory(cat.id) }} title="Видалити категорію">
+                          <button className="rp-delete-btn" onClick={e => { e.stopPropagation(); setConfirmDelete({ type: 'category', id: cat.id, name: cat.name }) }} title="Видалити категорію">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                           </button>
                         </div>
@@ -3594,7 +3725,7 @@ function App() {
                               <button className="tpl-edit-global-btn" onClick={e => { e.stopPropagation(); setEditingTpl(tpl); setEditTplTitle(tpl.title); setEditTplText(tpl.text); setEditTplMedia(null); setEditTplRemoveMedia(false) }} title="Редагувати шаблон">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                               </button>
-                              <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} title="Видалити">
+                              <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); setConfirmDelete({ type: 'template', id: tpl.id, name: tpl.title }) }} title="Видалити">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                               </button>
                             </div>
@@ -3611,7 +3742,140 @@ function App() {
                   </button>
                 </div>
               </div>
-            )}
+            ) : rightTab === 'clients' ? (
+              <div className="rp-clients">
+                {!rpSelectedClient ? (
+                  <>
+                    <div className="rp-lab-search">
+                      <input
+                        value={rpClientSearch}
+                        onChange={e => setRpClientSearch(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') loadRpClients(1, rpClientSearch) }}
+                        placeholder="Пошук за ПІБ або телефоном..."
+                      />
+                      <button onClick={() => loadRpClients(1, rpClientSearch)} title="Пошук">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                      </button>
+                    </div>
+                    {rpClientLoading && <div className="rp-empty">Завантаження...</div>}
+                    {!rpClientLoading && rpClients.length === 0 && <div className="rp-empty">Немає контактів</div>}
+                    <div className="rp-client-list">
+                      {rpClients.map(c => (
+                        <div key={c.id} className="rp-client-item" onClick={() => loadRpClientDetail(c.id)}>
+                          <div className="rp-client-avatar">
+                            <span>{(c.full_name || c.phone || '?')[0].toUpperCase()}</span>
+                          </div>
+                          <div className="rp-client-info">
+                            <div className="rp-client-name-row">
+                              <span className="rp-client-name">{c.full_name || c.phone}</span>
+                              <span className="rp-client-icons">
+                                {c.has_telegram && <TelegramIcon size={12} color="#2AABEE" />}
+                                {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
+                              </span>
+                            </div>
+                            <div className="rp-client-meta">
+                              {c.full_name && <span className="rp-client-phone">{c.phone}</span>}
+                              <span className="rp-client-calls">{c.calls_count} дзв.</span>
+                            </div>
+                          </div>
+                          <button className="rp-client-add-btn" title="Додати в акаунт і відкрити чат" onClick={e => {
+                            e.stopPropagation()
+                            setAddToAcctModal({ phone: c.phone, name: c.full_name, clientId: c.id })
+                            setAddToAcctResult(null)
+                            setAddToAcctSelected('')
+                            checkPhoneMessengers(c.phone)
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {rpClientTotal > 30 && (
+                      <div className="lab-pagination">
+                        <button disabled={rpClientPage <= 1} onClick={() => loadRpClients(rpClientPage - 1, rpClientSearch)}>←</button>
+                        <span>{rpClientPage} / {Math.ceil(rpClientTotal / 30)}</span>
+                        <button disabled={rpClientPage * 30 >= rpClientTotal} onClick={() => loadRpClients(rpClientPage + 1, rpClientSearch)}>→</button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rp-client-detail">
+                    {rpClientDetailLoading && <div className="rp-empty">Завантаження...</div>}
+                    {!rpClientDetailLoading && (
+                      <>
+                        {/* Client info card */}
+                        <div className="rp-cd-card">
+                          <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
+                          <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
+                          <div className="rp-cd-actions">
+                            <button onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }} title="Відкрити чат">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              Чат
+                            </button>
+                            <button onClick={() => {
+                              setAddToAcctModal({ phone: rpClientInfo?.phone || '', name: rpClientInfo?.name || '', clientId: rpSelectedClient! })
+                              setAddToAcctResult(null); setAddToAcctSelected('')
+                              checkPhoneMessengers(rpClientInfo?.phone || '')
+                            }} title="Додати в акаунт">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                        {/* Calls */}
+                        {rpClientCalls.length > 0 && (
+                          <div className="rp-cd-section">
+                            <div className="rp-cd-section-title">Дзвінки ({rpClientCalls.length})</div>
+                            {rpClientCalls.slice(0, 20).map((call: any) => (
+                              <div key={call.id} className={`rp-cd-call ${call.disposition}`}>
+                                <div className="rp-cd-call-icon">
+                                  {call.direction === 'incoming'
+                                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 2 16 8 22 8"/><line x1="22" y1="2" x2="16" y2="8"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
+                                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 8 22 2 16 2"/><line x1="16" y1="8" x2="22" y2="2"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
+                                  }
+                                </div>
+                                <div className="rp-cd-call-info">
+                                  <span className="rp-cd-call-date">{new Date(call.call_datetime).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span className="rp-cd-call-dur">{call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, '0')}` : '—'}</span>
+                                  {call.operator_name && <span className="rp-cd-call-op">{call.operator_name}</span>}
+                                </div>
+                                {call.has_audio && (
+                                  <button className={`rp-cd-play${rpPlayingCall === call.id ? ' playing' : ''}`} onClick={() => playCallAudio(call.id)}>
+                                    {rpPlayingCall === call.id ? '⏸' : '▶'}
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Messages */}
+                        {rpClientMsgs.length > 0 && (
+                          <div className="rp-cd-section">
+                            <div className="rp-cd-section-title">
+                              Переписка ({rpClientMsgs.length})
+                              <button className="rp-cd-chat-link" onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }}>
+                                Відкрити чат →
+                              </button>
+                            </div>
+                            {rpClientMsgs.slice(0, 30).map(m => (
+                              <div key={m.id} className={`rp-cd-msg ${m.direction}`} onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }}>
+                                <span className="rp-cd-msg-source">
+                                  {m.source === 'whatsapp' ? <WhatsAppIcon size={10} color="#25D366" /> : <TelegramIcon size={10} color="#2AABEE" />}
+                                </span>
+                                <span className="rp-cd-msg-text">{m.text?.slice(0, 60) || (m.has_media ? `📎 ${m.media_type}` : '...')}</span>
+                                <span className="rp-cd-msg-date">{new Date(m.message_date).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {rpClientCalls.length === 0 && rpClientMsgs.length === 0 && !rpClientDetailLoading && (
+                          <div className="rp-empty">Немає історії</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
           </div>
           <div className="right-panel-tabs">
@@ -3620,8 +3884,8 @@ function App() {
                 key={tab}
                 className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
                 data-tab={tab}
-                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch) }}
-                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}
+                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch); if (tab === 'clients' && rpClients.length === 0 && !rpClientLoading) loadRpClients(1, '') }}
+                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : 'Аналізи'}
                 draggable
                 onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
                 onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
@@ -3630,7 +3894,7 @@ function App() {
                   if (dragTabRef.current && dragTabRef.current !== tab) {
                     setRightTabs(prev => {
                       const arr = [...prev]
-                      const fi = arr.indexOf(dragTabRef.current as 'notes' | 'quick' | 'lab')
+                      const fi = arr.indexOf(dragTabRef.current as RpTab)
                       const ti = arr.indexOf(tab)
                       if (fi < 0 || ti < 0) return prev
                       const [moved] = arr.splice(fi, 1)
@@ -3647,10 +3911,12 @@ function App() {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 ) : tab === 'quick' ? (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                ) : tab === 'clients' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 ) : (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
                 )}
-                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}</span>
+                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : 'Аналізи'}</span>
               </button>
             ))}
           </div>
@@ -3787,6 +4053,78 @@ function App() {
               {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
             </div>
             <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add to Account Modal */}
+      {addToAcctModal && (
+        <div className="modal-overlay" onClick={() => setAddToAcctModal(null)}>
+          <div className="add-acct-modal" onClick={e => e.stopPropagation()}>
+            <div className="lab-send-header">
+              <h3>Додати в акаунт</h3>
+              <button className="modal-close-btn" onClick={() => setAddToAcctModal(null)}>×</button>
+            </div>
+            <div className="lab-send-patient">
+              <div className="lab-patient-avatar"><span>{(addToAcctModal.name || addToAcctModal.phone || '?')[0].toUpperCase()}</span></div>
+              <div className="lab-send-patient-info">
+                <span className="lab-send-patient-name">{addToAcctModal.name || 'Невідомий'}</span>
+                <span className="lab-send-patient-phone">{addToAcctModal.phone}</span>
+              </div>
+            </div>
+            <div className="add-acct-check">
+              {addToAcctChecking ? (
+                <div className="add-acct-checking"><div className="spinner-sm" /> Перевірка месенджерів...</div>
+              ) : addToAcctResult ? (
+                <div className="add-acct-status">
+                  <span className={`add-acct-badge${addToAcctResult.telegram ? ' found' : ''}`}>
+                    <TelegramIcon size={14} color={addToAcctResult.telegram ? '#2AABEE' : 'var(--muted-foreground)'} />
+                    {addToAcctResult.telegram ? 'Є в Telegram' : 'Немає в TG'}
+                  </span>
+                  <span className={`add-acct-badge${addToAcctResult.whatsapp ? ' found' : ''}`}>
+                    <WhatsAppIcon size={14} color={addToAcctResult.whatsapp ? '#25D366' : 'var(--muted-foreground)'} />
+                    {addToAcctResult.whatsapp ? 'Є в WhatsApp' : 'Немає в WA'}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            <div className="add-acct-list">
+              <div className="rp-cd-section-title">Оберіть акаунт:</div>
+              {accounts.map(a => (
+                <label key={a.id} className={`add-acct-item${addToAcctSelected === a.id ? ' selected' : ''}`}>
+                  <input type="radio" name="acct" checked={addToAcctSelected === a.id} onChange={() => setAddToAcctSelected(a.id)} />
+                  {a.type === 'whatsapp' ? <WhatsAppIcon size={14} color="#25D366" /> : <TelegramIcon size={14} color="#2AABEE" />}
+                  <span>{a.label || a.phone}</span>
+                </label>
+              ))}
+            </div>
+            <div className="lab-send-footer">
+              <button className="lab-send-cancel" onClick={() => setAddToAcctModal(null)}>Скасувати</button>
+              <button className="lab-send-submit" disabled={!addToAcctSelected || addToAcctAdding} onClick={addContactToAccount}>
+                {addToAcctAdding ? 'Додавання...' : 'Додати і відкрити чат'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Delete Template/Category */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="confirm-delete-modal" onClick={e => e.stopPropagation()}>
+            <div className="confirm-delete-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </div>
+            <h3>Видалити {confirmDelete.type === 'category' ? 'категорію' : 'шаблон'}?</h3>
+            <p>«{confirmDelete.name}» буде видалено назавжди{confirmDelete.type === 'category' ? ' разом з усіма шаблонами' : ''}.</p>
+            <div className="confirm-delete-actions">
+              <button onClick={() => setConfirmDelete(null)}>Скасувати</button>
+              <button className="danger" onClick={() => {
+                if (confirmDelete.type === 'category') deleteCategory(confirmDelete.id)
+                else deleteTemplate(confirmDelete.id)
+                setConfirmDelete(null)
+              }}>Видалити</button>
+            </div>
           </div>
         </div>
       )}
