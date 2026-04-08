@@ -1407,16 +1407,14 @@ function App() {
 
 
   const playCallAudio = useCallback(async (callId: string, audioFile?: string) => {
-    if (!auth?.token) return
+    if (!auth?.token || !audioFile) return
     if (rpPlayingCall === callId) {
       rpAudioRef.current?.pause()
       setRpPlayingCall(null)
       return
     }
     try {
-      const url = audioFile
-        ? `${API_BASE.replace('/api', '')}/media/${audioFile}`
-        : `${API_BASE}/internal/call-audio/${callId}/`
+      const url = `${API_BASE.replace('/api', '')}/media/${audioFile}`
       const resp = await authFetch(url, auth.token)
       if (!resp.ok) { alert('Аудіо недоступне'); return }
       const blob = await resp.blob()
@@ -2912,7 +2910,7 @@ function App() {
                       <div className="contact-meta">
                         <span className="contact-phone">{c.phone}</span>
                         <span className="contact-icons">
-                          {c.has_telegram !== false && <TelegramIcon size={12} color="#2AABEE" />}
+                          {c.has_telegram === true && <TelegramIcon size={12} color="#2AABEE" />}
                           {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
                         </span>
                       </div>
