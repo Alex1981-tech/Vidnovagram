@@ -2531,16 +2531,21 @@ function App() {
       })
       if (resp.ok) {
         const data = await resp.json()
+        const acctId = addToAcctSelected
+        const clientId = data.client_id || addToAcctModal.clientId
+        // Save new chat client so chat renders even without messages
+        setNewChatClient({ client_id: clientId, phone: data.phone || addToAcctModal.phone, full_name: data.full_name || addToAcctModal.name || '' })
         setAddToAcctModal(null)
-        setSelectedAccount('')
-        selectClient(data.client_id || addToAcctModal.clientId)
+        if (acctId !== selectedAccount) setSelectedAccount(acctId)
+        selectClient(clientId)
+        loadContacts()
       } else {
         const err = await resp.json().catch(() => ({}))
         alert(err.error || 'Помилка додавання')
       }
     } catch (e) { console.error('Add contact:', e) }
     finally { setAddToAcctAdding(false) }
-  }, [auth?.token, addToAcctModal, addToAcctSelected, selectClient])
+  }, [auth?.token, addToAcctModal, addToAcctSelected, selectClient, selectedAccount, loadContacts])
 
   // === Gmail functions ===
   const loadGmailEmails = useCallback(async (accountId?: string, page = 1, searchQ = '', direction = '') => {
