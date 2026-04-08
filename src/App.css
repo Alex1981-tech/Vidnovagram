@@ -3776,6 +3776,15 @@ body {
   background: color-mix(in oklch, #8b5cf6 8%, var(--card));
   box-shadow: none;
 }
+.rp-cd-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 6px;
+  display: block;
+  border: 2px solid color-mix(in oklch, #8b5cf6 30%, transparent);
+}
 .rp-cd-name {
   font-size: 0.875rem;
   font-weight: 600;

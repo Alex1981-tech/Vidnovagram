@@ -728,6 +728,7 @@ function App() {
   const [rpClientMsgs, setRpClientMsgs] = useState<ChatMessage[]>([])
   const [rpClientInfo, setRpClientInfo] = useState<{ name: string; phone: string } | null>(null)
   const [rpClientDetailLoading, setRpClientDetailLoading] = useState(false)
+  const [rpClientPhotos, setRpClientPhotos] = useState<Record<string, string>>({})
   // Add-to-account modal
   const [addToAcctModal, setAddToAcctModal] = useState<{ phone: string; name: string; clientId: string } | null>(null)
   const [addToAcctChecking, setAddToAcctChecking] = useState(false)
@@ -1349,18 +1350,30 @@ function App() {
   }, [selectedClient, auth?.token, labSendModal, labSendSelected, selectedAccount, loadMessages])
 
   // === Right panel Contacts functions ===
-  const loadRpClients = useCallback(async (page = 1, search = '') => {
+  const loadRpClients = useCallback(async (page = 1, search = '', append = false) => {
     if (!auth?.token) return
-    setRpClientLoading(true)
+    if (!append) setRpClientLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), page_size: '30' })
       if (search) params.set('search', search)
       const resp = await authFetch(`${API_BASE}/clients/?${params}`, auth.token)
       if (resp.ok) {
         const data = await resp.json()
-        setRpClients(data.results || [])
+        const results = data.results || []
+        setRpClients(prev => append ? [...prev, ...results] : results)
         setRpClientTotal(data.count || 0)
         setRpClientPage(page)
+        // Load TG profile photos for these clients
+        const ids = results.map((c: any) => c.id).join(',')
+        if (ids) {
+          try {
+            const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token!)
+            if (pr.ok) {
+              const photoMap = await pr.json()
+              setRpClientPhotos(prev => ({ ...prev, ...photoMap }))
+            }
+          } catch { /* ignore */ }
+        }
       }
     } catch (e) { console.error('Load clients:', e) }
     finally { setRpClientLoading(false) }
@@ -3774,11 +3787,18 @@ function App() {
                     </div>
                     {rpClientLoading && <div className="rp-empty">Завантаження...</div>}
                     {!rpClientLoading && rpClients.length === 0 && <div className="rp-empty">Немає контактів</div>}
-                    <div className="rp-client-list">
+                    <div className="rp-client-list" onScroll={e => {
+                      const el = e.currentTarget
+                      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40 && !rpClientLoading && rpClients.length < rpClientTotal) {
+                        loadRpClients(rpClientPage + 1, rpClientSearch, true)
+                      }
+                    }}>
                       {rpClients.map(c => (
                         <div key={c.id} className="rp-client-item" onClick={() => loadRpClientDetail(c.id)}>
                           <div className="rp-client-avatar">
-                            <span>{(c.full_name || c.phone || '?')[0].toUpperCase()}</span>
+                            {rpClientPhotos[c.id]
+                              ? <img src={`${API_BASE.replace('/api', '')}${rpClientPhotos[c.id]}`} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                              : <span>{(c.full_name || c.phone || '?')[0].toUpperCase()}</span>}
                           </div>
                           <div className="rp-client-info">
                             <div className="rp-client-name-row">
@@ -3804,14 +3824,8 @@ function App() {
                           </button>
                         </div>
                       ))}
+                      {rpClientLoading && rpClients.length > 0 && <div className="rp-empty" style={{ padding: '8px' }}>Завантаження...</div>}
                     </div>
-                    {rpClientTotal > 30 && (
-                      <div className="lab-pagination">
-                        <button disabled={rpClientPage <= 1} onClick={() => loadRpClients(rpClientPage - 1, rpClientSearch)}>←</button>
-                        <span>{rpClientPage} / {Math.ceil(rpClientTotal / 30)}</span>
-                        <button disabled={rpClientPage * 30 >= rpClientTotal} onClick={() => loadRpClients(rpClientPage + 1, rpClientSearch)}>→</button>
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div className="rp-client-detail">
@@ -3820,6 +3834,9 @@ function App() {
                       <>
                         {/* Client info card */}
                         <div className="rp-cd-card">
+                          {rpSelectedClient && rpClientPhotos[rpSelectedClient] && (
+                            <img src={`${API_BASE.replace('/api', '')}${rpClientPhotos[rpSelectedClient]}`} alt="" className="rp-cd-photo" />
+                          )}
                           <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
                           <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
                           <div className="rp-cd-actions">
