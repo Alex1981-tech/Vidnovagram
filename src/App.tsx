@@ -17,6 +17,21 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.0': [
+    'Gmail пошта — перегляд вхідних/надісланих, пошук, вкладення, написання та відправка нових листів',
+    'Gmail акаунти на бічній панелі з червоною іконкою',
+    'Виправлено аватарки пацієнтів у панелі аналізів',
+  ],
+  '0.9.0': [
+    'Панель «Аналізи» — перегляд лабораторних результатів пацієнтів (фото у додатку, PDF у браузері)',
+    'Пошук аналізів за ПІБ або телефоном, згруповані по пацієнтах з тамбнейлами',
+    'Нові сповіщення — аватар відправника, матове скло (блакитне TG / зелене WA)',
+    'Сповіщення не ховаються автоматично — кнопка «Приховати всі» та хрестик на кожній картці',
+    'Перетягування категорій шаблонів та вкладок правої панелі (drag & drop)',
+    'Два режими редагування шаблонів — перед відправкою та глобальне',
+    'Прикріплення додаткового файлу при відправці шаблону',
+    'Виправлено відправку медіа з шаблонів',
+  ],
   '0.7.3': [
     'Сповіщення — бейдж непрочитаних на лівій панелі',
     'Спливаючі тости нових повідомлень (клік → перехід у чат)',
@@ -129,6 +144,13 @@ interface ChatMessage {
   duration_seconds?: number
   disposition?: string
   operator_name?: string
+  // Lab result fields
+  is_lab_result?: boolean
+  lab_result_type?: string
+  patient_name?: string
+  patient_phone?: string
+  patient_client_id?: string
+  patient_client_name?: string
 }
 
 interface LinkPreview {
@@ -163,6 +185,60 @@ interface QuickReply {
   text: string
   media_file: string | null
   sort_order: number
+}
+
+interface LabResult {
+  id: string | number
+  source: 'telegram' | 'gmail'
+  text: string
+  media_type: string
+  media_file: string
+  thumbnail: string
+  lab_result_type: string
+  message_date: string
+  client_id: string
+  client_name: string
+  client_phone: string
+  patient_name: string
+  patient_dob: string
+  patient_client_id: string
+  patient_client_name: string
+  is_from_lab: boolean
+  lab_name: string
+  attachments?: { filename: string; mime_type: string; url?: string; is_lab_result?: boolean }[]
+  drive_links?: string[]
+}
+
+interface LabPatient {
+  key: string
+  name: string
+  phone: string
+  dob: string
+  photo: string | null
+  results: LabResult[]
+}
+
+interface GmailAccount {
+  id: string
+  label: string
+  email: string
+  status: string
+  messages_count: number
+}
+
+interface GmailEmail {
+  id: string
+  gmail_id: string
+  subject: string
+  sender: string
+  recipients: string[]
+  snippet: string
+  body_text: string
+  date: string
+  is_read: boolean
+  has_attachments: boolean
+  attachments: { filename: string; mime_type: string; size: number; attachment_id: string }[]
+  labels: string[]
 }
 
 /** Authenticated fetch with token header */
@@ -472,6 +548,12 @@ const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; co
   </svg>
 )
 
+const GmailIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,7 12,13 2,7" />
+  </svg>
+)
+
 const SunIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
@@ -622,7 +704,20 @@ function App() {
   const [sending, setSending] = useState(false)
 
   // Right panel
-  const [rightTab, setRightTab] = useState<'notes' | 'quick'>('notes')
+  const [rightTabs, setRightTabs] = useState<('notes' | 'quick' | 'lab')[]>(() => {
+    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); return a } } catch {}
+    return ['notes', 'quick', 'lab']
+  })
+  const [rightTab, setRightTab] = useState<'notes' | 'quick' | 'lab'>('notes')
+  const dragCatRef = useRef<string | null>(null)
+  const dragTabRef = useRef<string | null>(null)
+  // Lab results
+  const [labPatients, setLabPatients] = useState<LabPatient[]>([])
+  const [labSearch, setLabSearch] = useState('')
+  const [labLoading, setLabLoading] = useState(false)
+  const [labPage, setLabPage] = useState(1)
+  const [labTotal, setLabTotal] = useState(0)
+  const [expandedLabPatient, setExpandedLabPatient] = useState<string | null>(null)
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([])
   const [templateCategories, setTemplateCategories] = useState<TemplateCategory[]>([])
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
@@ -638,6 +733,13 @@ function App() {
   const [previewTpl, setPreviewTpl] = useState<QuickReply | null>(null)
   const [tplEditText, setTplEditText] = useState('')
   const [tplIncludeMedia, setTplIncludeMedia] = useState(true)
+  const [tplSendExtraFile, setTplSendExtraFile] = useState<File | null>(null) // extra attachment for send
+  // Global edit mode
+  const [editingTpl, setEditingTpl] = useState<QuickReply | null>(null)
+  const [editTplTitle, setEditTplTitle] = useState('')
+  const [editTplText, setEditTplText] = useState('')
+  const [editTplMedia, setEditTplMedia] = useState<File | null>(null)
+  const [editTplRemoveMedia, setEditTplRemoveMedia] = useState(false)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -692,8 +794,14 @@ function App() {
 
   // Context menu for media
   const [ctxMenu, setCtxMenu] = useState<{
-    x: number; y: number; mediaPath: string; mediaType: string; messageId: number | string
+    x: number; y: number; mediaPath?: string; mediaType?: string; messageId: number | string
   } | null>(null)
+
+  // Lab assign modal
+  const [labAssignMsg, setLabAssignMsg] = useState<ChatMessage | null>(null) // message to assign as lab result
+  const [labAssignSearch, setLabAssignSearch] = useState('')
+  const [labAssignResults, setLabAssignResults] = useState<{id: string; phone: string; full_name: string}[]>([])
+  const [labAssignLoading, setLabAssignLoading] = useState(false)
 
   // Forward mode
   const [forwardMode, setForwardMode] = useState(false)
@@ -718,6 +826,25 @@ function App() {
   const [addContactAvail, setAddContactAvail] = useState<{ whatsapp?: boolean; telegram?: boolean } | null>(null)
   const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const addContactCheckTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // Gmail
+  const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
+  const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
+  const [gmailEmails, setGmailEmails] = useState<GmailEmail[]>([])
+  const [gmailTotal, setGmailTotal] = useState(0)
+  const [gmailPage, setGmailPage] = useState(1)
+  const [gmailSearch, setGmailSearch] = useState('')
+  const [gmailDirection, setGmailDirection] = useState<'' | 'inbox' | 'sent'>('inbox')
+  const [gmailLoading, setGmailLoading] = useState(false)
+  const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
+  const [showCompose, setShowCompose] = useState(false)
+  const [composeTo, setComposeTo] = useState('')
+  const [composeSubject, setComposeSubject] = useState('')
+  const [composeBody, setComposeBody] = useState('')
+  const [composeFiles, setComposeFiles] = useState<File[]>([])
+  const [composeSending, setComposeSending] = useState(false)
+  const composeFileRef = useRef<HTMLInputElement>(null)
+  const gmailSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -839,13 +966,14 @@ function App() {
     }
   }, [])
 
-  // Load accounts (TG + WA)
+  // Load accounts (TG + WA + Gmail)
   const loadAccounts = useCallback(async () => {
     if (!auth?.token) return
     try {
-      const [tgResp, waResp] = await Promise.all([
+      const [tgResp, waResp, gmResp] = await Promise.all([
         authFetch(`${API_BASE}/telegram/accounts/`, auth.token),
         authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token),
+        authFetch(`${API_BASE}/mail/accounts/`, auth.token),
       ])
       const tgAccounts: Account[] = []
       const waAccounts: Account[] = []
@@ -865,6 +993,18 @@ function App() {
             waAccounts.push({ id: a.id, label: a.label, phone: a.phone, status: a.status, type: 'whatsapp' })
           }
         }
+      }
+
+      // Gmail accounts
+      if (gmResp.ok) {
+        const gmData = await gmResp.json()
+        const gms: GmailAccount[] = []
+        for (const a of (Array.isArray(gmData) ? gmData : gmData.results || [])) {
+          if (a.status === 'active') {
+            gms.push({ id: a.id, label: a.label, email: a.email, status: a.status, messages_count: a.messages_count || 0 })
+          }
+        }
+        setGmailAccounts(gms)
       }
 
       setAccounts([...tgAccounts, ...waAccounts])
@@ -1527,6 +1667,54 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token])
 
+  // Load lab results grouped by patient
+  const loadLabResults = useCallback(async (page = 1, search = '') => {
+    if (!auth?.token) return
+    setLabLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page) })
+      if (search) params.set('search', search)
+      const resp = await authFetch(`${API_BASE}/telegram/lab-results/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        const results: LabResult[] = data.results || []
+        setLabTotal(data.total || results.length)
+        // Group by patient: patient_client_id > patient_name > client_id
+        const map = new Map<string, LabPatient>()
+        for (const r of results) {
+          const key = r.patient_client_id || (r.patient_name ? `n:${r.patient_name.toLowerCase()}` : r.client_id || `u:${r.id}`)
+          if (!map.has(key)) {
+            map.set(key, {
+              key,
+              name: r.patient_client_name || r.patient_name || r.client_name || r.client_phone || '',
+              phone: r.client_phone || '',
+              dob: r.patient_dob || '',
+              photo: null,
+              results: [],
+            })
+          }
+          map.get(key)!.results.push(r)
+        }
+        setLabPatients(Array.from(map.values()))
+        setLabPage(page)
+        // Fetch photos for patients that have client_id
+        const clientIds = [...new Set(results.map(r => r.patient_client_id || r.client_id).filter(Boolean))]
+        if (clientIds.length > 0) {
+          const photoResp = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${clientIds.join(',')}`, auth.token)
+          if (photoResp.ok) {
+            const pm: Record<string, string> = await photoResp.json()
+            // Store media path (not full URL) — will be loaded via loadMediaBlob with auth
+            setLabPatients(prev => prev.map(p => {
+              const cid = p.results[0]?.patient_client_id || p.results[0]?.client_id || ''
+              return pm[cid] ? { ...p, photo: pm[cid] } : p
+            }))
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    setLabLoading(false)
+  }, [auth?.token])
+
   // Add client note
   const addClientNote = useCallback(async () => {
     if (!selectedClient || !newNoteText.trim() || !auth?.token) return
@@ -1615,34 +1803,97 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, loadTemplateCategories])
 
+  // Save template (global edit)
+  const saveTemplate = useCallback(async (tpl: QuickReply) => {
+    if (!auth?.token) return
+    try {
+      const formData = new FormData()
+      formData.append('title', editTplTitle.trim())
+      formData.append('text', editTplText.trim())
+      if (editTplMedia) {
+        formData.append('media_file', editTplMedia)
+      } else if (editTplRemoveMedia) {
+        formData.append('remove_media', 'true')
+      }
+      const resp = await fetch(`${API_BASE}/messenger/quick-replies/${tpl.id}/`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Token ${auth.token}` },
+        body: formData,
+      })
+      if (resp.ok) {
+        setEditingTpl(null)
+        setEditTplMedia(null)
+        setEditTplRemoveMedia(false)
+        loadTemplateCategories()
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token, editTplTitle, editTplText, editTplMedia, editTplRemoveMedia, loadTemplateCategories])
+
+  // Reorder categories via drag-and-drop
+  const reorderCategories = useCallback(async (fromId: string, toId: string) => {
+    if (fromId === toId || !auth?.token) return
+    setTemplateCategories(prev => {
+      const arr = [...prev]
+      const fi = arr.findIndex(c => c.id === fromId)
+      const ti = arr.findIndex(c => c.id === toId)
+      if (fi < 0 || ti < 0) return prev
+      const [moved] = arr.splice(fi, 1)
+      arr.splice(ti, 0, moved)
+      // Persist sort_order to backend
+      arr.forEach((cat, i) => {
+        if (cat.sort_order !== i) {
+          authFetch(`${API_BASE}/messenger/template-categories/${cat.id}/`, auth.token!, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sort_order: i }),
+          }).catch(() => {})
+        }
+        cat.sort_order = i
+      })
+      return arr
+    })
+  }, [auth?.token])
+
   // Send template to current chat
-  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null) => {
+  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null, extraFile: File | null) => {
     if (!selectedClient || !auth?.token) return
     setPreviewTpl(null)
+    setTplSendExtraFile(null)
     try {
       const acctId = selectedAccount || ''
-      // If media included, download it and send as multipart
-      if (mediaUrl) {
+
+      // Determine the file to send: extraFile (user-added) takes priority, else download media from template
+      let fileToSend: Blob | null = null
+      let fileName = ''
+
+      if (extraFile) {
+        fileToSend = extraFile
+        fileName = extraFile.name
+      } else if (mediaUrl) {
         try {
-          const mediaResp = await authFetch(`https://cc.vidnova.app${mediaUrl}`, auth.token)
+          const mediaResp = await authFetch(`${API_BASE.replace('/api', '')}${mediaUrl}`, auth.token)
           if (mediaResp.ok) {
-            const blob = await mediaResp.blob()
-            const ext = mediaUrl.split('.').pop() || 'bin'
-            const fd = new FormData()
-            fd.append('text', text)
-            fd.append('account_id', acctId)
-            fd.append('file', blob, `template.${ext}`)
-            const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-              method: 'POST',
-              body: fd,
-            })
-            if (resp.ok) { loadMessages(selectedClient); return }
-            const err = await resp.json().catch(() => ({}))
-            console.error('sendTemplate media error:', resp.status, err)
-            return
+            fileToSend = await mediaResp.blob()
+            fileName = `template.${mediaUrl.split('.').pop() || 'bin'}`
           }
         } catch (e) { console.error('sendTemplate media download error:', e) }
       }
+
+      if (fileToSend) {
+        const fd = new FormData()
+        fd.append('text', text)
+        fd.append('account_id', acctId)
+        fd.append('file', fileToSend, fileName)
+        const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+          method: 'POST',
+          body: fd,
+        })
+        if (resp.ok) { loadMessages(selectedClient); return }
+        const err = await resp.json().catch(() => ({}))
+        console.error('sendTemplate media error:', resp.status, err)
+        return
+      }
+
       // Text only
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
         method: 'POST',
@@ -1773,21 +2024,14 @@ function App() {
     }
   }, [auth?.token, mediaBlobMap, loadMediaBlob, downloadMedia])
 
-  // Context menu for media files
-  const showMediaCtxMenu = useCallback((e: React.MouseEvent, mediaPath: string, mediaType: string, messageId: number | string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setCtxMenu({ x: e.clientX, y: e.clientY, mediaPath, mediaType, messageId })
-  }, [])
-
   const ctxMenuOpen = useCallback(() => {
-    if (!ctxMenu) return
-    openMedia(ctxMenu.mediaPath, ctxMenu.mediaType, ctxMenu.messageId)
+    if (!ctxMenu?.mediaPath) return
+    openMedia(ctxMenu.mediaPath, ctxMenu.mediaType || '', ctxMenu.messageId)
     setCtxMenu(null)
   }, [ctxMenu, openMedia])
 
   const ctxMenuSave = useCallback(() => {
-    if (!ctxMenu) return
+    if (!ctxMenu?.mediaPath) return
     downloadMedia(ctxMenu.mediaPath, ctxMenu.mediaPath.split('/').pop() || 'file')
     setCtxMenu(null)
   }, [ctxMenu, downloadMedia])
@@ -1798,6 +2042,70 @@ function App() {
     toggleMsgSelection(ctxMenu.messageId)
     setCtxMenu(null)
   }, [ctxMenu, toggleMsgSelection])
+
+  // Lab assign: open modal from context menu
+  const ctxMenuLabAssign = useCallback(() => {
+    if (!ctxMenu) return
+    const msg = messages.find(m => m.id === ctxMenu.messageId)
+    if (msg) { setLabAssignMsg(msg); setLabAssignSearch(''); setLabAssignResults([]) }
+    setCtxMenu(null)
+  }, [ctxMenu, messages])
+
+  const searchLabPatients = useCallback(async (q: string) => {
+    if (!auth?.token || q.length < 2) { setLabAssignResults([]); return }
+    setLabAssignLoading(true)
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/?search=${encodeURIComponent(q)}&page_size=20`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setLabAssignResults((data.results || []).map((c: any) => ({ id: c.id, phone: c.phone, full_name: c.full_name })))
+      }
+    } catch { /* ignore */ }
+    setLabAssignLoading(false)
+  }, [auth?.token])
+
+  const assignLabResult = useCallback(async (clientId: string, clientPhone: string, clientName: string) => {
+    if (!auth?.token || !labAssignMsg) return
+    // Extract numeric id from "tg_123"
+    const rawId = String(labAssignMsg.id).replace(/^tg_/, '')
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/link-lab-patient/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_id: rawId, phone: clientPhone, source: labAssignMsg.source || 'telegram' }),
+      })
+      if (resp.ok) {
+        // Update message in local state
+        setMessages(prev => prev.map(m => m.id === labAssignMsg.id ? {
+          ...m, is_lab_result: true, patient_client_id: clientId, patient_client_name: clientName, patient_phone: clientPhone,
+        } : m))
+        setLabAssignMsg(null)
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token, labAssignMsg])
+
+  const unlinkLabResult = useCallback(async (msg: ChatMessage) => {
+    if (!auth?.token) return
+    const rawId = String(msg.id).replace(/^tg_/, '')
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/unlink-lab-patient/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_id: rawId, source: msg.source || 'telegram' }),
+      })
+      if (resp.ok) {
+        setMessages(prev => prev.map(m => m.id === msg.id ? {
+          ...m, is_lab_result: false, patient_client_id: '', patient_client_name: '', patient_phone: '', patient_name: '',
+        } : m))
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token])
+
+  const editLabResult = useCallback((msg: ChatMessage) => {
+    setLabAssignMsg(msg)
+    setLabAssignSearch('')
+    setLabAssignResults([])
+  }, [])
 
   // Toggle category expand/collapse
   const toggleCat = useCallback((id: string) => {
@@ -1952,9 +2260,7 @@ function App() {
   // Add in-app toast
   const addToast = useCallback((clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => {
     const id = ++toastIdRef.current
-    setToasts(prev => [...prev.slice(-4), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
-    // Auto-remove after 6s
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 6000)
+    setToasts(prev => [...prev.slice(-8), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
   }, [])
   useEffect(() => { addToastRef.current = addToast }, [addToast])
 
@@ -2003,11 +2309,96 @@ function App() {
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
 
+  // === Gmail functions ===
+  const loadGmailEmails = useCallback(async (accountId?: string, page = 1, searchQ = '', direction = '') => {
+    if (!auth?.token) return
+    const accId = accountId || selectedGmail
+    if (!accId) return
+    setGmailLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page) })
+      if (searchQ) params.set('search', searchQ)
+      if (direction) params.set('direction', direction)
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${accId}/messages/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setGmailEmails(data.results || [])
+        setGmailTotal(data.count || 0)
+        setGmailPage(page)
+      }
+    } catch (e) { console.error('Gmail load:', e) }
+    finally { setGmailLoading(false) }
+  }, [auth?.token, selectedGmail])
+
+  const sendGmailEmail = useCallback(async () => {
+    if (!auth?.token || !selectedGmail || !composeTo.trim()) return
+    setComposeSending(true)
+    try {
+      const fd = new FormData()
+      fd.append('to', composeTo.trim())
+      fd.append('subject', composeSubject)
+      fd.append('body', composeBody)
+      for (const f of composeFiles) fd.append('attachments', f)
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/send/`, auth.token, { method: 'POST', body: fd })
+      if (resp.ok) {
+        setShowCompose(false)
+        setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([])
+        // Refresh emails
+        loadGmailEmails(selectedGmail, 1, gmailSearch, gmailDirection)
+      } else {
+        const err = await resp.json().catch(() => ({ error: 'Помилка відправки' }))
+        alert(err.error || 'Помилка відправки')
+      }
+    } catch (e) { console.error('Gmail send:', e); alert('Помилка відправки') }
+    finally { setComposeSending(false) }
+  }, [auth?.token, selectedGmail, composeTo, composeSubject, composeBody, composeFiles, loadGmailEmails, gmailSearch, gmailDirection])
+
+  const downloadGmailAttachment = useCallback(async (msgId: string, attachmentId: string, filename: string) => {
+    if (!auth?.token || !selectedGmail) return
+    try {
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/messages/${msgId}/attachment/?id=${attachmentId}`, auth.token)
+      if (!resp.ok) return
+      const blob = await resp.blob()
+      const ct = resp.headers.get('content-type') || ''
+      // PDF — open in browser
+      if (ct.includes('pdf') || filename.toLowerCase().endsWith('.pdf')) {
+        const url = URL.createObjectURL(blob)
+        shellOpen(url)
+        return
+      }
+      // Image — lightbox
+      if (ct.startsWith('image/')) {
+        setLightboxSrc(URL.createObjectURL(blob))
+        return
+      }
+      // Other — save dialog
+      const filePath = await save({ defaultPath: filename })
+      if (filePath) {
+        const ab = await blob.arrayBuffer()
+        await writeFile(filePath, new Uint8Array(ab))
+      }
+    } catch (e) { console.error('Attachment download:', e) }
+  }, [auth?.token, selectedGmail])
+
+  const handleGmailAccountClick = useCallback((accId: string) => {
+    if (selectedGmail === accId) {
+      setSelectedGmail(null)
+      setGmailEmails([]); setGmailSelectedMsg(null)
+    } else {
+      setSelectedGmail(accId)
+      setSelectedAccount(''); setSelectedClient(null); setMessages([])
+      setGmailSelectedMsg(null)
+      loadGmailEmails(accId, 1, '', 'inbox')
+      setGmailDirection('inbox'); setGmailSearch('')
+    }
+  }, [selectedGmail, loadGmailEmails])
+
   // Account tab click
   const handleAccountClick = useCallback((accountId: string) => {
     setSelectedAccount(prev => prev === accountId ? '' : accountId)
     setSelectedClient(null)
     setMessages([])
+    setSelectedGmail(null); setGmailEmails([]); setGmailSelectedMsg(null)
     // Clear unread badge for this account
     setAccountUnreads(prev => { const n = { ...prev }; delete n[accountId]; return n })
   }, [])
@@ -2079,6 +2470,19 @@ function App() {
               <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
             </button>
           ))}
+          {/* Gmail account icons */}
+          {gmailAccounts.length > 0 && <div className="rail-divider" />}
+          {gmailAccounts.map(gm => (
+            <button
+              key={gm.id}
+              className={`rail-icon ${selectedGmail === gm.id ? 'active' : ''}`}
+              onClick={() => handleGmailAccountClick(gm.id)}
+              title={`${gm.label} — ${gm.email}`}
+            >
+              <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
+              <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
+            </button>
+          ))}
           {/* Flyout panel on hover */}
           <div className="rail-flyout">
             <button
@@ -2110,6 +2514,20 @@ function App() {
                 <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
               </button>
             ))}
+            {gmailAccounts.map(gm => (
+              <button
+                key={gm.id}
+                className={`rail-flyout-item ${selectedGmail === gm.id ? 'active' : ''}`}
+                onClick={() => handleGmailAccountClick(gm.id)}
+              >
+                <GmailIcon size={16} color="#EA4335" />
+                <div className="rail-flyout-text">
+                  <span className="rail-flyout-name">{gm.label}</span>
+                  <span className="rail-flyout-phone">{gm.email}</span>
+                </div>
+                <span className={`status-dot ${gm.status === 'active' ? 'online' : ''}`} />
+              </button>
+            ))}
           </div>
         </div>
         {/* Sidebar with contacts */}
@@ -2117,6 +2535,17 @@ function App() {
           <div className="resize-handle" onMouseDown={e => startResize('sidebar', e)} />
           {/* Active account card */}
           {(() => {
+            if (selectedGmail) {
+              const gm = gmailAccounts.find(g => g.id === selectedGmail)
+              return (
+                <div className="active-account-card">
+                  <GmailIcon size={16} color="#EA4335" />
+                  <span className="active-account-name">{gm?.label || 'Gmail'}</span>
+                  <span className="active-account-phone">{gm?.email}</span>
+                  <span className={`status-dot ${gm?.status === 'active' ? 'online' : ''}`} />
+                </div>
+              )
+            }
             const acc = selectedAccount ? accounts.find(a => a.id === selectedAccount) : null
             return (
               <div className="active-account-card">
@@ -2142,73 +2571,310 @@ function App() {
               </div>
             )
           })()}
+          {/* Search */}
           <div className="sidebar-search">
             <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
             </svg>
-            <input
-              placeholder="Пошук контактів..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-          <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
-            Новий чат
-          </button>
-          <div className="contact-list" onScroll={e => {
-            const el = e.currentTarget
-            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
-              loadMoreContacts()
-            }
-          }}>
-            {contacts.map(c => (
-              <div
-                key={c.client_id}
-                className={`contact ${selectedClient === c.client_id ? 'active' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
-                onClick={() => selectClient(c.client_id)}
-              >
-                <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
-                  {photoMap[c.client_id]
-                    ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
-                    : <UserIcon />}
-                </div>
-                <div className="contact-body">
-                  <div className="contact-row">
-                    <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
-                      <ContactName name={c.full_name || c.phone} isEmployee={c.is_employee} />
-                    </span>
-                    {isUnread(c) && <span className="unread-dot" />}
-                    <span className="contact-time">
-                      {c.last_message_date && formatContactDate(c.last_message_date)}
-                    </span>
-                  </div>
-                  <div className="contact-row">
-                    <span className="contact-preview">
-                      {c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}
-                      {c.last_message_text?.slice(0, 60) || 'Медіа'}
-                    </span>
-                  </div>
-                  <div className="contact-meta">
-                    <span className="contact-phone">{c.phone}</span>
-                    <span className="contact-icons">
-                      {c.has_telegram !== false && <TelegramIcon size={12} color="#2AABEE" />}
-                      {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {loadingMoreContacts && (
-              <div className="loading-more">Завантаження...</div>
+            {selectedGmail ? (
+              <input
+                placeholder="Пошук листів..."
+                value={gmailSearch}
+                onChange={e => {
+                  setGmailSearch(e.target.value)
+                  clearTimeout(gmailSearchTimer.current)
+                  gmailSearchTimer.current = setTimeout(() => {
+                    setGmailSelectedMsg(null)
+                    loadGmailEmails(selectedGmail, 1, e.target.value, gmailDirection)
+                  }, 400)
+                }}
+              />
+            ) : (
+              <input
+                placeholder="Пошук контактів..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             )}
           </div>
-          <div className="sidebar-footer">
-            {contacts.length} / {contactCount} контактів
-          </div>
+          {/* Gmail filter / New chat */}
+          {selectedGmail ? (
+            <div className="gmail-sidebar-filter">
+              <button className={`gmail-filter-btn ${gmailDirection === 'inbox' ? 'active' : ''}`} onClick={() => { setGmailDirection('inbox'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'inbox') }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                Вхідні
+              </button>
+              <button className={`gmail-filter-btn ${gmailDirection === 'sent' ? 'active' : ''}`} onClick={() => { setGmailDirection('sent'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'sent') }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                Надіслані
+              </button>
+              <button className="gmail-filter-compose" onClick={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }} title="Написати">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+              </button>
+            </div>
+          ) : (
+            <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+              Новий чат
+            </button>
+          )}
+          {/* Contact list / Gmail email list */}
+          {selectedGmail ? (
+            <>
+              <div className="contact-list">
+                {gmailLoading && <div className="loading-more">Завантаження...</div>}
+                {!gmailLoading && gmailEmails.length === 0 && <div className="loading-more" style={{ color: 'var(--muted-foreground)' }}>Немає листів</div>}
+                {gmailEmails.map(email => {
+                  const isSent = gmailDirection === 'sent'
+                  const displayName = isSent ? (email.recipients[0] || '—') : email.sender.replace(/<[^>]+>/, '').trim()
+                  const initial = displayName[0]?.toUpperCase() || '?'
+                  return (
+                    <div
+                      key={email.id}
+                      className={`contact gmail-contact ${gmailSelectedMsg?.id === email.id ? 'active' : ''}${!email.is_read ? ' unread' : ''}`}
+                      onClick={() => setGmailSelectedMsg(email)}
+                    >
+                      <div className="avatar gmail-avatar">
+                        <span>{initial}</span>
+                      </div>
+                      <div className="contact-body">
+                        <div className="contact-row">
+                          <span className="contact-name">{displayName}</span>
+                          <span className="contact-time">{formatContactDate(email.date)}</span>
+                        </div>
+                        <div className="contact-row">
+                          <span className="contact-preview gmail-subject">{email.subject || '(без теми)'}</span>
+                        </div>
+                        <div className="contact-meta">
+                          <span className="contact-preview gmail-snippet">{email.snippet?.slice(0, 50)}</span>
+                          <span className="contact-icons">
+                            {email.has_attachments && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                            <GmailIcon size={11} color="#EA4335" />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Pagination */}
+              {gmailTotal > 50 && (
+                <div className="gmail-pagination sidebar-footer">
+                  <button disabled={gmailPage <= 1} onClick={() => loadGmailEmails(selectedGmail, gmailPage - 1, gmailSearch, gmailDirection)}>←</button>
+                  <span>{gmailPage} / {Math.ceil(gmailTotal / 50)}</span>
+                  <button disabled={gmailPage * 50 >= gmailTotal} onClick={() => loadGmailEmails(selectedGmail, gmailPage + 1, gmailSearch, gmailDirection)}>→</button>
+                </div>
+              )}
+              {gmailTotal <= 50 && (
+                <div className="sidebar-footer">{gmailEmails.length} листів</div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="contact-list" onScroll={e => {
+                const el = e.currentTarget
+                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+                  loadMoreContacts()
+                }
+              }}>
+                {contacts.map(c => (
+                  <div
+                    key={c.client_id}
+                    className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
+                    onClick={() => selectClient(c.client_id)}
+                  >
+                    <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
+                      {photoMap[c.client_id]
+                        ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
+                        : <UserIcon />}
+                    </div>
+                    <div className="contact-body">
+                      <div className="contact-row">
+                        <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
+                          <ContactName name={c.full_name || c.phone} isEmployee={c.is_employee} />
+                        </span>
+                        {isUnread(c) && <span className="unread-dot" />}
+                        <span className="contact-time">
+                          {c.last_message_date && formatContactDate(c.last_message_date)}
+                        </span>
+                      </div>
+                      <div className="contact-row">
+                        <span className="contact-preview">
+                          {c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}
+                          {c.last_message_text?.slice(0, 60) || 'Медіа'}
+                        </span>
+                      </div>
+                      <div className="contact-meta">
+                        <span className="contact-phone">{c.phone}</span>
+                        <span className="contact-icons">
+                          {c.has_telegram !== false && <TelegramIcon size={12} color="#2AABEE" />}
+                          {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {loadingMoreContacts && (
+                  <div className="loading-more">Завантаження...</div>
+                )}
+              </div>
+              <div className="sidebar-footer">
+                {contacts.length} / {contactCount} контактів
+              </div>
+            </>
+          )}
         </div>
 
         {/* Chat area */}
+        {selectedGmail && gmailSelectedMsg ? (
+        <div className="chat gmail-chat-view">
+          {/* Gmail chat header */}
+          <div className="chat-header">
+            <div className="chat-header-avatar">
+              <div className="avatar gmail-avatar" style={{ width: 36, height: 36 }}>
+                <span>{(gmailSelectedMsg.sender.replace(/<[^>]+>/, '').trim()[0] || '?').toUpperCase()}</span>
+              </div>
+            </div>
+            <div className="chat-header-info">
+              <div className="chat-header-name">{gmailSelectedMsg.subject || '(без теми)'}</div>
+              <div className="chat-header-phone">{gmailSelectedMsg.sender}</div>
+            </div>
+            <div className="chat-header-right">
+              <GmailIcon size={16} color="#EA4335" />
+              <span className="msg-count-badge">{new Date(gmailSelectedMsg.date).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+          {/* Email body */}
+          <div className="chat-messages gmail-body-area">
+            <div className="gmail-email-card">
+              <div className="gmail-email-meta">
+                <div className="gmail-email-from">
+                  <strong>Від:</strong> {gmailSelectedMsg.sender}
+                </div>
+                {gmailSelectedMsg.recipients.length > 0 && (
+                  <div className="gmail-email-to">
+                    <strong>Кому:</strong> {gmailSelectedMsg.recipients.join(', ')}
+                  </div>
+                )}
+                <div className="gmail-email-date">
+                  {new Date(gmailSelectedMsg.date).toLocaleString('uk-UA', { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+              <div className="gmail-email-body-text">{gmailSelectedMsg.body_text || gmailSelectedMsg.snippet}</div>
+              {gmailSelectedMsg.attachments.length > 0 && (
+                <div className="gmail-attachments">
+                  <div className="gmail-attachments-title">Вкладення ({gmailSelectedMsg.attachments.length})</div>
+                  {gmailSelectedMsg.attachments.map((att, i) => (
+                    <button key={i} className="gmail-attachment-item" onClick={() => downloadGmailAttachment(gmailSelectedMsg!.id, att.attachment_id, att.filename)}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                      <span className="gmail-att-name">{att.filename}</span>
+                      <span className="gmail-att-size">{att.size > 1024*1024 ? `${(att.size/1024/1024).toFixed(1)} MB` : `${Math.round(att.size/1024)} KB`}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Reply input */}
+          <div className="gmail-reply-bar">
+            <div className="gmail-reply-to">
+              <GmailIcon size={12} color="#EA4335" />
+              <span>Відповідь → {gmailSelectedMsg.sender.replace(/<[^>]+>/, '').trim()}</span>
+            </div>
+            {composeFiles.length > 0 && (
+              <div className="gmail-reply-files">
+                {composeFiles.map((f, i) => (
+                  <div key={i} className="gmail-reply-file">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <span>{f.name}</span>
+                    <button onClick={() => setComposeFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="gmail-reply-row">
+              <button className="gmail-reply-attach" onClick={() => composeFileRef.current?.click()} title="Вкласти файл">
+                <PaperclipIcon />
+              </button>
+              <input
+                ref={composeFileRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={e => { if (e.target.files) setComposeFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }}
+              />
+              <textarea
+                className="gmail-reply-input"
+                placeholder="Написати відповідь..."
+                value={composeBody}
+                onChange={e => {
+                  setComposeBody(e.target.value)
+                  e.target.style.height = 'auto'
+                  e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (composeBody.trim()) {
+                      // Reply: set to = sender, subject = Re: subject
+                      const replyTo = gmailSelectedMsg!.sender.match(/<([^>]+)>/)?.[1] || gmailSelectedMsg!.sender
+                      const replySubject = gmailSelectedMsg!.subject?.startsWith('Re:') ? gmailSelectedMsg!.subject : `Re: ${gmailSelectedMsg!.subject || ''}`
+                      setComposeTo(replyTo)
+                      setComposeSubject(replySubject)
+                      // sendGmailEmail relies on composeTo, so we set then trigger
+                      setTimeout(() => {
+                        const fd = new FormData()
+                        fd.append('to', replyTo.trim())
+                        fd.append('subject', replySubject)
+                        fd.append('body', composeBody)
+                        for (const f of composeFiles) fd.append('attachments', f)
+                        authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/send/`, auth!.token, { method: 'POST', body: fd })
+                          .then(r => {
+                            if (r.ok) {
+                              setComposeBody(''); setComposeFiles([])
+                              loadGmailEmails(selectedGmail!, 1, gmailSearch, gmailDirection)
+                            } else { r.json().then(d => alert(d.error || 'Помилка')).catch(() => alert('Помилка')) }
+                          }).catch(() => alert('Помилка відправки'))
+                      }, 0)
+                    }
+                  }
+                }}
+                rows={1}
+              />
+              <button
+                className="gmail-reply-send"
+                disabled={!composeBody.trim() && composeFiles.length === 0}
+                onClick={() => {
+                  if (!composeBody.trim() && composeFiles.length === 0) return
+                  const replyTo = gmailSelectedMsg!.sender.match(/<([^>]+)>/)?.[1] || gmailSelectedMsg!.sender
+                  const replySubject = gmailSelectedMsg!.subject?.startsWith('Re:') ? gmailSelectedMsg!.subject : `Re: ${gmailSelectedMsg!.subject || ''}`
+                  const fd = new FormData()
+                  fd.append('to', replyTo.trim())
+                  fd.append('subject', replySubject)
+                  fd.append('body', composeBody)
+                  for (const f of composeFiles) fd.append('attachments', f)
+                  authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/send/`, auth!.token, { method: 'POST', body: fd })
+                    .then(r => {
+                      if (r.ok) {
+                        setComposeBody(''); setComposeFiles([])
+                        loadGmailEmails(selectedGmail!, 1, gmailSearch, gmailDirection)
+                      } else { r.json().then(d => alert(d.error || 'Помилка')).catch(() => alert('Помилка')) }
+                    }).catch(() => alert('Помилка відправки'))
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        ) : selectedGmail ? (
+        <div className="chat gmail-empty-state">
+          <div className="no-chat">
+            <GmailIcon size={48} color="#EA4335" />
+            <p>Оберіть лист зі списку зліва</p>
+          </div>
+        </div>
+        ) : (
         <div className="chat">
           {selectedClient && chatContact ? (
             <>
@@ -2381,13 +3047,12 @@ function App() {
                     <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}`}
                       onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
                       onContextMenu={!forwardMode ? (e) => {
-                        // If media present, show media context menu; otherwise forward mode
+                        e.preventDefault()
+                        e.stopPropagation()
                         if (m.has_media && m.media_file) {
-                          showMediaCtxMenu(e, m.media_file, m.media_type, m.id)
+                          setCtxMenu({ x: e.clientX, y: e.clientY, mediaPath: m.media_file, mediaType: m.media_type, messageId: m.id })
                         } else {
-                          e.preventDefault()
-                          setForwardMode(true)
-                          toggleMsgSelection(m.id)
+                          setCtxMenu({ x: e.clientX, y: e.clientY, messageId: m.id })
                         }
                       } : undefined}
                     >
@@ -2515,6 +3180,21 @@ function App() {
                           )}
                         </div>
                       </div>
+                      {m.is_lab_result && (
+                        <div className="lab-card">
+                          <svg className="lab-card-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
+                          <div className="lab-card-info">
+                            <span className="lab-card-name">{m.patient_client_name || m.patient_name || 'Без пацієнта'}</span>
+                            {m.patient_phone && <span className="lab-card-phone">{m.patient_phone}</span>}
+                          </div>
+                          <button className="lab-card-edit" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Змінити пацієнта">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                          </button>
+                          <button className="lab-card-unlink" onClick={(e) => { e.stopPropagation(); unlinkLabResult(m) }} title="Відкріпити">
+                            <XIcon />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -2603,6 +3283,7 @@ function App() {
             </div>
           )}
         </div>
+        )}
 
         {/* Right Panel: [content | vertical-tabs] */}
         <div className="right-panel" style={{ width: rightPanelWidth }}>
@@ -2648,6 +3329,105 @@ function App() {
               ) : (
                 <div className="rp-empty">Оберіть чат для перегляду нотаток</div>
               )
+            ) : rightTab === 'lab' ? (
+              <div className="rp-lab">
+                <div className="rp-lab-search">
+                  <input
+                    value={labSearch}
+                    onChange={e => setLabSearch(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') loadLabResults(1, labSearch) }}
+                    placeholder="Пошук за ПІБ або телефоном..."
+                  />
+                  <button onClick={() => loadLabResults(1, labSearch)} title="Пошук">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                  </button>
+                </div>
+                {labLoading && <div className="rp-empty">Завантаження...</div>}
+                {!labLoading && labPatients.length === 0 && <div className="rp-empty">Немає аналізів</div>}
+                <div className="rp-lab-list">
+                  {labPatients.map(p => (
+                    <div key={p.key} className="lab-patient">
+                      <div className="lab-patient-header" onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}>
+                        <div className="lab-patient-avatar">
+                          {(() => {
+                            if (!p.photo) return <span>{(p.name || '?')[0].toUpperCase()}</span>
+                            const avatarKey = `lab_avatar_${p.key}`
+                            if (!mediaBlobMap[avatarKey] && !mediaLoading[avatarKey]) loadMediaBlob(avatarKey, p.photo)
+                            return mediaBlobMap[avatarKey]
+                              ? <img src={mediaBlobMap[avatarKey]} alt="" />
+                              : <span>{(p.name || '?')[0].toUpperCase()}</span>
+                          })()}
+                        </div>
+                        <div className="lab-patient-info">
+                          <span className="lab-patient-name">{p.name || 'Невідомий'}</span>
+                          {p.phone && <span className="lab-patient-phone">{p.phone}</span>}
+                        </div>
+                        <span className="lab-patient-count">{p.results.length}</span>
+                        <svg className={`tpl-chevron ${expandedLabPatient === p.key ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                      </div>
+                      {expandedLabPatient === p.key && (
+                        <div className="lab-results-list">
+                          {p.results.map(r => {
+                            const isImg = r.media_file && /\.(jpg|jpeg|png|webp|gif)/i.test(r.media_file)
+                            const isPdf = r.media_file && /\.pdf/i.test(r.media_file)
+                            const typeLabel: Record<string, string> = {
+                              blood_test: 'Аналіз крові', ultrasound: 'УЗД', xray: 'Рентген',
+                              ct_scan: 'КТ', mri: 'МРТ', ecg: 'ЕКГ', dental_scan: 'Стоматологія',
+                              prescription: 'Рецепт', other_lab: 'Інше',
+                            }
+                            const thumbKey = `lab_thumb_${r.id}`
+                            const fullKey = `lab_full_${r.id}`
+                            // Auto-load thumbnail
+                            if (r.thumbnail && !mediaBlobMap[thumbKey] && !mediaLoading[thumbKey]) {
+                              loadMediaBlob(thumbKey, r.thumbnail)
+                            }
+                            return (
+                              <div
+                                key={r.id}
+                                className="lab-result-item"
+                                onClick={async () => {
+                                  if (!r.media_file) return
+                                  if (isPdf) {
+                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
+                                  } else if (isImg) {
+                                    const blob = mediaBlobMap[fullKey] || await loadMediaBlob(fullKey, r.media_file)
+                                    if (blob) setLightboxSrc(blob)
+                                  } else {
+                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
+                                  }
+                                }}
+                              >
+                                <div className="lab-result-thumb">
+                                  {mediaBlobMap[thumbKey] ? <img src={mediaBlobMap[thumbKey]} alt="" /> : (
+                                    <div className="lab-result-icon">
+                                      {isPdf ? '📄' : isImg ? '🖼️' : '📎'}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="lab-result-info">
+                                  <span className="lab-result-type">{typeLabel[r.lab_result_type] || r.lab_result_type}</span>
+                                  <span className="lab-result-date">
+                                    {new Date(r.message_date).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                  </span>
+                                  {r.is_from_lab && r.lab_name && <span className="lab-result-source">{r.lab_name}</span>}
+                                </div>
+                                <span className="lab-result-badge">{r.source === 'telegram' ? 'TG' : '✉️'}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {labTotal > 50 && (
+                  <div className="lab-pagination">
+                    <button disabled={labPage <= 1} onClick={() => loadLabResults(labPage - 1, labSearch)}>←</button>
+                    <span>{labPage}</span>
+                    <button disabled={labPatients.length < 50} onClick={() => loadLabResults(labPage + 1, labSearch)}>→</button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="rp-quick">
                 <div className="rp-quick-list">
@@ -2655,8 +3435,18 @@ function App() {
                     <div className="rp-empty">Немає шаблонів</div>
                   )}
                   {templateCategories.map(cat => (
-                    <div key={cat.id} className="tpl-cat">
+                    <div
+                      key={cat.id}
+                      className="tpl-cat"
+                      draggable
+                      onDragStart={e => { dragCatRef.current = cat.id; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging') }}
+                      onDragEnd={e => { dragCatRef.current = null; (e.currentTarget as HTMLElement).classList.remove('dragging') }}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; (e.currentTarget as HTMLElement).classList.add('drag-over') }}
+                      onDragLeave={e => (e.currentTarget as HTMLElement).classList.remove('drag-over')}
+                      onDrop={e => { e.preventDefault(); (e.currentTarget as HTMLElement).classList.remove('drag-over'); if (dragCatRef.current) reorderCategories(dragCatRef.current, cat.id) }}
+                    >
                       <div className="tpl-cat-header" style={{ borderLeftColor: cat.color }} onClick={() => toggleCat(cat.id)}>
+                        <svg className="tpl-drag-handle" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/></svg>
                         <svg className={`tpl-chevron ${expandedCats.has(cat.id) ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                         <span className="tpl-cat-name" style={{ color: cat.color }}>{cat.name}</span>
                         <span className="tpl-cat-count">{cat.templates.length}</span>
@@ -2672,9 +3462,12 @@ function App() {
                       {expandedCats.has(cat.id) && (
                         <div className="tpl-cat-body">
                           {cat.templates.map(tpl => (
-                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file) }}>
+                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFile(null) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
                               {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
+                              <button className="tpl-edit-global-btn" onClick={e => { e.stopPropagation(); setEditingTpl(tpl); setEditTplTitle(tpl.title); setEditTplText(tpl.text); setEditTplMedia(null); setEditTplRemoveMedia(false) }} title="Редагувати шаблон">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                              </button>
                               <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} title="Видалити">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                               </button>
@@ -2695,22 +3488,43 @@ function App() {
             )}
           </div>
           <div className="right-panel-tabs">
-            <button
-              className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
-              onClick={() => setRightTab('notes')}
-              title="Нотатки"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              <span className="rp-tab-label">Нотатки</span>
-            </button>
-            <button
-              className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
-              onClick={() => setRightTab('quick')}
-              title="Швидкі відповіді"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span className="rp-tab-label">Шаблони</span>
-            </button>
+            {rightTabs.map(tab => (
+              <button
+                key={tab}
+                className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
+                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch) }}
+                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Швидкі відповіді' : 'Аналізи'}
+                draggable
+                onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                onDrop={e => {
+                  e.preventDefault()
+                  if (dragTabRef.current && dragTabRef.current !== tab) {
+                    setRightTabs(prev => {
+                      const arr = [...prev]
+                      const fi = arr.indexOf(dragTabRef.current as 'notes' | 'quick' | 'lab')
+                      const ti = arr.indexOf(tab)
+                      if (fi < 0 || ti < 0) return prev
+                      const [moved] = arr.splice(fi, 1)
+                      arr.splice(ti, 0, moved)
+                      try { localStorage.setItem('rp-tab-order', JSON.stringify(arr)) } catch {}
+                      return arr
+                    })
+                  }
+                  dragTabRef.current = null
+                }}
+                onDragEnd={() => { dragTabRef.current = null }}
+              >
+                {tab === 'notes' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                ) : tab === 'quick' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
+                )}
+                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -2776,17 +3590,25 @@ function App() {
           top: Math.min(ctxMenu.y, window.innerHeight - 140),
           left: Math.min(ctxMenu.x, window.innerWidth - 220),
         }} onClick={e => e.stopPropagation()}>
-            <button className="ctx-menu-item" onClick={ctxMenuOpen}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-              Відкрити
-            </button>
-            <button className="ctx-menu-item" onClick={ctxMenuSave}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Зберегти на комп'ютер
-            </button>
+            {ctxMenu.mediaPath && (
+              <>
+                <button className="ctx-menu-item" onClick={ctxMenuOpen}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+                  Відкрити
+                </button>
+                <button className="ctx-menu-item" onClick={ctxMenuSave}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Зберегти на комп'ютер
+                </button>
+              </>
+            )}
             <button className="ctx-menu-item" onClick={ctxMenuForward}>
               <ForwardIcon />
               Переслати
+            </button>
+            <button className="ctx-menu-item" onClick={ctxMenuLabAssign}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
+              Додати аналіз
             </button>
           </div>
         </div>
@@ -2837,6 +3659,42 @@ function App() {
               {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
             </div>
             <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
+          </div>
+        </div>
+      )}
+
+      {/* Lab Assign Modal */}
+      {labAssignMsg && (
+        <div className="modal-overlay" onClick={() => setLabAssignMsg(null)}>
+          <div className="lab-assign-modal" onClick={e => e.stopPropagation()}>
+            <h3>{labAssignMsg.is_lab_result ? 'Змінити пацієнта' : 'Додати аналіз'}</h3>
+            <p className="lab-assign-hint">Оберіть пацієнта для прив'язки аналізу</p>
+            <input
+              className="lab-assign-search"
+              placeholder="Пошук за ім'ям або телефоном..."
+              value={labAssignSearch}
+              onChange={e => { setLabAssignSearch(e.target.value); searchLabPatients(e.target.value) }}
+              autoFocus
+            />
+            <div className="lab-assign-list">
+              {labAssignLoading && <div className="lab-assign-loading"><div className="spinner-sm" /></div>}
+              {labAssignResults.map(c => (
+                <button key={c.id} className="lab-assign-item" onClick={() => assignLabResult(c.id, c.phone, c.full_name)}>
+                  <div className="lab-assign-avatar"><UserIcon /></div>
+                  <div className="lab-assign-info">
+                    <div className="lab-assign-name">{c.full_name || c.phone}</div>
+                    <div className="lab-assign-phone">{c.phone}</div>
+                  </div>
+                </button>
+              ))}
+              {labAssignSearch.length >= 2 && !labAssignLoading && labAssignResults.length === 0 && (
+                <div className="lab-assign-empty">Не знайдено</div>
+              )}
+              {labAssignSearch.length < 2 && (
+                <div className="lab-assign-empty">Введіть ім'я або телефон (мін. 2 символи)</div>
+              )}
+            </div>
+            <button className="tpl-btn-secondary" onClick={() => setLabAssignMsg(null)}>Скасувати</button>
           </div>
         </div>
       )}
@@ -3023,6 +3881,27 @@ function App() {
                   <button className="tpl-edit-media-remove" onClick={() => setTplIncludeMedia(false)} title="Видалити вкладення">✕</button>
                 </div>
               )}
+              {/* Re-include media button (when removed) */}
+              {previewTpl.media_file && !tplIncludeMedia && (
+                <button className="tpl-reinclude-media" onClick={() => setTplIncludeMedia(true)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  Повернути вкладення шаблону
+                </button>
+              )}
+              {/* Extra file attachment */}
+              {tplSendExtraFile ? (
+                <div className="tpl-extra-file">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  <span>{tplSendExtraFile.name}</span>
+                  <button onClick={() => setTplSendExtraFile(null)} title="Видалити">✕</button>
+                </div>
+              ) : (
+                <label className="tpl-attach-extra">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  Додати файл
+                  <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setTplSendExtraFile(e.target.files?.[0] || null); if (e.target.files?.[0]) setTplIncludeMedia(false) }} hidden />
+                </label>
+              )}
               {/* Editable text */}
               <textarea
                 className="tpl-edit-textarea"
@@ -3037,10 +3916,123 @@ function App() {
               </span>
               <button
                 className="tpl-btn-send"
-                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null)}
-                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file))}
+                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null, tplSendExtraFile)}
+                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file) && !tplSendExtraFile)}
               >
                 <SendIcon /> Відправити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Edit Template Modal */}
+      {editingTpl && (
+        <div className="modal-overlay" onClick={() => setEditingTpl(null)}>
+          <div className="tpl-modal tpl-global-edit-modal" onClick={e => e.stopPropagation()}>
+            <h3>Редагувати шаблон</h3>
+            <input
+              value={editTplTitle}
+              onChange={e => setEditTplTitle(e.target.value)}
+              placeholder="Коротка назва"
+              autoFocus
+            />
+            <textarea
+              value={editTplText}
+              onChange={e => setEditTplText(e.target.value)}
+              placeholder="Текст повідомлення..."
+              rows={4}
+            />
+            {/* Current media */}
+            {editingTpl.media_file && !editTplRemoveMedia && !editTplMedia && (
+              <div className="tpl-edit-media">
+                {editingTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                  <img src={`${API_BASE.replace('/api', '')}${editingTpl.media_file}`} alt="" />
+                ) : (
+                  <div className="tpl-edit-file-tag">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                    {editingTpl.media_file.split('/').pop()}
+                  </div>
+                )}
+                <button className="tpl-edit-media-remove" onClick={() => setEditTplRemoveMedia(true)} title="Видалити вкладення">✕</button>
+              </div>
+            )}
+            {/* New media selected */}
+            {editTplMedia && (
+              <div className="tpl-extra-file">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                <span>{editTplMedia.name}</span>
+                <button onClick={() => setEditTplMedia(null)} title="Видалити">✕</button>
+              </div>
+            )}
+            {/* Media upload / re-add */}
+            {!editTplMedia && (editTplRemoveMedia || !editingTpl.media_file) && (
+              <label className="tpl-media-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                Прикріпити медіа
+                <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setEditTplMedia(e.target.files?.[0] || null); setEditTplRemoveMedia(false) }} hidden />
+              </label>
+            )}
+            <div className="tpl-modal-btns">
+              <button className="tpl-btn-primary" onClick={() => saveTemplate(editingTpl)} disabled={!editTplTitle.trim() || !editTplText.trim()}>Зберегти</button>
+              <button className="tpl-btn-secondary" onClick={() => setEditingTpl(null)}>Скасувати</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gmail Compose modal */}
+      {showCompose && selectedGmail && (
+        <div className="modal-overlay" onClick={() => setShowCompose(false)}>
+          <div className="gmail-compose-modal" onClick={e => e.stopPropagation()}>
+            <div className="gmail-compose-header">
+              <h3>Новий лист</h3>
+              <button className="icon-btn" onClick={() => setShowCompose(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="gmail-compose-from">
+              <GmailIcon size={14} color="#EA4335" />
+              <span>{gmailAccounts.find(g => g.id === selectedGmail)?.email}</span>
+            </div>
+            <div className="gmail-compose-fields">
+              <input placeholder="Кому" value={composeTo} onChange={e => setComposeTo(e.target.value)} className="gmail-compose-input" />
+              <input placeholder="Тема" value={composeSubject} onChange={e => setComposeSubject(e.target.value)} className="gmail-compose-input" />
+              <textarea
+                placeholder="Текст листа..."
+                value={composeBody}
+                onChange={e => setComposeBody(e.target.value)}
+                className="gmail-compose-body"
+                rows={10}
+              />
+            </div>
+            {composeFiles.length > 0 && (
+              <div className="gmail-compose-files">
+                {composeFiles.map((f, i) => (
+                  <div key={i} className="gmail-compose-file">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <span>{f.name}</span>
+                    <button onClick={() => setComposeFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="gmail-compose-actions">
+              <div className="gmail-compose-actions-left">
+                <button className="gmail-attach-btn" onClick={() => composeFileRef.current?.click()}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  Вкласти
+                </button>
+                <input
+                  ref={composeFileRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files) setComposeFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }}
+                />
+              </div>
+              <button className="gmail-send-btn" onClick={sendGmailEmail} disabled={composeSending || !composeTo.trim()}>
+                {composeSending ? 'Надсилаю...' : 'Надіслати'}
               </button>
             </div>
           </div>
@@ -3078,20 +4070,44 @@ function App() {
       {/* Toast notifications — bottom-right */}
       {toasts.length > 0 && (
         <div className="toast-container">
-          {toasts.map(t => (
-            <div
-              key={t.id}
-              className="toast-item"
-              onClick={() => {
-                // Clear account filter so client is visible, then select
-                setSelectedAccount('')
-                selectClient(t.clientId)
-                setToasts(prev => prev.filter(x => x.id !== t.id))
-              }}
-            >
-              <div className="toast-header">
-                <span className="toast-sender">{t.sender}</span>
-                {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+          {toasts.length > 1 && (
+            <button className="toast-dismiss-all" onClick={() => setToasts([])}>
+              Приховати всі
+            </button>
+          )}
+          {toasts.map(t => {
+            const acctType = accounts.find(a => a.id === t.accountId)?.type
+            const toastClass = `toast-item ${acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'}`
+            const avatarUrl = photoMap[t.clientId]
+            return (
+              <div
+                key={t.id}
+                className={toastClass}
+                onClick={() => {
+                  setSelectedAccount('')
+                  selectClient(t.clientId)
+                  setToasts(prev => prev.filter(x => x.id !== t.id))
+                }}
+              >
+                <div className="toast-avatar">
+                  {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{(t.sender || '?')[0].toUpperCase()}</span>}
+                </div>
+                <div className="toast-content">
+                  <div className="toast-header">
+                    <span className="toast-sender">{t.sender}</span>
+                    {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+                  </div>
+                  <div className="toast-body">
+                    {t.hasMedia && !t.text && <span className="toast-media">
+                      {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
+                    </span>}
+                    {t.hasMedia && t.text && <span className="toast-media-icon">
+                      {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
+                      {' '}
+                    </span>}
+                    {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
+                  </div>
+                </div>
                 <button
                   className="toast-close"
                   onClick={e => {
@@ -3100,18 +4116,8 @@ function App() {
                   }}
                 >×</button>
               </div>
-              <div className="toast-body">
-                {t.hasMedia && !t.text && <span className="toast-media">
-                  {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
-                </span>}
-                {t.hasMedia && t.text && <span className="toast-media-icon">
-                  {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
-                  {' '}
-                </span>}
-                {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
