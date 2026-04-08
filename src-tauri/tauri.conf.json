@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Vidnovagram",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "identifier": "app.vidnova.vidnovagram",
   "build": {
     "frontendDist": "../dist",
@@ -22,7 +22,8 @@
         "maximized": true,
         "fullscreen": false,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
