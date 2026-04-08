@@ -1795,12 +1795,12 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px;
-  width: 320px;
+  padding: 24px;
+  width: 440px;
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 .tpl-modal h3 {
   margin: 0;
