@@ -768,6 +768,7 @@ function App() {
   // In-app toast notifications
   const [toasts, setToasts] = useState<{ id: number; clientId: string; accountId: string; sender: string; account: string; text: string; hasMedia: boolean; mediaType: string; time: number }[]>([])
   const toastIdRef = useRef(0)
+  const [expandedToastGroup, setExpandedToastGroup] = useState<string | null>(null)
 
   // Per-account unread counts (from WS events)
   const [accountUnreads, setAccountUnreads] = useState<Record<string, number>>({})
@@ -4120,59 +4121,107 @@ function App() {
         </div>
       )}
 
-      {/* Toast notifications — bottom-right */}
-      {toasts.length > 0 && (
-        <div className="toast-container">
-          {toasts.length > 1 && (
-            <button className="toast-dismiss-all" onClick={() => setToasts([])}>
-              Приховати всі
-            </button>
-          )}
-          {toasts.map(t => {
-            const acctType = accounts.find(a => a.id === t.accountId)?.type
-            const toastClass = `toast-item ${acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'}`
-            const avatarUrl = photoMap[t.clientId]
-            return (
-              <div
-                key={t.id}
-                className={toastClass}
-                onClick={() => {
-                  setSelectedAccount('')
-                  selectClient(t.clientId)
-                  setToasts(prev => prev.filter(x => x.id !== t.id))
-                }}
-              >
-                <div className="toast-avatar">
-                  {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{(t.sender || '?')[0].toUpperCase()}</span>}
-                </div>
-                <div className="toast-content">
-                  <div className="toast-header">
-                    <span className="toast-sender">{t.sender}</span>
-                    {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
-                  </div>
-                  <div className="toast-body">
-                    {t.hasMedia && !t.text && <span className="toast-media">
-                      {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
-                    </span>}
-                    {t.hasMedia && t.text && <span className="toast-media-icon">
-                      {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
-                      {' '}
-                    </span>}
-                    {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
-                  </div>
-                </div>
-                <button
-                  className="toast-close"
-                  onClick={e => {
-                    e.stopPropagation()
-                    setToasts(prev => prev.filter(x => x.id !== t.id))
+      {/* Toast notifications — bottom-right, grouped by sender→account */}
+      {toasts.length > 0 && (() => {
+        // Group toasts by clientId+accountId
+        const groupMap = new Map<string, typeof toasts>()
+        const groupOrder: string[] = []
+        for (const t of toasts) {
+          const gk = `${t.clientId}:${t.accountId}`
+          if (!groupMap.has(gk)) { groupMap.set(gk, []); groupOrder.push(gk) }
+          groupMap.get(gk)!.push(t)
+        }
+        return (
+          <div className="toast-container">
+            {toasts.length > 2 && (
+              <button className="toast-dismiss-all" onClick={() => { setToasts([]); setExpandedToastGroup(null) }}>
+                Приховати всі
+              </button>
+            )}
+            {groupOrder.map(gk => {
+              const group = groupMap.get(gk)!
+              const latest = group[group.length - 1]
+              const isExpanded = expandedToastGroup === gk
+              const acctType = accounts.find(a => a.id === latest.accountId)?.type
+              const waClass = acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'
+              const avatarUrl = photoMap[latest.clientId]
+              const stackCount = group.length
+
+              const renderToast = (t: typeof latest, idx: number, isStack = false) => (
+                <div
+                  key={t.id}
+                  className={`toast-item ${waClass}${isStack ? ' toast-stack' : ''}`}
+                  style={isStack ? { '--stack-i': idx } as React.CSSProperties : undefined}
+                  onClick={() => {
+                    if (!isExpanded && stackCount > 1) {
+                      setExpandedToastGroup(gk)
+                    } else {
+                      setSelectedAccount('')
+                      selectClient(t.clientId)
+                      setToasts(prev => prev.filter(x => x.id !== t.id))
+                      setExpandedToastGroup(null)
+                    }
                   }}
-                >×</button>
-              </div>
-            )
-          })}
-        </div>
-      )}
+                >
+                  <div className="toast-avatar">
+                    {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{(t.sender || '?')[0].toUpperCase()}</span>}
+                  </div>
+                  <div className="toast-content">
+                    <div className="toast-header">
+                      <span className="toast-sender">{t.sender}</span>
+                      {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+                    </div>
+                    <div className="toast-body">
+                      {t.hasMedia && !t.text && <span className="toast-media">
+                        {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
+                      </span>}
+                      {t.hasMedia && t.text && <span className="toast-media-icon">
+                        {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
+                        {' '}
+                      </span>}
+                      {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
+                    </div>
+                  </div>
+                  <button
+                    className="toast-close"
+                    onClick={e => {
+                      e.stopPropagation()
+                      // Close top = close entire group
+                      const groupIds = group.map(x => x.id)
+                      setToasts(prev => prev.filter(x => !groupIds.includes(x.id)))
+                      if (expandedToastGroup === gk) setExpandedToastGroup(null)
+                    }}
+                  >×</button>
+                  {!isStack && stackCount > 1 && !isExpanded && (
+                    <span className="toast-badge">{stackCount}</span>
+                  )}
+                </div>
+              )
+
+              if (stackCount === 1) {
+                return <div key={gk}>{renderToast(latest, 0)}</div>
+              }
+
+              if (isExpanded) {
+                return (
+                  <div key={gk} className="toast-group expanded">
+                    {group.map((t, i) => renderToast(t, i))}
+                  </div>
+                )
+              }
+
+              // Collapsed stack: show latest on top with shadow cards behind
+              return (
+                <div key={gk} className="toast-group collapsed">
+                  {group.slice(-3).reverse().map((t, i) =>
+                    i === 0 ? renderToast(t, 0) : renderToast(t, i, true)
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -2929,6 +2929,46 @@ body {
 .dark .toast-item.toast-tg:hover { background: oklch(0.4 0.1 240 / 0.35); }
 .dark .toast-item.toast-wa:hover { background: oklch(0.4 0.1 155 / 0.35); }
 
+/* Toast groups */
+.toast-group {
+  position: relative;
+}
+.toast-group.collapsed {
+  cursor: pointer;
+}
+.toast-group.collapsed .toast-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  transform: translateY(calc(var(--stack-i) * 6px)) scale(calc(1 - var(--stack-i) * 0.03));
+  opacity: calc(0.6 - var(--stack-i) * 0.15);
+  pointer-events: none;
+  animation: none;
+}
+.toast-group.expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.toast-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  background: var(--primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.3);
+}
+
 /* ── Placeholder banner ── */
 .placeholder-banner {
   display: flex;
