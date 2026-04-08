@@ -1297,7 +1297,19 @@ function App() {
       fd.append('file', fileToSend, name)
     }
     if (mediaType) fd.append('media_type', mediaType)
-    if (selectedAccount) fd.append('account_id', selectedAccount)
+    // Determine source from contact info to avoid WA/TG mixup
+    const contact = contacts.find(c => c.client_id === selectedClient)
+    if (selectedAccount) {
+      // Only pass account_id if it matches the contact's messenger type
+      const isWaAccount = accounts.some(a => a.id === selectedAccount && a.type === 'whatsapp')
+      const isTgContact = contact?.has_telegram
+      if (isWaAccount && isTgContact) {
+        // Don't pass WA account_id for TG contact — let backend decide
+        fd.append('source', 'telegram')
+      } else {
+        fd.append('account_id', selectedAccount)
+      }
+    }
     try {
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
         method: 'POST', body: fd,
