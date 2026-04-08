@@ -3685,7 +3685,7 @@ function App() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : rightTab === 'quick' ? (
               <div className="rp-quick">
                 <div className="rp-quick-list">
                   {templateCategories.length === 0 && (
