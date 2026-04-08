@@ -17,6 +17,11 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.0': [
+    'Gmail пошта — перегляд вхідних/надісланих, пошук, вкладення, написання та відправка нових листів',
+    'Gmail акаунти на бічній панелі з червоною іконкою',
+    'Виправлено аватарки пацієнтів у панелі аналізів',
+  ],
   '0.9.0': [
     'Панель «Аналізи» — перегляд лабораторних результатів пацієнтів (фото у додатку, PDF у браузері)',
     'Пошук аналізів за ПІБ або телефоном, згруповані по пацієнтах з тамбнейлами',
@@ -204,6 +209,29 @@ interface LabPatient {
   dob: string
   photo: string | null
   results: LabResult[]
+}
+
+interface GmailAccount {
+  id: string
+  label: string
+  email: string
+  status: string
+  messages_count: number
+}
+
+interface GmailEmail {
+  id: string
+  gmail_id: string
+  subject: string
+  sender: string
+  recipients: string[]
+  snippet: string
+  body_text: string
+  date: string
+  is_read: boolean
+  has_attachments: boolean
+  attachments: { filename: string; mime_type: string; size: number; attachment_id: string }[]
+  labels: string[]
 }
 
 /** Authenticated fetch with token header */
@@ -513,6 +541,12 @@ const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; co
   </svg>
 )
 
+const GmailIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,7 12,13 2,7" />
+  </svg>
+)
+
 const SunIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
@@ -780,6 +814,25 @@ function App() {
   const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const addContactCheckTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  // Gmail
+  const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
+  const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
+  const [gmailEmails, setGmailEmails] = useState<GmailEmail[]>([])
+  const [gmailTotal, setGmailTotal] = useState(0)
+  const [gmailPage, setGmailPage] = useState(1)
+  const [gmailSearch, setGmailSearch] = useState('')
+  const [gmailDirection, setGmailDirection] = useState<'' | 'inbox' | 'sent'>('inbox')
+  const [gmailLoading, setGmailLoading] = useState(false)
+  const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
+  const [showCompose, setShowCompose] = useState(false)
+  const [composeTo, setComposeTo] = useState('')
+  const [composeSubject, setComposeSubject] = useState('')
+  const [composeBody, setComposeBody] = useState('')
+  const [composeFiles, setComposeFiles] = useState<File[]>([])
+  const [composeSending, setComposeSending] = useState(false)
+  const composeFileRef = useRef<HTMLInputElement>(null)
+  const gmailSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [rightPanelWidth, setRightPanelWidth] = useState(300)
@@ -900,13 +953,14 @@ function App() {
     }
   }, [])
 
-  // Load accounts (TG + WA)
+  // Load accounts (TG + WA + Gmail)
   const loadAccounts = useCallback(async () => {
     if (!auth?.token) return
     try {
-      const [tgResp, waResp] = await Promise.all([
+      const [tgResp, waResp, gmResp] = await Promise.all([
         authFetch(`${API_BASE}/telegram/accounts/`, auth.token),
         authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token),
+        authFetch(`${API_BASE}/mail/accounts/`, auth.token),
       ])
       const tgAccounts: Account[] = []
       const waAccounts: Account[] = []
@@ -926,6 +980,18 @@ function App() {
             waAccounts.push({ id: a.id, label: a.label, phone: a.phone, status: a.status, type: 'whatsapp' })
           }
         }
+      }
+
+      // Gmail accounts
+      if (gmResp.ok) {
+        const gmData = await gmResp.json()
+        const gms: GmailAccount[] = []
+        for (const a of (Array.isArray(gmData) ? gmData : gmData.results || [])) {
+          if (a.status === 'active') {
+            gms.push({ id: a.id, label: a.label, email: a.email, status: a.status, messages_count: a.messages_count || 0 })
+          }
+        }
+        setGmailAccounts(gms)
       }
 
       setAccounts([...tgAccounts, ...waAccounts])
@@ -1624,9 +1690,10 @@ function App() {
           const photoResp = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${clientIds.join(',')}`, auth.token)
           if (photoResp.ok) {
             const pm: Record<string, string> = await photoResp.json()
+            // Store media path (not full URL) — will be loaded via loadMediaBlob with auth
             setLabPatients(prev => prev.map(p => {
               const cid = p.results[0]?.patient_client_id || p.results[0]?.client_id || ''
-              return pm[cid] ? { ...p, photo: `${API_BASE.replace('/api', '')}${pm[cid]}` } : p
+              return pm[cid] ? { ...p, photo: pm[cid] } : p
             }))
           }
         }
@@ -2172,11 +2239,96 @@ function App() {
     loadClientNotes(clientId)
   }, [loadMessages, loadClientNotes])
 
+  // === Gmail functions ===
+  const loadGmailEmails = useCallback(async (accountId?: string, page = 1, searchQ = '', direction = '') => {
+    if (!auth?.token) return
+    const accId = accountId || selectedGmail
+    if (!accId) return
+    setGmailLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page) })
+      if (searchQ) params.set('search', searchQ)
+      if (direction) params.set('direction', direction)
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${accId}/messages/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        setGmailEmails(data.results || [])
+        setGmailTotal(data.count || 0)
+        setGmailPage(page)
+      }
+    } catch (e) { console.error('Gmail load:', e) }
+    finally { setGmailLoading(false) }
+  }, [auth?.token, selectedGmail])
+
+  const sendGmailEmail = useCallback(async () => {
+    if (!auth?.token || !selectedGmail || !composeTo.trim()) return
+    setComposeSending(true)
+    try {
+      const fd = new FormData()
+      fd.append('to', composeTo.trim())
+      fd.append('subject', composeSubject)
+      fd.append('body', composeBody)
+      for (const f of composeFiles) fd.append('attachments', f)
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/send/`, auth.token, { method: 'POST', body: fd })
+      if (resp.ok) {
+        setShowCompose(false)
+        setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([])
+        // Refresh emails
+        loadGmailEmails(selectedGmail, 1, gmailSearch, gmailDirection)
+      } else {
+        const err = await resp.json().catch(() => ({ error: 'Помилка відправки' }))
+        alert(err.error || 'Помилка відправки')
+      }
+    } catch (e) { console.error('Gmail send:', e); alert('Помилка відправки') }
+    finally { setComposeSending(false) }
+  }, [auth?.token, selectedGmail, composeTo, composeSubject, composeBody, composeFiles, loadGmailEmails, gmailSearch, gmailDirection])
+
+  const downloadGmailAttachment = useCallback(async (msgId: string, attachmentId: string, filename: string) => {
+    if (!auth?.token || !selectedGmail) return
+    try {
+      const resp = await authFetch(`${API_BASE}/mail/accounts/${selectedGmail}/messages/${msgId}/attachment/?id=${attachmentId}`, auth.token)
+      if (!resp.ok) return
+      const blob = await resp.blob()
+      const ct = resp.headers.get('content-type') || ''
+      // PDF — open in browser
+      if (ct.includes('pdf') || filename.toLowerCase().endsWith('.pdf')) {
+        const url = URL.createObjectURL(blob)
+        shellOpen(url)
+        return
+      }
+      // Image — lightbox
+      if (ct.startsWith('image/')) {
+        setLightboxSrc(URL.createObjectURL(blob))
+        return
+      }
+      // Other — save dialog
+      const filePath = await save({ defaultPath: filename })
+      if (filePath) {
+        const ab = await blob.arrayBuffer()
+        await writeFile(filePath, new Uint8Array(ab))
+      }
+    } catch (e) { console.error('Attachment download:', e) }
+  }, [auth?.token, selectedGmail])
+
+  const handleGmailAccountClick = useCallback((accId: string) => {
+    if (selectedGmail === accId) {
+      setSelectedGmail(null)
+      setGmailEmails([]); setGmailSelectedMsg(null)
+    } else {
+      setSelectedGmail(accId)
+      setSelectedAccount(''); setSelectedClient(null); setMessages([])
+      setGmailSelectedMsg(null)
+      loadGmailEmails(accId, 1, '', 'inbox')
+      setGmailDirection('inbox'); setGmailSearch('')
+    }
+  }, [selectedGmail, loadGmailEmails])
+
   // Account tab click
   const handleAccountClick = useCallback((accountId: string) => {
     setSelectedAccount(prev => prev === accountId ? '' : accountId)
     setSelectedClient(null)
     setMessages([])
+    setSelectedGmail(null); setGmailEmails([]); setGmailSelectedMsg(null)
     // Clear unread badge for this account
     setAccountUnreads(prev => { const n = { ...prev }; delete n[accountId]; return n })
   }, [])
@@ -2248,6 +2400,19 @@ function App() {
               <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
             </button>
           ))}
+          {/* Gmail account icons */}
+          {gmailAccounts.length > 0 && <div className="rail-divider" />}
+          {gmailAccounts.map(gm => (
+            <button
+              key={gm.id}
+              className={`rail-icon ${selectedGmail === gm.id ? 'active' : ''}`}
+              onClick={() => handleGmailAccountClick(gm.id)}
+              title={`${gm.label} — ${gm.email}`}
+            >
+              <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
+              <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
+            </button>
+          ))}
           {/* Flyout panel on hover */}
           <div className="rail-flyout">
             <button
@@ -2277,6 +2442,20 @@ function App() {
                   <span className="rail-flyout-phone">{acc.phone}</span>
                 </div>
                 <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+              </button>
+            ))}
+            {gmailAccounts.map(gm => (
+              <button
+                key={gm.id}
+                className={`rail-flyout-item ${selectedGmail === gm.id ? 'active' : ''}`}
+                onClick={() => handleGmailAccountClick(gm.id)}
+              >
+                <GmailIcon size={16} color="#EA4335" />
+                <div className="rail-flyout-text">
+                  <span className="rail-flyout-name">{gm.label}</span>
+                  <span className="rail-flyout-phone">{gm.email}</span>
+                </div>
+                <span className={`status-dot ${gm.status === 'active' ? 'online' : ''}`} />
               </button>
             ))}
           </div>
@@ -2377,7 +2556,110 @@ function App() {
           </div>
         </div>
 
-        {/* Chat area */}
+        {/* Chat area / Gmail area */}
+        {selectedGmail ? (
+        <div className="chat gmail-view">
+          {/* Gmail toolbar */}
+          <div className="gmail-toolbar">
+            <div className="gmail-toolbar-left">
+              <GmailIcon size={18} color="#EA4335" />
+              <span className="gmail-toolbar-email">{gmailAccounts.find(g => g.id === selectedGmail)?.email}</span>
+            </div>
+            <div className="gmail-toolbar-center">
+              <button className={`gmail-dir-btn ${gmailDirection === 'inbox' ? 'active' : ''}`} onClick={() => { setGmailDirection('inbox'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'inbox') }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                Вхідні
+              </button>
+              <button className={`gmail-dir-btn ${gmailDirection === 'sent' ? 'active' : ''}`} onClick={() => { setGmailDirection('sent'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'sent') }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                Надіслані
+              </button>
+            </div>
+            <div className="gmail-toolbar-right">
+              <button className="gmail-compose-btn" onClick={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+                Написати
+              </button>
+            </div>
+          </div>
+          {/* Gmail search */}
+          <div className="gmail-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              placeholder="Пошук листів..."
+              value={gmailSearch}
+              onChange={e => {
+                setGmailSearch(e.target.value)
+                clearTimeout(gmailSearchTimer.current)
+                gmailSearchTimer.current = setTimeout(() => {
+                  setGmailSelectedMsg(null)
+                  loadGmailEmails(selectedGmail, 1, e.target.value, gmailDirection)
+                }, 400)
+              }}
+            />
+          </div>
+          {/* Email list or detail */}
+          {gmailSelectedMsg ? (
+            <div className="gmail-detail">
+              <button className="gmail-back-btn" onClick={() => setGmailSelectedMsg(null)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6"/></svg>
+                Назад
+              </button>
+              <div className="gmail-detail-header">
+                <div className="gmail-detail-subject">{gmailSelectedMsg.subject || '(без теми)'}</div>
+                <div className="gmail-detail-meta">
+                  <span className="gmail-detail-from">{gmailSelectedMsg.sender}</span>
+                  <span className="gmail-detail-date">{new Date(gmailSelectedMsg.date).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {gmailSelectedMsg.recipients.length > 0 && (
+                  <div className="gmail-detail-to">Кому: {gmailSelectedMsg.recipients.join(', ')}</div>
+                )}
+              </div>
+              <div className="gmail-detail-body">{gmailSelectedMsg.body_text || gmailSelectedMsg.snippet}</div>
+              {gmailSelectedMsg.attachments.length > 0 && (
+                <div className="gmail-attachments">
+                  <div className="gmail-attachments-title">Вкладення ({gmailSelectedMsg.attachments.length})</div>
+                  {gmailSelectedMsg.attachments.map((att, i) => (
+                    <button key={i} className="gmail-attachment-item" onClick={() => downloadGmailAttachment(gmailSelectedMsg!.id, att.attachment_id, att.filename)}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                      <span className="gmail-att-name">{att.filename}</span>
+                      <span className="gmail-att-size">{att.size > 1024*1024 ? `${(att.size/1024/1024).toFixed(1)} MB` : `${Math.round(att.size/1024)} KB`}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="gmail-list">
+              {gmailLoading && <div className="gmail-loading">Завантаження...</div>}
+              {!gmailLoading && gmailEmails.length === 0 && <div className="gmail-empty">Немає листів</div>}
+              {gmailEmails.map(email => (
+                <div key={email.id} className={`gmail-row ${!email.is_read ? 'unread' : ''}`} onClick={() => setGmailSelectedMsg(email)}>
+                  <div className="gmail-row-sender">{gmailDirection === 'sent' ? (email.recipients[0] || '—') : email.sender}</div>
+                  <div className="gmail-row-content">
+                    <span className="gmail-row-subject">{email.subject || '(без теми)'}</span>
+                    <span className="gmail-row-snippet"> — {email.snippet}</span>
+                  </div>
+                  <div className="gmail-row-right">
+                    {email.has_attachments && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                    <span className="gmail-row-date">{formatContactDate(email.date)}</span>
+                  </div>
+                </div>
+              ))}
+              {/* Pagination */}
+              {gmailTotal > 50 && (
+                <div className="gmail-pagination">
+                  <button disabled={gmailPage <= 1} onClick={() => loadGmailEmails(selectedGmail, gmailPage - 1, gmailSearch, gmailDirection)}>← Новіші</button>
+                  <span>{gmailPage} / {Math.ceil(gmailTotal / 50)}</span>
+                  <button disabled={gmailPage * 50 >= gmailTotal} onClick={() => loadGmailEmails(selectedGmail, gmailPage + 1, gmailSearch, gmailDirection)}>Старіші →</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        ) : (
         <div className="chat">
           {selectedClient && chatContact ? (
             <>
@@ -2772,6 +3054,7 @@ function App() {
             </div>
           )}
         </div>
+        )}
 
         {/* Right Panel: [content | vertical-tabs] */}
         <div className="right-panel" style={{ width: rightPanelWidth }}>
@@ -2837,7 +3120,14 @@ function App() {
                     <div key={p.key} className="lab-patient">
                       <div className="lab-patient-header" onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}>
                         <div className="lab-patient-avatar">
-                          {p.photo ? <img src={p.photo} alt="" /> : <span>{(p.name || '?')[0].toUpperCase()}</span>}
+                          {(() => {
+                            if (!p.photo) return <span>{(p.name || '?')[0].toUpperCase()}</span>
+                            const avatarKey = `lab_avatar_${p.key}`
+                            if (!mediaBlobMap[avatarKey] && !mediaLoading[avatarKey]) loadMediaBlob(avatarKey, p.photo)
+                            return mediaBlobMap[avatarKey]
+                              ? <img src={mediaBlobMap[avatarKey]} alt="" />
+                              : <span>{(p.name || '?')[0].toUpperCase()}</span>
+                          })()}
                         </div>
                         <div className="lab-patient-info">
                           <span className="lab-patient-name">{p.name || 'Невідомий'}</span>
@@ -3413,6 +3703,64 @@ function App() {
             <div className="tpl-modal-btns">
               <button className="tpl-btn-primary" onClick={() => saveTemplate(editingTpl)} disabled={!editTplTitle.trim() || !editTplText.trim()}>Зберегти</button>
               <button className="tpl-btn-secondary" onClick={() => setEditingTpl(null)}>Скасувати</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gmail Compose modal */}
+      {showCompose && selectedGmail && (
+        <div className="modal-overlay" onClick={() => setShowCompose(false)}>
+          <div className="gmail-compose-modal" onClick={e => e.stopPropagation()}>
+            <div className="gmail-compose-header">
+              <h3>Новий лист</h3>
+              <button className="icon-btn" onClick={() => setShowCompose(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="gmail-compose-from">
+              <GmailIcon size={14} color="#EA4335" />
+              <span>{gmailAccounts.find(g => g.id === selectedGmail)?.email}</span>
+            </div>
+            <div className="gmail-compose-fields">
+              <input placeholder="Кому" value={composeTo} onChange={e => setComposeTo(e.target.value)} className="gmail-compose-input" />
+              <input placeholder="Тема" value={composeSubject} onChange={e => setComposeSubject(e.target.value)} className="gmail-compose-input" />
+              <textarea
+                placeholder="Текст листа..."
+                value={composeBody}
+                onChange={e => setComposeBody(e.target.value)}
+                className="gmail-compose-body"
+                rows={10}
+              />
+            </div>
+            {composeFiles.length > 0 && (
+              <div className="gmail-compose-files">
+                {composeFiles.map((f, i) => (
+                  <div key={i} className="gmail-compose-file">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <span>{f.name}</span>
+                    <button onClick={() => setComposeFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="gmail-compose-actions">
+              <div className="gmail-compose-actions-left">
+                <button className="gmail-attach-btn" onClick={() => composeFileRef.current?.click()}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  Вкласти
+                </button>
+                <input
+                  ref={composeFileRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files) setComposeFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }}
+                />
+              </div>
+              <button className="gmail-send-btn" onClick={sendGmailEmail} disabled={composeSending || !composeTo.trim()}>
+                {composeSending ? 'Надсилаю...' : 'Надіслати'}
+              </button>
             </div>
           </div>
         </div>
