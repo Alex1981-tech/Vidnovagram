@@ -798,6 +798,61 @@ body {
   color: oklch(0.9 0.02 150);
 }
 
+/* Reply quote inside message bubble */
+.msg-reply-quote {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  margin: -2px -4px 6px -4px;
+  border-radius: 6px;
+  background: oklch(0 0 0 / 0.05);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  max-height: 48px;
+  overflow: hidden;
+}
+.dark .msg-reply-quote {
+  background: oklch(1 0 0 / 0.06);
+}
+.msg-reply-bar {
+  width: 3px;
+  min-height: 100%;
+  border-radius: 2px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+.msg-reply-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+.msg-reply-sender {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--primary);
+}
+.msg-reply-text {
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Forward header */
+.msg-forward-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--primary);
+  margin-bottom: 4px;
+  font-style: italic;
+}
+.msg-forward-header strong {
+  font-style: normal;
+}
+
 .msg-text {
   white-space: pre-wrap;
 }

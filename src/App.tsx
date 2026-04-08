@@ -158,6 +158,11 @@ interface ChatMessage {
   patient_phone?: string
   patient_client_id?: string
   patient_client_name?: string
+  // Reply / forward metadata
+  reply_to_msg_id?: number | null
+  reply_to_text?: string
+  reply_to_sender?: string
+  fwd_from_name?: string
 }
 
 interface LinkPreview {
@@ -3331,6 +3336,23 @@ function App() {
                         </div>
                       )}
                       <div className="msg-bubble">
+                        {/* Forwarded header */}
+                        {m.fwd_from_name && (
+                          <div className="msg-forward-header">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                            <span>Переслано від <strong>{m.fwd_from_name}</strong></span>
+                          </div>
+                        )}
+                        {/* Reply quote */}
+                        {m.reply_to_msg_id && (
+                          <div className="msg-reply-quote">
+                            <div className="msg-reply-bar" />
+                            <div className="msg-reply-body">
+                              {m.reply_to_sender && <span className="msg-reply-sender">{m.reply_to_sender}</span>}
+                              <span className="msg-reply-text">{m.reply_to_text || '...'}</span>
+                            </div>
+                          </div>
+                        )}
                         {/* Photo with thumbnail → click to view full */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && (
                           <AuthMedia
