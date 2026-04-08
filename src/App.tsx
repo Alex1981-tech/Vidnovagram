@@ -555,9 +555,15 @@ const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; co
   </svg>
 )
 
-const GmailIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,7 12,13 2,7" />
+const GmailIcon = ({ size = 20 }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z" fill="#fff"/>
+    <path d="M2 6h4v12H4a2 2 0 0 1-2-2V6z" fill="#4285F4"/>
+    <path d="M22 6h-4v12h2a2 2 0 0 0 2-2V6z" fill="#34A853"/>
+    <path d="M6 18V9l6 4.5L18 9v9H6z" fill="#fff"/>
+    <path d="M2 6l10 7.5L22 6" fill="#EA4335"/>
+    <path d="M2 6l4 3V6H2z" fill="#C5221F"/>
+    <path d="M22 6l-4 3V6h4z" fill="#0B8043"/>
   </svg>
 )
 
@@ -1363,14 +1369,24 @@ function App() {
         setRpClients(prev => append ? [...prev, ...results] : results)
         setRpClientTotal(data.count || 0)
         setRpClientPage(page)
-        // Load TG profile photos for these clients
+        // Load TG profile photos for these clients (as blobs with auth)
         const ids = results.map((c: any) => c.id).join(',')
         if (ids) {
           try {
             const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token!)
             if (pr.ok) {
-              const photoMap = await pr.json()
-              setRpClientPhotos(prev => ({ ...prev, ...photoMap }))
+              const pm: Record<string, string> = await pr.json()
+              for (const [cid, path] of Object.entries(pm)) {
+                if (rpClientPhotos[cid]) continue
+                authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token!)
+                  .then(r => r.ok ? r.blob() : null)
+                  .then(blob => {
+                    if (blob) {
+                      setRpClientPhotos(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) }))
+                    }
+                  })
+                  .catch(() => {})
+              }
             }
           } catch { /* ignore */ }
         }
@@ -1427,7 +1443,8 @@ function App() {
       return
     }
     try {
-      const url = `${API_BASE.replace('/api', '')}/media/${audioFile}`
+      const mediaPath = audioFile.startsWith('/media/') ? audioFile : `/media/${audioFile}`
+      const url = `${API_BASE.replace('/api', '')}${mediaPath}`
       const resp = await authFetch(url, auth.token)
       if (!resp.ok) { alert('Аудіо недоступне'); return }
       const blob = await resp.blob()
@@ -3797,7 +3814,7 @@ function App() {
                         <div key={c.id} className="rp-client-item" onClick={() => loadRpClientDetail(c.id)}>
                           <div className="rp-client-avatar">
                             {rpClientPhotos[c.id]
-                              ? <img src={`${API_BASE.replace('/api', '')}${rpClientPhotos[c.id]}`} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                              ? <img src={rpClientPhotos[c.id]} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                               : <span>{(c.full_name || c.phone || '?')[0].toUpperCase()}</span>}
                           </div>
                           <div className="rp-client-info">
@@ -3835,7 +3852,7 @@ function App() {
                         {/* Client info card */}
                         <div className="rp-cd-card">
                           {rpSelectedClient && rpClientPhotos[rpSelectedClient] && (
-                            <img src={`${API_BASE.replace('/api', '')}${rpClientPhotos[rpSelectedClient]}`} alt="" className="rp-cd-photo" />
+                            <img src={rpClientPhotos[rpSelectedClient]} alt="" className="rp-cd-photo" />
                           )}
                           <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
                           <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
