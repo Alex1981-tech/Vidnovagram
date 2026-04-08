@@ -1406,7 +1406,7 @@ function App() {
   }, [auth?.token])
 
 
-  const playCallAudio = useCallback(async (callId: string) => {
+  const playCallAudio = useCallback(async (callId: string, audioFile?: string) => {
     if (!auth?.token) return
     if (rpPlayingCall === callId) {
       rpAudioRef.current?.pause()
@@ -1414,18 +1414,31 @@ function App() {
       return
     }
     try {
-      const resp = await authFetch(`${API_BASE.replace('/api', '')}/media/binotel/${callId}.mp3`, auth.token)
+      const url = audioFile
+        ? `${API_BASE.replace('/api', '')}/media/${audioFile}`
+        : `${API_BASE}/internal/call-audio/${callId}/`
+      const resp = await authFetch(url, auth.token)
       if (!resp.ok) { alert('Аудіо недоступне'); return }
       const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
+      const blobUrl = URL.createObjectURL(blob)
       if (rpAudioRef.current) { rpAudioRef.current.pause(); URL.revokeObjectURL(rpAudioRef.current.src) }
-      const audio = new Audio(url)
+      const audio = new Audio(blobUrl)
       rpAudioRef.current = audio
       audio.onended = () => setRpPlayingCall(null)
       audio.play()
       setRpPlayingCall(callId)
     } catch { /* ignore */ }
   }, [auth?.token, rpPlayingCall])
+
+  const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
+    // Set newChatClient so chat area works even if contact not in current account's list
+    if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
+    // Pick first available account if none selected
+    if (!selectedAccount && accounts.length > 0) {
+      setSelectedAccount(accounts[0].id)
+    }
+    selectClient(clientId)
+  }, [selectClient, selectedAccount, accounts])
 
   // Handle file attachment
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3753,6 +3766,11 @@ function App() {
                         onKeyDown={e => { if (e.key === 'Enter') loadRpClients(1, rpClientSearch) }}
                         placeholder="Пошук за ПІБ або телефоном..."
                       />
+                      {rpClientSearch && (
+                        <button onClick={() => { setRpClientSearch(''); loadRpClients(1, '') }} title="Очистити" className="rp-search-clear">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      )}
                       <button onClick={() => loadRpClients(1, rpClientSearch)} title="Пошук">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                       </button>
@@ -3808,7 +3826,7 @@ function App() {
                           <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
                           <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
                           <div className="rp-cd-actions">
-                            <button onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }} title="Відкрити чат">
+                            <button onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)} title="Відкрити чат">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                               Чат
                             </button>
@@ -3821,55 +3839,53 @@ function App() {
                             </button>
                           </div>
                         </div>
-                        {/* Calls */}
-                        {rpClientCalls.length > 0 && (
-                          <div className="rp-cd-section">
-                            <div className="rp-cd-section-title">Дзвінки ({rpClientCalls.length})</div>
-                            {rpClientCalls.slice(0, 20).map((call: any) => (
-                              <div key={call.id} className={`rp-cd-call ${call.disposition}`}>
-                                <div className="rp-cd-call-icon">
-                                  {call.direction === 'incoming'
-                                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 2 16 8 22 8"/><line x1="22" y1="2" x2="16" y2="8"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
-                                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 8 22 2 16 2"/><line x1="16" y1="8" x2="22" y2="2"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
-                                  }
-                                </div>
-                                <div className="rp-cd-call-info">
-                                  <span className="rp-cd-call-date">{new Date(call.call_datetime).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                  <span className="rp-cd-call-dur">{call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, '0')}` : '—'}</span>
-                                  {call.operator_name && <span className="rp-cd-call-op">{call.operator_name}</span>}
-                                </div>
-                                {call.has_audio && (
-                                  <button className={`rp-cd-play${rpPlayingCall === call.id ? ' playing' : ''}`} onClick={() => playCallAudio(call.id)}>
-                                    {rpPlayingCall === call.id ? '⏸' : '▶'}
-                                  </button>
-                                )}
+                        {/* Chronological timeline: calls + messages merged by date */}
+                        {(() => {
+                          const timeline: { type: 'call' | 'msg'; date: string; data: any }[] = []
+                          rpClientCalls.forEach(c => timeline.push({ type: 'call', date: c.call_datetime, data: c }))
+                          rpClientMsgs.forEach(m => timeline.push({ type: 'msg', date: m.message_date, data: m }))
+                          timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          const shown = timeline.slice(0, 50)
+                          if (shown.length === 0) return <div className="rp-empty">Немає історії</div>
+                          return (
+                            <div className="rp-cd-section">
+                              <div className="rp-cd-section-title">
+                                Хронологія ({timeline.length})
+                                <button className="rp-cd-chat-link" onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)}>
+                                  Відкрити чат →
+                                </button>
                               </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Messages */}
-                        {rpClientMsgs.length > 0 && (
-                          <div className="rp-cd-section">
-                            <div className="rp-cd-section-title">
-                              Переписка ({rpClientMsgs.length})
-                              <button className="rp-cd-chat-link" onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }}>
-                                Відкрити чат →
-                              </button>
+                              {shown.map(item => item.type === 'call' ? (
+                                <div key={`c-${item.data.id}`} className={`rp-cd-call ${item.data.disposition}`}>
+                                  <div className="rp-cd-call-icon">
+                                    {item.data.direction === 'incoming'
+                                      ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 2 16 8 22 8"/><line x1="22" y1="2" x2="16" y2="8"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
+                                      : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 8 22 2 16 2"/><line x1="16" y1="8" x2="22" y2="2"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
+                                    }
+                                  </div>
+                                  <div className="rp-cd-call-info">
+                                    <span className="rp-cd-call-date">{new Date(item.data.call_datetime).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className="rp-cd-call-dur">{item.data.duration_seconds ? `${Math.floor(item.data.duration_seconds / 60)}:${String(item.data.duration_seconds % 60).padStart(2, '0')}` : '—'}</span>
+                                    {item.data.operator_name && <span className="rp-cd-call-op">{item.data.operator_name}</span>}
+                                  </div>
+                                  {item.data.has_audio && (
+                                    <button className={`rp-cd-play${rpPlayingCall === item.data.id ? ' playing' : ''}`} onClick={() => playCallAudio(item.data.id, item.data.audio_file)}>
+                                      {rpPlayingCall === item.data.id ? '⏸' : '▶'}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div key={`m-${item.data.id}`} className={`rp-cd-msg ${item.data.direction}`} onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)}>
+                                  <span className="rp-cd-msg-source">
+                                    {item.data.source === 'whatsapp' ? <WhatsAppIcon size={10} color="#25D366" /> : <TelegramIcon size={10} color="#2AABEE" />}
+                                  </span>
+                                  <span className="rp-cd-msg-text">{item.data.text?.slice(0, 60) || (item.data.has_media ? `📎 ${item.data.media_type || 'медіа'}` : '...')}</span>
+                                  <span className="rp-cd-msg-date">{new Date(item.data.message_date).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                              ))}
                             </div>
-                            {rpClientMsgs.slice(0, 30).map(m => (
-                              <div key={m.id} className={`rp-cd-msg ${m.direction}`} onClick={() => { setSelectedAccount(''); selectClient(rpSelectedClient!) }}>
-                                <span className="rp-cd-msg-source">
-                                  {m.source === 'whatsapp' ? <WhatsAppIcon size={10} color="#25D366" /> : <TelegramIcon size={10} color="#2AABEE" />}
-                                </span>
-                                <span className="rp-cd-msg-text">{m.text?.slice(0, 60) || (m.has_media ? `📎 ${m.media_type}` : '...')}</span>
-                                <span className="rp-cd-msg-date">{new Date(m.message_date).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {rpClientCalls.length === 0 && rpClientMsgs.length === 0 && !rpClientDetailLoading && (
-                          <div className="rp-empty">Немає історії</div>
-                        )}
+                          )
+                        })()}
                       </>
                     )}
                   </div>
