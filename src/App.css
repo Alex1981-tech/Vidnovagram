@@ -1466,54 +1466,68 @@ body {
   max-width: 500px;
   border-left: 1px solid var(--border);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   background: var(--sidebar-bg);
   position: relative;
 }
 
 .right-panel-tabs {
   display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
+  flex-direction: row;
+  border-bottom: 1px solid var(--border);
   background: var(--topbar-bg);
-  padding: 6px 0;
-  gap: 2px;
-  width: 40px;
-  min-width: 40px;
-  align-items: center;
+  padding: 0;
+  gap: 0;
+  width: 100%;
+  align-items: stretch;
 }
 .rp-tab {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
-  padding: 10px 2px;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 6px;
+  flex: 1;
   background: none;
   border: none;
   color: var(--muted-foreground);
   font-family: inherit;
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
-  border-radius: 6px;
-  width: 36px;
-  border-right: 2px solid transparent;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
 }
 .rp-tab:hover {
   color: var(--foreground);
   background: var(--accent);
 }
-.rp-tab.active {
-  color: var(--primary);
-  background: color-mix(in oklch, var(--primary) 10%, transparent);
-  border-right-color: var(--primary);
+.rp-tab.active[data-tab="lab"] {
+  color: #e74c3c;
+  background: color-mix(in oklch, #e74c3c 8%, transparent);
+  border-bottom-color: #e74c3c;
 }
+.rp-tab.active[data-tab="notes"] {
+  color: #f59e0b;
+  background: color-mix(in oklch, #f59e0b 8%, transparent);
+  border-bottom-color: #f59e0b;
+}
+.rp-tab.active[data-tab="quick"] {
+  color: #8b5cf6;
+  background: color-mix(in oklch, #8b5cf6 8%, transparent);
+  border-bottom-color: #8b5cf6;
+}
+.rp-tab[data-tab="lab"] svg { color: #e74c3c; }
+.rp-tab[data-tab="notes"] svg { color: #f59e0b; }
+.rp-tab[data-tab="quick"] svg { color: #8b5cf6; }
 .rp-tab-label {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-size: 0.625rem;
-  letter-spacing: 0.5px;
+  writing-mode: horizontal-tb;
+  text-orientation: initial;
+  font-size: 0.6875rem;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -3070,22 +3084,37 @@ body {
 .gmail-filter-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  justify-content: center;
+  gap: 0;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
-.gmail-filter-btn:hover { background: var(--bg-hover); }
+.gmail-filter-btn:hover { background: var(--bg-hover); color: var(--foreground); }
 .gmail-filter-btn.active {
-  background: #EA4335;
-  color: white;
-  border-color: #EA4335;
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border-color: var(--primary);
 }
+.gmail-filter-inbox.active {
+  background: color-mix(in oklch, #3b82f6 12%, transparent);
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+.gmail-filter-sent.active {
+  background: color-mix(in oklch, #22c55e 12%, transparent);
+  color: #22c55e;
+  border-color: #22c55e;
+}
+/* Direction icons in email list */
+.gmail-dir-icon { flex-shrink: 0; }
+.gmail-dir-inbox { color: #3b82f6; }
+.gmail-dir-sent { color: #22c55e; }
 .gmail-filter-compose {
   margin-left: auto;
   display: flex;
