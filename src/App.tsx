@@ -3384,7 +3384,31 @@ function App() {
                             )}
                           </div>
                         )}
-                        {/* Video (video note / round video) → video player */}
+                        {/* Video note (round video / кружок) */}
+                        {m.has_media && m.media_type === 'video_note' && m.media_file && (
+                          <div className={`msg-video msg-video-note${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
+                            {mediaBlobMap[`vid_${m.id}`] ? (
+                              <video
+                                controls
+                                autoPlay
+                                preload="auto"
+                                src={mediaBlobMap[`vid_${m.id}`]}
+                                className="msg-video-player msg-video-round"
+                              />
+                            ) : (
+                              <button
+                                className="msg-video-btn"
+                                onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
+                                disabled={mediaLoading[`vid_${m.id}`]}
+                              >
+                                {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
+                                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {/* Regular video */}
                         {m.has_media && m.media_type === 'video' && m.media_file && (
                           <div className={`msg-video${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
                             {mediaBlobMap[`vid_${m.id}`] ? (
@@ -3420,7 +3444,7 @@ function App() {
                           </div>
                         )}
                         {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'document', 'photo'].includes(m.media_type) && !m.media_file && (
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo'].includes(m.media_type) && !m.media_file && (
                           <div className="msg-media-placeholder">
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
