@@ -2640,7 +2640,13 @@ function App() {
                     <div
                       key={email.id}
                       className={`contact gmail-contact ${gmailSelectedMsg?.id === email.id ? 'active' : ''}${!email.is_read ? ' unread' : ''}`}
-                      onClick={() => setGmailSelectedMsg(email)}
+                      onClick={() => {
+                        if (!email.is_read) {
+                          email.is_read = true
+                          setGmailEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
+                        }
+                        setGmailSelectedMsg(email)
+                      }}
                     >
                       <div className="avatar gmail-avatar">
                         <span>{initial}</span>
@@ -3193,11 +3199,12 @@ function App() {
                           )}
                         </div>
                       </div>
-                      {m.is_lab_result && (
-                        <div className="lab-card">
+                      {/* Lab result card: linked */}
+                      {m.is_lab_result && (m.patient_client_id || m.patient_name) && (
+                        <div className="lab-card lab-card-linked">
                           <svg className="lab-card-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
                           <div className="lab-card-info">
-                            <span className="lab-card-name">{m.patient_client_name || m.patient_name || 'Без пацієнта'}</span>
+                            <span className="lab-card-name">{m.patient_client_name || m.patient_name}</span>
                             {m.patient_phone && <span className="lab-card-phone">{m.patient_phone}</span>}
                           </div>
                           <button className="lab-card-edit" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Змінити пацієнта">
@@ -3207,6 +3214,23 @@ function App() {
                             <XIcon />
                           </button>
                         </div>
+                      )}
+                      {/* Lab result card: unlinked (detected but no patient) */}
+                      {m.is_lab_result && !m.patient_client_id && !m.patient_name && (
+                        <div className="lab-card lab-card-unlinked">
+                          <svg className="lab-card-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 11v4"/><path d="M12 17h.01"/></svg>
+                          <span className="lab-card-label">Аналіз</span>
+                          <button className="lab-card-edit" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Привʼязати пацієнта">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                          </button>
+                        </div>
+                      )}
+                      {/* Incoming media, not yet classified — manual assign button */}
+                      {m.is_lab_result == null && m.direction === 'received' && m.has_media && (
+                        <button className="lab-card-assign-btn" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Додати аналіз">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                          <span>Додати аналіз</span>
+                        </button>
                       )}
                     </div>
                   )
