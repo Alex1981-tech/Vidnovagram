@@ -17,6 +17,16 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.9.0': [
+    'Панель «Аналізи» — перегляд лабораторних результатів пацієнтів (фото у додатку, PDF у браузері)',
+    'Пошук аналізів за ПІБ або телефоном, згруповані по пацієнтах з тамбнейлами',
+    'Нові сповіщення — аватар відправника, матове скло (блакитне TG / зелене WA)',
+    'Сповіщення не ховаються автоматично — кнопка «Приховати всі» та хрестик на кожній картці',
+    'Перетягування категорій шаблонів та вкладок правої панелі (drag & drop)',
+    'Два режими редагування шаблонів — перед відправкою та глобальне',
+    'Прикріплення додаткового файлу при відправці шаблону',
+    'Виправлено відправку медіа з шаблонів',
+  ],
   '0.7.3': [
     'Сповіщення — бейдж непрочитаних на лівій панелі',
     'Спливаючі тости нових повідомлень (клік → перехід у чат)',
@@ -163,6 +173,37 @@ interface QuickReply {
   text: string
   media_file: string | null
   sort_order: number
+}
+
+interface LabResult {
+  id: string | number
+  source: 'telegram' | 'gmail'
+  text: string
+  media_type: string
+  media_file: string
+  thumbnail: string
+  lab_result_type: string
+  message_date: string
+  client_id: string
+  client_name: string
+  client_phone: string
+  patient_name: string
+  patient_dob: string
+  patient_client_id: string
+  patient_client_name: string
+  is_from_lab: boolean
+  lab_name: string
+  attachments?: { filename: string; mime_type: string; url?: string; is_lab_result?: boolean }[]
+  drive_links?: string[]
+}
+
+interface LabPatient {
+  key: string
+  name: string
+  phone: string
+  dob: string
+  photo: string | null
+  results: LabResult[]
 }
 
 /** Authenticated fetch with token header */
@@ -622,7 +663,20 @@ function App() {
   const [sending, setSending] = useState(false)
 
   // Right panel
-  const [rightTab, setRightTab] = useState<'notes' | 'quick'>('notes')
+  const [rightTabs, setRightTabs] = useState<('notes' | 'quick' | 'lab')[]>(() => {
+    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); return a } } catch {}
+    return ['notes', 'quick', 'lab']
+  })
+  const [rightTab, setRightTab] = useState<'notes' | 'quick' | 'lab'>('notes')
+  const dragCatRef = useRef<string | null>(null)
+  const dragTabRef = useRef<string | null>(null)
+  // Lab results
+  const [labPatients, setLabPatients] = useState<LabPatient[]>([])
+  const [labSearch, setLabSearch] = useState('')
+  const [labLoading, setLabLoading] = useState(false)
+  const [labPage, setLabPage] = useState(1)
+  const [labTotal, setLabTotal] = useState(0)
+  const [expandedLabPatient, setExpandedLabPatient] = useState<string | null>(null)
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([])
   const [templateCategories, setTemplateCategories] = useState<TemplateCategory[]>([])
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
@@ -638,6 +692,13 @@ function App() {
   const [previewTpl, setPreviewTpl] = useState<QuickReply | null>(null)
   const [tplEditText, setTplEditText] = useState('')
   const [tplIncludeMedia, setTplIncludeMedia] = useState(true)
+  const [tplSendExtraFile, setTplSendExtraFile] = useState<File | null>(null) // extra attachment for send
+  // Global edit mode
+  const [editingTpl, setEditingTpl] = useState<QuickReply | null>(null)
+  const [editTplTitle, setEditTplTitle] = useState('')
+  const [editTplText, setEditTplText] = useState('')
+  const [editTplMedia, setEditTplMedia] = useState<File | null>(null)
+  const [editTplRemoveMedia, setEditTplRemoveMedia] = useState(false)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -1527,6 +1588,53 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token])
 
+  // Load lab results grouped by patient
+  const loadLabResults = useCallback(async (page = 1, search = '') => {
+    if (!auth?.token) return
+    setLabLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page) })
+      if (search) params.set('search', search)
+      const resp = await authFetch(`${API_BASE}/telegram/lab-results/?${params}`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        const results: LabResult[] = data.results || []
+        setLabTotal(data.total || results.length)
+        // Group by patient: patient_client_id > patient_name > client_id
+        const map = new Map<string, LabPatient>()
+        for (const r of results) {
+          const key = r.patient_client_id || (r.patient_name ? `n:${r.patient_name.toLowerCase()}` : r.client_id || `u:${r.id}`)
+          if (!map.has(key)) {
+            map.set(key, {
+              key,
+              name: r.patient_client_name || r.patient_name || r.client_name || r.client_phone || '',
+              phone: r.client_phone || '',
+              dob: r.patient_dob || '',
+              photo: null,
+              results: [],
+            })
+          }
+          map.get(key)!.results.push(r)
+        }
+        setLabPatients(Array.from(map.values()))
+        setLabPage(page)
+        // Fetch photos for patients that have client_id
+        const clientIds = [...new Set(results.map(r => r.patient_client_id || r.client_id).filter(Boolean))]
+        if (clientIds.length > 0) {
+          const photoResp = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${clientIds.join(',')}`, auth.token)
+          if (photoResp.ok) {
+            const pm: Record<string, string> = await photoResp.json()
+            setLabPatients(prev => prev.map(p => {
+              const cid = p.results[0]?.patient_client_id || p.results[0]?.client_id || ''
+              return pm[cid] ? { ...p, photo: `${API_BASE.replace('/api', '')}${pm[cid]}` } : p
+            }))
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    setLabLoading(false)
+  }, [auth?.token])
+
   // Add client note
   const addClientNote = useCallback(async () => {
     if (!selectedClient || !newNoteText.trim() || !auth?.token) return
@@ -1615,34 +1723,97 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, loadTemplateCategories])
 
+  // Save template (global edit)
+  const saveTemplate = useCallback(async (tpl: QuickReply) => {
+    if (!auth?.token) return
+    try {
+      const formData = new FormData()
+      formData.append('title', editTplTitle.trim())
+      formData.append('text', editTplText.trim())
+      if (editTplMedia) {
+        formData.append('media_file', editTplMedia)
+      } else if (editTplRemoveMedia) {
+        formData.append('remove_media', 'true')
+      }
+      const resp = await fetch(`${API_BASE}/messenger/quick-replies/${tpl.id}/`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Token ${auth.token}` },
+        body: formData,
+      })
+      if (resp.ok) {
+        setEditingTpl(null)
+        setEditTplMedia(null)
+        setEditTplRemoveMedia(false)
+        loadTemplateCategories()
+      }
+    } catch { /* ignore */ }
+  }, [auth?.token, editTplTitle, editTplText, editTplMedia, editTplRemoveMedia, loadTemplateCategories])
+
+  // Reorder categories via drag-and-drop
+  const reorderCategories = useCallback(async (fromId: string, toId: string) => {
+    if (fromId === toId || !auth?.token) return
+    setTemplateCategories(prev => {
+      const arr = [...prev]
+      const fi = arr.findIndex(c => c.id === fromId)
+      const ti = arr.findIndex(c => c.id === toId)
+      if (fi < 0 || ti < 0) return prev
+      const [moved] = arr.splice(fi, 1)
+      arr.splice(ti, 0, moved)
+      // Persist sort_order to backend
+      arr.forEach((cat, i) => {
+        if (cat.sort_order !== i) {
+          authFetch(`${API_BASE}/messenger/template-categories/${cat.id}/`, auth.token!, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sort_order: i }),
+          }).catch(() => {})
+        }
+        cat.sort_order = i
+      })
+      return arr
+    })
+  }, [auth?.token])
+
   // Send template to current chat
-  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null) => {
+  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null, extraFile: File | null) => {
     if (!selectedClient || !auth?.token) return
     setPreviewTpl(null)
+    setTplSendExtraFile(null)
     try {
       const acctId = selectedAccount || ''
-      // If media included, download it and send as multipart
-      if (mediaUrl) {
+
+      // Determine the file to send: extraFile (user-added) takes priority, else download media from template
+      let fileToSend: Blob | null = null
+      let fileName = ''
+
+      if (extraFile) {
+        fileToSend = extraFile
+        fileName = extraFile.name
+      } else if (mediaUrl) {
         try {
-          const mediaResp = await authFetch(`https://cc.vidnova.app${mediaUrl}`, auth.token)
+          const mediaResp = await authFetch(`${API_BASE.replace('/api', '')}${mediaUrl}`, auth.token)
           if (mediaResp.ok) {
-            const blob = await mediaResp.blob()
-            const ext = mediaUrl.split('.').pop() || 'bin'
-            const fd = new FormData()
-            fd.append('text', text)
-            fd.append('account_id', acctId)
-            fd.append('file', blob, `template.${ext}`)
-            const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-              method: 'POST',
-              body: fd,
-            })
-            if (resp.ok) { loadMessages(selectedClient); return }
-            const err = await resp.json().catch(() => ({}))
-            console.error('sendTemplate media error:', resp.status, err)
-            return
+            fileToSend = await mediaResp.blob()
+            fileName = `template.${mediaUrl.split('.').pop() || 'bin'}`
           }
         } catch (e) { console.error('sendTemplate media download error:', e) }
       }
+
+      if (fileToSend) {
+        const fd = new FormData()
+        fd.append('text', text)
+        fd.append('account_id', acctId)
+        fd.append('file', fileToSend, fileName)
+        const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+          method: 'POST',
+          body: fd,
+        })
+        if (resp.ok) { loadMessages(selectedClient); return }
+        const err = await resp.json().catch(() => ({}))
+        console.error('sendTemplate media error:', resp.status, err)
+        return
+      }
+
       // Text only
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
         method: 'POST',
@@ -1952,9 +2123,7 @@ function App() {
   // Add in-app toast
   const addToast = useCallback((clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => {
     const id = ++toastIdRef.current
-    setToasts(prev => [...prev.slice(-4), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
-    // Auto-remove after 6s
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 6000)
+    setToasts(prev => [...prev.slice(-8), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
   }, [])
   useEffect(() => { addToastRef.current = addToast }, [addToast])
 
@@ -2648,6 +2817,98 @@ function App() {
               ) : (
                 <div className="rp-empty">Оберіть чат для перегляду нотаток</div>
               )
+            ) : rightTab === 'lab' ? (
+              <div className="rp-lab">
+                <div className="rp-lab-search">
+                  <input
+                    value={labSearch}
+                    onChange={e => setLabSearch(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') loadLabResults(1, labSearch) }}
+                    placeholder="Пошук за ПІБ або телефоном..."
+                  />
+                  <button onClick={() => loadLabResults(1, labSearch)} title="Пошук">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                  </button>
+                </div>
+                {labLoading && <div className="rp-empty">Завантаження...</div>}
+                {!labLoading && labPatients.length === 0 && <div className="rp-empty">Немає аналізів</div>}
+                <div className="rp-lab-list">
+                  {labPatients.map(p => (
+                    <div key={p.key} className="lab-patient">
+                      <div className="lab-patient-header" onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}>
+                        <div className="lab-patient-avatar">
+                          {p.photo ? <img src={p.photo} alt="" /> : <span>{(p.name || '?')[0].toUpperCase()}</span>}
+                        </div>
+                        <div className="lab-patient-info">
+                          <span className="lab-patient-name">{p.name || 'Невідомий'}</span>
+                          {p.phone && <span className="lab-patient-phone">{p.phone}</span>}
+                        </div>
+                        <span className="lab-patient-count">{p.results.length}</span>
+                        <svg className={`tpl-chevron ${expandedLabPatient === p.key ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                      </div>
+                      {expandedLabPatient === p.key && (
+                        <div className="lab-results-list">
+                          {p.results.map(r => {
+                            const isImg = r.media_file && /\.(jpg|jpeg|png|webp|gif)/i.test(r.media_file)
+                            const isPdf = r.media_file && /\.pdf/i.test(r.media_file)
+                            const typeLabel: Record<string, string> = {
+                              blood_test: 'Аналіз крові', ultrasound: 'УЗД', xray: 'Рентген',
+                              ct_scan: 'КТ', mri: 'МРТ', ecg: 'ЕКГ', dental_scan: 'Стоматологія',
+                              prescription: 'Рецепт', other_lab: 'Інше',
+                            }
+                            const thumbKey = `lab_thumb_${r.id}`
+                            const fullKey = `lab_full_${r.id}`
+                            // Auto-load thumbnail
+                            if (r.thumbnail && !mediaBlobMap[thumbKey] && !mediaLoading[thumbKey]) {
+                              loadMediaBlob(thumbKey, r.thumbnail)
+                            }
+                            return (
+                              <div
+                                key={r.id}
+                                className="lab-result-item"
+                                onClick={async () => {
+                                  if (!r.media_file) return
+                                  if (isPdf) {
+                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
+                                  } else if (isImg) {
+                                    const blob = mediaBlobMap[fullKey] || await loadMediaBlob(fullKey, r.media_file)
+                                    if (blob) setLightboxSrc(blob)
+                                  } else {
+                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
+                                  }
+                                }}
+                              >
+                                <div className="lab-result-thumb">
+                                  {mediaBlobMap[thumbKey] ? <img src={mediaBlobMap[thumbKey]} alt="" /> : (
+                                    <div className="lab-result-icon">
+                                      {isPdf ? '📄' : isImg ? '🖼️' : '📎'}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="lab-result-info">
+                                  <span className="lab-result-type">{typeLabel[r.lab_result_type] || r.lab_result_type}</span>
+                                  <span className="lab-result-date">
+                                    {new Date(r.message_date).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                  </span>
+                                  {r.is_from_lab && r.lab_name && <span className="lab-result-source">{r.lab_name}</span>}
+                                </div>
+                                <span className="lab-result-badge">{r.source === 'telegram' ? 'TG' : '✉️'}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {labTotal > 50 && (
+                  <div className="lab-pagination">
+                    <button disabled={labPage <= 1} onClick={() => loadLabResults(labPage - 1, labSearch)}>←</button>
+                    <span>{labPage}</span>
+                    <button disabled={labPatients.length < 50} onClick={() => loadLabResults(labPage + 1, labSearch)}>→</button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="rp-quick">
                 <div className="rp-quick-list">
@@ -2655,8 +2916,18 @@ function App() {
                     <div className="rp-empty">Немає шаблонів</div>
                   )}
                   {templateCategories.map(cat => (
-                    <div key={cat.id} className="tpl-cat">
+                    <div
+                      key={cat.id}
+                      className="tpl-cat"
+                      draggable
+                      onDragStart={e => { dragCatRef.current = cat.id; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging') }}
+                      onDragEnd={e => { dragCatRef.current = null; (e.currentTarget as HTMLElement).classList.remove('dragging') }}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; (e.currentTarget as HTMLElement).classList.add('drag-over') }}
+                      onDragLeave={e => (e.currentTarget as HTMLElement).classList.remove('drag-over')}
+                      onDrop={e => { e.preventDefault(); (e.currentTarget as HTMLElement).classList.remove('drag-over'); if (dragCatRef.current) reorderCategories(dragCatRef.current, cat.id) }}
+                    >
                       <div className="tpl-cat-header" style={{ borderLeftColor: cat.color }} onClick={() => toggleCat(cat.id)}>
+                        <svg className="tpl-drag-handle" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/></svg>
                         <svg className={`tpl-chevron ${expandedCats.has(cat.id) ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                         <span className="tpl-cat-name" style={{ color: cat.color }}>{cat.name}</span>
                         <span className="tpl-cat-count">{cat.templates.length}</span>
@@ -2672,9 +2943,12 @@ function App() {
                       {expandedCats.has(cat.id) && (
                         <div className="tpl-cat-body">
                           {cat.templates.map(tpl => (
-                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file) }}>
+                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFile(null) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
                               {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
+                              <button className="tpl-edit-global-btn" onClick={e => { e.stopPropagation(); setEditingTpl(tpl); setEditTplTitle(tpl.title); setEditTplText(tpl.text); setEditTplMedia(null); setEditTplRemoveMedia(false) }} title="Редагувати шаблон">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                              </button>
                               <button className="rp-delete-btn tpl-del" onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} title="Видалити">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                               </button>
@@ -2695,22 +2969,43 @@ function App() {
             )}
           </div>
           <div className="right-panel-tabs">
-            <button
-              className={`rp-tab ${rightTab === 'notes' ? 'active' : ''}`}
-              onClick={() => setRightTab('notes')}
-              title="Нотатки"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              <span className="rp-tab-label">Нотатки</span>
-            </button>
-            <button
-              className={`rp-tab ${rightTab === 'quick' ? 'active' : ''}`}
-              onClick={() => setRightTab('quick')}
-              title="Швидкі відповіді"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span className="rp-tab-label">Шаблони</span>
-            </button>
+            {rightTabs.map(tab => (
+              <button
+                key={tab}
+                className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
+                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch) }}
+                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Швидкі відповіді' : 'Аналізи'}
+                draggable
+                onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                onDrop={e => {
+                  e.preventDefault()
+                  if (dragTabRef.current && dragTabRef.current !== tab) {
+                    setRightTabs(prev => {
+                      const arr = [...prev]
+                      const fi = arr.indexOf(dragTabRef.current as 'notes' | 'quick' | 'lab')
+                      const ti = arr.indexOf(tab)
+                      if (fi < 0 || ti < 0) return prev
+                      const [moved] = arr.splice(fi, 1)
+                      arr.splice(ti, 0, moved)
+                      try { localStorage.setItem('rp-tab-order', JSON.stringify(arr)) } catch {}
+                      return arr
+                    })
+                  }
+                  dragTabRef.current = null
+                }}
+                onDragEnd={() => { dragTabRef.current = null }}
+              >
+                {tab === 'notes' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                ) : tab === 'quick' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
+                )}
+                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -3023,6 +3318,27 @@ function App() {
                   <button className="tpl-edit-media-remove" onClick={() => setTplIncludeMedia(false)} title="Видалити вкладення">✕</button>
                 </div>
               )}
+              {/* Re-include media button (when removed) */}
+              {previewTpl.media_file && !tplIncludeMedia && (
+                <button className="tpl-reinclude-media" onClick={() => setTplIncludeMedia(true)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  Повернути вкладення шаблону
+                </button>
+              )}
+              {/* Extra file attachment */}
+              {tplSendExtraFile ? (
+                <div className="tpl-extra-file">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  <span>{tplSendExtraFile.name}</span>
+                  <button onClick={() => setTplSendExtraFile(null)} title="Видалити">✕</button>
+                </div>
+              ) : (
+                <label className="tpl-attach-extra">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  Додати файл
+                  <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setTplSendExtraFile(e.target.files?.[0] || null); if (e.target.files?.[0]) setTplIncludeMedia(false) }} hidden />
+                </label>
+              )}
               {/* Editable text */}
               <textarea
                 className="tpl-edit-textarea"
@@ -3037,11 +3353,66 @@ function App() {
               </span>
               <button
                 className="tpl-btn-send"
-                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null)}
-                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file))}
+                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null, tplSendExtraFile)}
+                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file) && !tplSendExtraFile)}
               >
                 <SendIcon /> Відправити
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Edit Template Modal */}
+      {editingTpl && (
+        <div className="modal-overlay" onClick={() => setEditingTpl(null)}>
+          <div className="tpl-modal tpl-global-edit-modal" onClick={e => e.stopPropagation()}>
+            <h3>Редагувати шаблон</h3>
+            <input
+              value={editTplTitle}
+              onChange={e => setEditTplTitle(e.target.value)}
+              placeholder="Коротка назва"
+              autoFocus
+            />
+            <textarea
+              value={editTplText}
+              onChange={e => setEditTplText(e.target.value)}
+              placeholder="Текст повідомлення..."
+              rows={4}
+            />
+            {/* Current media */}
+            {editingTpl.media_file && !editTplRemoveMedia && !editTplMedia && (
+              <div className="tpl-edit-media">
+                {editingTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                  <img src={`${API_BASE.replace('/api', '')}${editingTpl.media_file}`} alt="" />
+                ) : (
+                  <div className="tpl-edit-file-tag">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                    {editingTpl.media_file.split('/').pop()}
+                  </div>
+                )}
+                <button className="tpl-edit-media-remove" onClick={() => setEditTplRemoveMedia(true)} title="Видалити вкладення">✕</button>
+              </div>
+            )}
+            {/* New media selected */}
+            {editTplMedia && (
+              <div className="tpl-extra-file">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                <span>{editTplMedia.name}</span>
+                <button onClick={() => setEditTplMedia(null)} title="Видалити">✕</button>
+              </div>
+            )}
+            {/* Media upload / re-add */}
+            {!editTplMedia && (editTplRemoveMedia || !editingTpl.media_file) && (
+              <label className="tpl-media-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                Прикріпити медіа
+                <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setEditTplMedia(e.target.files?.[0] || null); setEditTplRemoveMedia(false) }} hidden />
+              </label>
+            )}
+            <div className="tpl-modal-btns">
+              <button className="tpl-btn-primary" onClick={() => saveTemplate(editingTpl)} disabled={!editTplTitle.trim() || !editTplText.trim()}>Зберегти</button>
+              <button className="tpl-btn-secondary" onClick={() => setEditingTpl(null)}>Скасувати</button>
             </div>
           </div>
         </div>
@@ -3078,20 +3449,44 @@ function App() {
       {/* Toast notifications — bottom-right */}
       {toasts.length > 0 && (
         <div className="toast-container">
-          {toasts.map(t => (
-            <div
-              key={t.id}
-              className="toast-item"
-              onClick={() => {
-                // Clear account filter so client is visible, then select
-                setSelectedAccount('')
-                selectClient(t.clientId)
-                setToasts(prev => prev.filter(x => x.id !== t.id))
-              }}
-            >
-              <div className="toast-header">
-                <span className="toast-sender">{t.sender}</span>
-                {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+          {toasts.length > 1 && (
+            <button className="toast-dismiss-all" onClick={() => setToasts([])}>
+              Приховати всі
+            </button>
+          )}
+          {toasts.map(t => {
+            const acctType = accounts.find(a => a.id === t.accountId)?.type
+            const toastClass = `toast-item ${acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'}`
+            const avatarUrl = photoMap[t.clientId]
+            return (
+              <div
+                key={t.id}
+                className={toastClass}
+                onClick={() => {
+                  setSelectedAccount('')
+                  selectClient(t.clientId)
+                  setToasts(prev => prev.filter(x => x.id !== t.id))
+                }}
+              >
+                <div className="toast-avatar">
+                  {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{(t.sender || '?')[0].toUpperCase()}</span>}
+                </div>
+                <div className="toast-content">
+                  <div className="toast-header">
+                    <span className="toast-sender">{t.sender}</span>
+                    {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+                  </div>
+                  <div className="toast-body">
+                    {t.hasMedia && !t.text && <span className="toast-media">
+                      {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
+                    </span>}
+                    {t.hasMedia && t.text && <span className="toast-media-icon">
+                      {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
+                      {' '}
+                    </span>}
+                    {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
+                  </div>
+                </div>
                 <button
                   className="toast-close"
                   onClick={e => {
@@ -3100,18 +3495,8 @@ function App() {
                   }}
                 >×</button>
               </div>
-              <div className="toast-body">
-                {t.hasMedia && !t.text && <span className="toast-media">
-                  {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
-                </span>}
-                {t.hasMedia && t.text && <span className="toast-media-icon">
-                  {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
-                  {' '}
-                </span>}
-                {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
