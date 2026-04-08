@@ -1866,14 +1866,14 @@ function App() {
         setLabPatients(Array.from(map.values()))
         setLabPage(page)
         // Fetch photos for patients that have client_id
-        const clientIds = [...new Set(results.map(r => r.patient_client_id || r.client_id).filter(Boolean))]
+        const clientIds = [...new Set(results.map(r => r.patient_client_id).filter(Boolean))]
         if (clientIds.length > 0) {
           const photoResp = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${clientIds.join(',')}`, auth.token)
           if (photoResp.ok) {
             const pm: Record<string, string> = await photoResp.json()
             // Store media path (not full URL) — will be loaded via loadMediaBlob with auth
             setLabPatients(prev => prev.map(p => {
-              const cid = p.results[0]?.patient_client_id || p.results[0]?.client_id || ''
+              const cid = p.results[0]?.patient_client_id || ''
               return pm[cid] ? { ...p, photo: pm[cid] } : p
             }))
           }
