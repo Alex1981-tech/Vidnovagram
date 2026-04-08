@@ -17,9 +17,9 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.10.2': [
-    'Горизонтальні кольорові вкладки правої панелі (Аналізи / Нотатки / Шаблони)',
-    'Gmail: фільтр Усі/Вхідні/Надіслані з іконками та кольорами',
+  '0.10.3': [
+    'Кольорові заголовки правої панелі (Аналізи / Нотатки / Шаблони)',
+    'Gmail: фільтр Усі/Вхідні/Надіслані — мінімалістичні іконки',
     'Gmail: значки напрямку (синій вх / зелений вих) у режимі «Усі»',
   ],
   '0.10.1': [
@@ -2608,13 +2608,13 @@ function App() {
           {selectedGmail ? (
             <div className="gmail-sidebar-filter">
               <button className={`gmail-filter-btn ${gmailDirection === '' ? 'active' : ''}`} onClick={() => { setGmailDirection(''); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, '') }} title="Усі">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 4 10 8 10-8"/></svg>
               </button>
               <button className={`gmail-filter-btn gmail-filter-inbox ${gmailDirection === 'inbox' ? 'active' : ''}`} onClick={() => { setGmailDirection('inbox'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'inbox') }} title="Вхідні">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12l-7 7-7-7"/><path d="M12 5v14"/></svg>
               </button>
               <button className={`gmail-filter-btn gmail-filter-sent ${gmailDirection === 'sent' ? 'active' : ''}`} onClick={() => { setGmailDirection('sent'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'sent') }} title="Надіслані">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 12l7-7 7 7"/><path d="M12 19V5"/></svg>
               </button>
               <button className="gmail-filter-compose" onClick={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }} title="Написати">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
@@ -3298,50 +3298,21 @@ function App() {
         </div>
         )}
 
-        {/* Right Panel: [header-tabs | content] */}
+        {/* Right Panel: [content + header | vertical-tabs] */}
         <div className="right-panel" style={{ width: rightPanelWidth }}>
           <div className="resize-handle" onMouseDown={e => startResize('right', e)} />
-          <div className="right-panel-tabs">
-            {rightTabs.map(tab => (
-              <button
-                key={tab}
-                className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
-                data-tab={tab}
-                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch) }}
-                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи пацієнтів'}
-                draggable
-                onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
-                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-                onDrop={e => {
-                  e.preventDefault()
-                  if (dragTabRef.current && dragTabRef.current !== tab) {
-                    setRightTabs(prev => {
-                      const arr = [...prev]
-                      const fi = arr.indexOf(dragTabRef.current as 'notes' | 'quick' | 'lab')
-                      const ti = arr.indexOf(tab)
-                      if (fi < 0 || ti < 0) return prev
-                      const [moved] = arr.splice(fi, 1)
-                      arr.splice(ti, 0, moved)
-                      try { localStorage.setItem('rp-tab-order', JSON.stringify(arr)) } catch {}
-                      return arr
-                    })
-                  }
-                  dragTabRef.current = null
-                }}
-                onDragEnd={() => { dragTabRef.current = null }}
-              >
-                {tab === 'notes' ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                ) : tab === 'quick' ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
-                )}
-                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}</span>
-              </button>
-            ))}
-          </div>
-          <div className="right-panel-body">
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+            <div className="rp-content-header" data-tab={rightTab}>
+              {rightTab === 'notes' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              ) : rightTab === 'quick' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
+              )}
+              {rightTab === 'notes' ? 'Нотатки' : rightTab === 'quick' ? 'Шаблони' : 'Аналізи пацієнтів'}
+            </div>
+            <div className="right-panel-body">
             {rightTab === 'notes' ? (
               selectedClient ? (
                 <div className="rp-notes">
@@ -3539,6 +3510,47 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+          </div>
+          <div className="right-panel-tabs">
+            {rightTabs.map(tab => (
+              <button
+                key={tab}
+                className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
+                data-tab={tab}
+                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch) }}
+                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}
+                draggable
+                onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                onDrop={e => {
+                  e.preventDefault()
+                  if (dragTabRef.current && dragTabRef.current !== tab) {
+                    setRightTabs(prev => {
+                      const arr = [...prev]
+                      const fi = arr.indexOf(dragTabRef.current as 'notes' | 'quick' | 'lab')
+                      const ti = arr.indexOf(tab)
+                      if (fi < 0 || ti < 0) return prev
+                      const [moved] = arr.splice(fi, 1)
+                      arr.splice(ti, 0, moved)
+                      try { localStorage.setItem('rp-tab-order', JSON.stringify(arr)) } catch {}
+                      return arr
+                    })
+                  }
+                  dragTabRef.current = null
+                }}
+                onDragEnd={() => { dragTabRef.current = null }}
+              >
+                {tab === 'notes' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                ) : tab === 'quick' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
+                )}
+                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : 'Аналізи'}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
