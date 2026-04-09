@@ -756,7 +756,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messageText, setMessageText] = useState('')
   const [msgCount, setMsgCount] = useState(0)
-  const [msgPage, setMsgPage] = useState(1)
+  const [msgCursor, setMsgCursor] = useState<string | null>(null)
   const [hasOlderMessages, setHasOlderMessages] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [clientName, setClientName] = useState('')
@@ -1244,12 +1244,12 @@ function App() {
 
     // Phase 0: instant load from cache (only on first open — scrollToEnd=true)
     if (scrollToEnd) {
-      const cached = await getJsonCache<{ messages: ChatMessage[]; count: number; client_name: string; client_phone: string }>(MSG_STORE, cacheKey)
+      const cached = await getJsonCache<{ messages: ChatMessage[]; count: number; client_name: string; client_phone: string; next_cursor?: string | null }>(MSG_STORE, cacheKey)
       if (cached && cached.messages.length > 0) {
         setMessages(cached.messages)
         setMsgCount(cached.count)
-        setMsgPage(1)
-        setHasOlderMessages(Math.ceil(cached.count / 200) > 1)
+        setMsgCursor(cached.next_cursor ?? null)
+        setHasOlderMessages(!!cached.next_cursor)
         setClientName(cached.client_name || '')
         setClientPhone(cached.client_phone || '')
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30)
@@ -1257,7 +1257,7 @@ function App() {
     }
 
     try {
-      const params = new URLSearchParams({ per_page: '200', page: '1' })
+      const params = new URLSearchParams({ per_page: '200' })
       if (selectedAccount) params.set('account', selectedAccount)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, auth.token)
       if (resp.status === 401) { logout(); return }
@@ -1271,10 +1271,9 @@ function App() {
           }
           return msgs
         })
-        setMsgCount(data.count || 0)
-        setMsgPage(1)
-        const totalPages = Math.ceil((data.count || 0) / 200)
-        setHasOlderMessages(totalPages > 1)
+        setMsgCount(data.count || msgs.length)
+        setMsgCursor(data.next_cursor ?? null)
+        setHasOlderMessages(!!data.next_cursor || (!!data.has_more))
         setClientName(data.client_name || '')
         setClientPhone(data.client_phone || '')
         setIsPlaceholder(data.is_placeholder || false)
@@ -1288,9 +1287,10 @@ function App() {
         // Save to cache
         putJsonCache(MSG_STORE, cacheKey, {
           messages: msgs,
-          count: data.count || 0,
+          count: data.count || msgs.length,
           client_name: data.client_name || '',
           client_phone: data.client_phone || '',
+          next_cursor: data.next_cursor ?? null,
         })
       }
     } catch (e) { console.error('Messages:', e) }
@@ -1334,11 +1334,10 @@ function App() {
   }, [auth?.token, selectedClient, loadMessages])
 
   const loadOlderMessages = useCallback(async () => {
-    if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages) return
-    const nextPage = msgPage + 1
+    if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages || !msgCursor) return
     setLoadingOlder(true)
     try {
-      const params = new URLSearchParams({ per_page: '200', page: String(nextPage) })
+      const params = new URLSearchParams({ per_page: '200', before: msgCursor })
       if (selectedAccount) params.set('account', selectedAccount)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/messages/?${params}`, auth.token)
       if (resp.ok) {
@@ -1346,16 +1345,16 @@ function App() {
         const older = data.results || []
         if (older.length > 0) {
           setMessages(prev => [...older, ...prev])
-          setMsgPage(nextPage)
-          const totalPages = Math.ceil((data.count || 0) / 200)
-          setHasOlderMessages(nextPage < totalPages)
+          setMsgCursor(data.next_cursor ?? null)
+          setHasOlderMessages(!!data.next_cursor || !!data.has_more)
         } else {
           setHasOlderMessages(false)
+          setMsgCursor(null)
         }
       }
     } catch (e) { console.error('Older messages:', e) }
     setLoadingOlder(false)
-  }, [auth?.token, selectedClient, selectedAccount, msgPage, loadingOlder, hasOlderMessages])
+  }, [auth?.token, selectedClient, selectedAccount, msgCursor, loadingOlder, hasOlderMessages])
 
   // Send message (text, file, voice/video note)
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
