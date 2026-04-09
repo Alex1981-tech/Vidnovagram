@@ -2780,16 +2780,94 @@ body {
 }
 
 /* === Voice Messages === */
-.msg-voice {
+/* === Telegram-style Voice Player === */
+.voice-tg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  max-width: 320px;
   margin-bottom: 4px;
 }
-.msg-voice-audio {
-  width: 100%;
-  min-width: 280px;
-  max-width: 400px;
-  height: 40px;
-  border-radius: 8px;
+.voice-tg-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
 }
+.voice-tg.sent .voice-tg-play {
+  background: oklch(0.55 0.15 240);
+  color: white;
+}
+.voice-tg.received .voice-tg-play {
+  background: oklch(0.55 0.12 280);
+  color: white;
+}
+.dark .voice-tg.sent .voice-tg-play {
+  background: oklch(0.6 0.15 240);
+}
+.dark .voice-tg.received .voice-tg-play {
+  background: oklch(0.55 0.1 280);
+}
+.voice-tg-play:hover { filter: brightness(1.1); }
+.voice-tg-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.voice-tg-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 28px;
+  cursor: pointer;
+}
+.voice-tg-bar {
+  flex: 1;
+  min-width: 2px;
+  max-width: 5px;
+  border-radius: 2px;
+  transition: background 0.1s;
+}
+.voice-tg.sent .voice-tg-bar {
+  background: oklch(0.7 0.08 230 / 0.4);
+}
+.voice-tg.sent .voice-tg-bar.filled {
+  background: oklch(0.5 0.15 240);
+}
+.voice-tg.received .voice-tg-bar {
+  background: oklch(0.6 0.04 286 / 0.35);
+}
+.voice-tg.received .voice-tg-bar.filled {
+  background: oklch(0.45 0.1 280);
+}
+.dark .voice-tg.sent .voice-tg-bar {
+  background: oklch(0.5 0.08 240 / 0.35);
+}
+.dark .voice-tg.sent .voice-tg-bar.filled {
+  background: oklch(0.7 0.15 240);
+}
+.dark .voice-tg.received .voice-tg-bar {
+  background: oklch(0.45 0.04 286 / 0.3);
+}
+.dark .voice-tg.received .voice-tg-bar.filled {
+  background: oklch(0.65 0.1 280);
+}
+.voice-tg-time {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legacy voice btn (fallback) */
 .msg-voice-btn {
   display: flex;
   align-items: center;
@@ -2842,21 +2920,46 @@ body {
 .msg-video-btn:hover {
   background: rgba(0,0,0,0.5);
 }
-/* Video note (round/circle video) */
-.msg-video-note {
-  max-width: 240px;
-  max-height: 240px;
+/* Video note (round/circle video — Telegram style) */
+.msg-vnote {
+  position: relative;
+  width: 300px;
+  height: 300px;
   border-radius: 50%;
-  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--muted);
+  margin-bottom: 4px;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.15);
 }
-.msg-video-note .msg-video-btn {
-  border-radius: 50%;
-}
-.msg-video-round {
-  border-radius: 50%;
+.msg-vnote-thumb {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  aspect-ratio: 1;
-  max-height: 240px;
+  border-radius: 50%;
+}
+.msg-vnote-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.3);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.msg-vnote-play:hover {
+  background: oklch(0 0 0 / 0.45);
+}
+.msg-vnote-player {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.msg-vnote.playing {
+  background: black;
 }
 
 /* === Document Messages === */
