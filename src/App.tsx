@@ -17,6 +17,11 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.22': [
+    'Пошук у чаті — поле вводу, навігація ▲▼, підсвітка результатів',
+    'Профіль контакту — клік по імені відкриває фото, статистику, посилання',
+    'Різні підписи: "Видалено у співрозмовника" та "Видалено співрозмовником"',
+  ],
   '0.10.21': [
     'Емодзі пікер біля поля вводу повідомлення',
     'Видалення: червоний контур на видаленому повідомленні',
@@ -880,8 +885,12 @@ function App() {
   const [typingIndicators, setTypingIndicators] = useState<Record<string, number>>({})
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
-  // Chat search (toggled from header button — UI panel TODO)
-  const [_chatSearchOpen, setChatSearchOpen] = useState(false)
+  // Chat search
+  const [chatSearchOpen, setChatSearchOpen] = useState(false)
+  const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [chatSearchResults, setChatSearchResults] = useState<number[]>([]) // indices into messages
+  const [chatSearchIdx, setChatSearchIdx] = useState(0)
+  const chatSearchRef = useRef<HTMLInputElement>(null)
 
   // Forward mode
   const [forwardMode, setForwardMode] = useState(false)
@@ -919,6 +928,7 @@ function App() {
   const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
   const [showSelectAccountHint, setShowSelectAccountHint] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showContactProfile, setShowContactProfile] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: number | string; tgMsgId: number; peerId: number } | null>(null)
   const [showCompose, setShowCompose] = useState(false)
   const [composeTo, setComposeTo] = useState('')
@@ -2521,6 +2531,36 @@ function App() {
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
+
+  // Chat search — find matching message IDs
+  useEffect(() => {
+    if (!chatSearchQuery.trim()) {
+      setChatSearchResults([])
+      setChatSearchIdx(0)
+      return
+    }
+    const q = chatSearchQuery.toLowerCase()
+    const ids: number[] = []
+    messages.forEach(m => {
+      if (m.text && m.text.toLowerCase().includes(q)) ids.push(m.id as number)
+    })
+    setChatSearchResults(ids) // now stores message IDs
+    setChatSearchIdx(0)
+    // Scroll to first match
+    if (ids.length > 0) {
+      setTimeout(() => {
+        const msgEl = document.querySelector(`[data-msg-id="${ids[0]}"]`)
+        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }, 50)
+    }
+  }, [chatSearchQuery, messages])
+
+  // Reset search when changing client
+  useEffect(() => {
+    setChatSearchOpen(false)
+    setChatSearchQuery('')
+  }, [selectedClient])
+
   // addToastRef updated below after addToast is defined
 
   // WebSocket — stable connection, only depends on auth.token
@@ -3367,7 +3407,7 @@ function App() {
                     ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
                 </div>
-                <div className="chat-header-info">
+                <div className="chat-header-info" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
                   <div className="chat-header-name">
                     {clientName || chatContact?.full_name || chatContact?.phone}
                   </div>
@@ -3386,6 +3426,54 @@ function App() {
                   <span className="msg-count-badge">{msgCount} повідомлень</span>
                 </div>
               </div>
+
+              {/* Chat search panel */}
+              {chatSearchOpen && (
+                <div className="chat-search-panel">
+                  <input
+                    ref={chatSearchRef}
+                    type="text"
+                    className="chat-search-input"
+                    placeholder="Пошук у чаті..."
+                    value={chatSearchQuery}
+                    onChange={e => setChatSearchQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && chatSearchResults.length > 0) {
+                        const nextIdx = (chatSearchIdx + 1) % chatSearchResults.length
+                        setChatSearchIdx(nextIdx)
+                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[nextIdx]}"]`)
+                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                      }
+                      if (e.key === 'Escape') {
+                        setChatSearchOpen(false)
+                        setChatSearchQuery('')
+                      }
+                    }}
+                    autoFocus
+                  />
+                  {chatSearchResults.length > 0 && (
+                    <div className="chat-search-nav">
+                      <span className="chat-search-count">{chatSearchIdx + 1}/{chatSearchResults.length}</span>
+                      <button className="chat-search-nav-btn" onClick={() => {
+                        const prev = (chatSearchIdx - 1 + chatSearchResults.length) % chatSearchResults.length
+                        setChatSearchIdx(prev)
+                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[prev]}"]`)
+                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                      }}>▲</button>
+                      <button className="chat-search-nav-btn" onClick={() => {
+                        const next = (chatSearchIdx + 1) % chatSearchResults.length
+                        setChatSearchIdx(next)
+                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[next]}"]`)
+                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                      }}>▼</button>
+                    </div>
+                  )}
+                  {chatSearchQuery && chatSearchResults.length === 0 && (
+                    <span className="chat-search-count">0 результатів</span>
+                  )}
+                  <button className="chat-search-close" onClick={() => { setChatSearchOpen(false); setChatSearchQuery('') }}>✕</button>
+                </div>
+              )}
 
               {/* Placeholder banner */}
               {isPlaceholder && (
@@ -3555,7 +3643,7 @@ function App() {
                     )
                   }
                   return (
-                    <div key={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}`}
+                    <div key={m.id} data-msg-id={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}${chatSearchResults.includes(m.id as number) ? ' search-highlight' : ''}${chatSearchResults[chatSearchIdx] === m.id ? ' search-active' : ''}`}
                       onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
                       onContextMenu={!forwardMode ? (e) => {
                         e.preventDefault()
@@ -4614,6 +4702,48 @@ function App() {
                 Скасувати
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Profile Modal */}
+      {showContactProfile && selectedClient && chatContact && (
+        <div className="modal-overlay" onClick={() => setShowContactProfile(false)}>
+          <div className="contact-profile-modal" onClick={e => e.stopPropagation()}>
+            <button className="contact-profile-close" onClick={() => setShowContactProfile(false)}>✕</button>
+            <div className="contact-profile-avatar">
+              {photoMap[selectedClient]
+                ? <img src={photoMap[selectedClient]} alt="" />
+                : <div className="contact-profile-avatar-placeholder">
+                    {(clientName || chatContact.full_name || '?')[0].toUpperCase()}
+                  </div>
+              }
+            </div>
+            <h2 className="contact-profile-name">{clientName || chatContact.full_name || 'Без імені'}</h2>
+            <p className="contact-profile-phone">{clientPhone || chatContact.phone}</p>
+            <div className="contact-profile-stats">
+              <div className="contact-profile-stat">
+                <span className="contact-profile-stat-value">{messages.length}</span>
+                <span className="contact-profile-stat-label">повідомлень</span>
+              </div>
+              <div className="contact-profile-stat">
+                <span className="contact-profile-stat-value">{messages.filter(m => m.has_media).length}</span>
+                <span className="contact-profile-stat-label">медіа</span>
+              </div>
+              <div className="contact-profile-stat">
+                <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'sent').length}</span>
+                <span className="contact-profile-stat-label">надіслано</span>
+              </div>
+              <div className="contact-profile-stat">
+                <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'received').length}</span>
+                <span className="contact-profile-stat-label">отримано</span>
+              </div>
+            </div>
+            {chatContact.source === 'telegram' && chatContact.tg_peer_id && (
+              <a className="contact-profile-link" href={`https://t.me/+${(clientPhone || chatContact.phone || '').replace(/^0/, '38')}`} onClick={e => { e.preventDefault(); shellOpen((e.target as HTMLAnchorElement).href) }}>
+                Відкрити в Telegram
+              </a>
+            )}
           </div>
         </div>
       )}

@@ -687,6 +687,11 @@ body {
 .chat-header-info {
   flex: 1;
   min-width: 0;
+  text-align: left;
+}
+.chat-header-info:hover .chat-header-name {
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
 }
 .chat-header-name {
   font-weight: 600;
@@ -695,6 +700,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
 }
 .chat-header-phone {
   font-size: 0.75rem;
@@ -4745,4 +4751,174 @@ body {
 .chat-search-btn:hover {
   background: var(--accent);
   color: var(--foreground);
+}
+
+/* Chat search panel */
+.chat-search-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.chat-search-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--foreground);
+  font-size: 13px;
+  outline: none;
+}
+.chat-search-input:focus {
+  border-color: var(--primary);
+}
+.chat-search-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-search-count {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.chat-search-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+.chat-search-nav-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.chat-search-close {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.chat-search-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+/* Search highlight on messages */
+.msg.search-highlight .msg-bubble {
+  box-shadow: 0 0 0 1px oklch(0.75 0.15 85);
+}
+.msg.search-active .msg-bubble {
+  box-shadow: 0 0 0 2px oklch(0.7 0.2 85);
+  background: oklch(from var(--card) calc(l + 0.05) c h) !important;
+}
+
+/* ========== Contact Profile Modal ========== */
+.contact-profile-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 320px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 8px 32px oklch(0 0 0 / 0.3);
+}
+.contact-profile-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.contact-profile-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.contact-profile-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  overflow: hidden;
+}
+.contact-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.contact-profile-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: white;
+  font-size: 36px;
+  font-weight: 600;
+}
+.contact-profile-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 4px;
+}
+.contact-profile-phone {
+  font-size: 14px;
+  color: var(--muted-foreground);
+  margin: 0 0 20px;
+}
+.contact-profile-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.contact-profile-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.contact-profile-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.contact-profile-stat-label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.contact-profile-link {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+.contact-profile-link:hover {
+  opacity: 0.9;
 }
