@@ -17,6 +17,12 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.25': [
+    'Виправлено: відправка голосових та відеокружків (помилка tg_message_id)',
+    'Виправлено: сині фони на кнопках біля поля вводу',
+    'Виправлено: пересланці з прихованим ім\'ям тепер показують ім\'я відправника',
+    'Голосові тепер відправляються у правильному форматі (audio/ogg)',
+  ],
   '0.10.22': [
     'Пошук у чаті — поле вводу, навігація ▲▼, підсвітка результатів',
     'Профіль контакту — клік по імені відкриває фото, статистику, посилання',
@@ -3979,7 +3985,7 @@ function App() {
                         rows={1}
                       />
                       {messageText.trim() || attachedFile ? (
-                        <button onClick={() => sendMessage()} disabled={sending}>
+                        <button className="chat-send-btn" onClick={() => sendMessage()} disabled={sending}>
                           {sending ? <div className="spinner-sm" /> : <SendIcon />}
                         </button>
                       ) : (

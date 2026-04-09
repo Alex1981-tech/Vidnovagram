@@ -951,7 +951,7 @@ body {
   color: var(--muted-foreground);
   opacity: 0.6;
 }
-.chat-input button {
+.chat-send-btn {
   padding: 8px 14px;
   background: var(--primary);
   color: var(--primary-foreground);
@@ -964,8 +964,8 @@ body {
   justify-content: center;
   min-height: 38px;
 }
-.chat-input button:hover:not(:disabled) { opacity: 0.9; }
-.chat-input button:disabled { opacity: 0.3; cursor: default; }
+.chat-send-btn:hover:not(:disabled) { opacity: 0.9; }
+.chat-send-btn:disabled { opacity: 0.3; cursor: default; }
 
 /* Chat input extra buttons */
 .chat-input-btn {
