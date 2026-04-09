@@ -1946,6 +1946,18 @@ body {
   font-size: 0.8rem;
   font-weight: 600;
   flex: 1;
+  cursor: default;
+}
+.tpl-cat-name-edit {
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex: 1;
+  background: color-mix(in oklch, var(--input) 40%, transparent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+  min-width: 0;
 }
 .tpl-cat-count {
   font-size: 0.6875rem;
@@ -1983,9 +1995,10 @@ body {
   gap: 6px;
   padding: 5px 8px;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: grab;
   transition: background 0.15s;
 }
+.tpl-item:active { cursor: grabbing; }
 .tpl-item:hover { background: var(--accent); }
 .tpl-item-title {
   flex: 1;

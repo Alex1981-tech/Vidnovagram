@@ -833,6 +833,11 @@ function App() {
   const [editTplMedia, setEditTplMedia] = useState<File | null>(null)
   const [editTplRemoveMedia, setEditTplRemoveMedia] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'template' | 'category'; id: string; name: string } | null>(null)
+  // Inline category rename
+  const [editingCatId, setEditingCatId] = useState<string | null>(null)
+  const [editingCatName, setEditingCatName] = useState('')
+  // Drag template to chat
+  const dragTplRef = useRef<QuickReply | null>(null)
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -2096,6 +2101,20 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, loadTemplateCategories])
 
+  // Rename category (inline edit)
+  const renameCategory = useCallback(async (id: string, newName: string) => {
+    if (!newName.trim() || !auth?.token) return
+    try {
+      await authFetch(`${API_BASE}/messenger/template-categories/${id}/`, auth.token, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      })
+      loadTemplateCategories()
+    } catch { /* ignore */ }
+    setEditingCatId(null)
+  }, [auth?.token, loadTemplateCategories])
+
   // Add template to category
   const addTemplate = useCallback(async () => {
     if (!newTplTitle.trim() || !newTplText.trim() || !showTplModal || !auth?.token) return
@@ -2181,58 +2200,54 @@ function App() {
     })
   }, [auth?.token])
 
-  // Send template to current chat
+  // Send template to current chat: text first, then each media separately
   const sendTemplate = useCallback(async (text: string, mediaUrl: string | null, extraFile: File | null) => {
     if (!selectedClient || !auth?.token) return
     setPreviewTpl(null)
     setTplSendExtraFile(null)
+    const acctId = selectedAccount || ''
+    const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
+
     try {
-      const acctId = selectedAccount || ''
+      // Step 1: Send text message
+      if (text.trim()) {
+        const resp = await authFetch(sendUrl, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, account_id: acctId }),
+        })
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}))
+          console.error('sendTemplate text error:', resp.status, err)
+        }
+      }
 
-      // Determine the file to send: extraFile (user-added) takes priority, else download media from template
-      let fileToSend: Blob | null = null
-      let fileName = ''
-
-      if (extraFile) {
-        fileToSend = extraFile
-        fileName = extraFile.name
-      } else if (mediaUrl) {
+      // Step 2: Send template media as separate message
+      if (mediaUrl) {
         try {
           const mediaResp = await authFetch(`${API_BASE.replace('/api', '')}${mediaUrl}`, auth.token)
           if (mediaResp.ok) {
-            fileToSend = await mediaResp.blob()
-            fileName = `template.${mediaUrl.split('.').pop() || 'bin'}`
+            const blob = await mediaResp.blob()
+            const fileName = `template.${mediaUrl.split('.').pop() || 'bin'}`
+            const fd = new FormData()
+            fd.append('text', '')
+            fd.append('account_id', acctId)
+            fd.append('file', blob, fileName)
+            await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
           }
         } catch (e) { console.error('sendTemplate media download error:', e) }
       }
 
-      if (fileToSend) {
+      // Step 3: Send extra file as separate message
+      if (extraFile) {
         const fd = new FormData()
-        fd.append('text', text)
+        fd.append('text', '')
         fd.append('account_id', acctId)
-        fd.append('file', fileToSend, fileName)
-        const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-          method: 'POST',
-          body: fd,
-        })
-        if (resp.ok) { loadMessages(selectedClient); return }
-        const err = await resp.json().catch(() => ({}))
-        console.error('sendTemplate media error:', resp.status, err)
-        return
+        fd.append('file', extraFile, extraFile.name)
+        await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
       }
 
-      // Text only
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, account_id: acctId }),
-      })
-      if (resp.ok) {
-        loadMessages(selectedClient)
-      } else {
-        const err = await resp.json().catch(() => ({}))
-        console.error('sendTemplate error:', resp.status, err)
-      }
+      loadMessages(selectedClient)
     } catch (e) {
       console.error('sendTemplate network error:', e)
     }
@@ -3589,7 +3604,7 @@ function App() {
 
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
                 onDragOver={e => {
-                  if (dragLabPatientRef.current && selectedClient) {
+                  if ((dragLabPatientRef.current || dragTplRef.current) && selectedClient) {
                     e.preventDefault()
                     e.dataTransfer.dropEffect = 'copy'
                     setChatDropHighlight(true)
@@ -3604,6 +3619,15 @@ function App() {
                     dragLabPatientRef.current = null
                     setLabSendModal(p)
                     setLabSendSelected(new Set(p.results.filter(r => r.media_file).map(r => r.id)))
+                  }
+                  if (dragTplRef.current && selectedClient) {
+                    const tpl = dragTplRef.current
+                    dragTplRef.current = null
+                    // Open preview modal for editing before send
+                    setPreviewTpl(tpl)
+                    setTplEditText(tpl.text)
+                    setTplIncludeMedia(!!tpl.media_file)
+                    setTplSendExtraFile(null)
                   }
                 }}
               >
@@ -4298,7 +4322,20 @@ function App() {
                       <div className="tpl-cat-header" style={{ borderLeftColor: cat.color }} onClick={() => toggleCat(cat.id)}>
                         <svg className="tpl-drag-handle" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/></svg>
                         <svg className={`tpl-chevron ${expandedCats.has(cat.id) ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
-                        <span className="tpl-cat-name" style={{ color: cat.color }}>{cat.name}</span>
+                        {editingCatId === cat.id ? (
+                          <input
+                            className="tpl-cat-name-edit"
+                            value={editingCatName}
+                            onChange={e => setEditingCatName(e.target.value)}
+                            onBlur={() => renameCategory(cat.id, editingCatName)}
+                            onKeyDown={e => { if (e.key === 'Enter') renameCategory(cat.id, editingCatName); if (e.key === 'Escape') setEditingCatId(null) }}
+                            onClick={e => e.stopPropagation()}
+                            autoFocus
+                            style={{ color: cat.color }}
+                          />
+                        ) : (
+                          <span className="tpl-cat-name" style={{ color: cat.color }} onDoubleClick={e => { e.stopPropagation(); setEditingCatId(cat.id); setEditingCatName(cat.name) }}>{cat.name}</span>
+                        )}
                         <span className="tpl-cat-count">{cat.templates.length}</span>
                         <div className="tpl-cat-actions">
                           <button className="tpl-add-btn" onClick={e => { e.stopPropagation(); setShowTplModal(cat.id); setNewTplTitle(''); setNewTplText(''); setNewTplMedia(null) }} title="Додати шаблон">
@@ -4312,7 +4349,10 @@ function App() {
                       {expandedCats.has(cat.id) && (
                         <div className="tpl-cat-body">
                           {cat.templates.map(tpl => (
-                            <div key={tpl.id} className="tpl-item" onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFile(null) }}>
+                            <div key={tpl.id} className="tpl-item" draggable
+                              onDragStart={e => { dragTplRef.current = tpl; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', tpl.title) }}
+                              onDragEnd={() => { dragTplRef.current = null }}
+                              onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFile(null) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
                               {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
                               <button className="tpl-edit-global-btn" onClick={e => { e.stopPropagation(); setEditingTpl(tpl); setEditTplTitle(tpl.title); setEditTplText(tpl.text); setEditTplMedia(null); setEditTplRemoveMedia(false) }} title="Редагувати шаблон">
@@ -4780,7 +4820,7 @@ function App() {
             </div>
             <h3 className="select-account-hint-title">Виберіть акаунт</h3>
             <p className="select-account-hint-text">
-              Для відправки повідомлень та реакцій потрібно вибрати конкретний акаунт у верхній панелі.
+              Для відправки повідомлень та реакцій потрібно вибрати конкретний акаунт у лівій панелі.
             </p>
             <button className="select-account-hint-btn" onClick={() => setShowSelectAccountHint(false)}>Зрозуміло</button>
           </div>
