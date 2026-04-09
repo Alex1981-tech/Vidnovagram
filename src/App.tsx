@@ -147,6 +147,7 @@ interface ChatMessage {
   account_id?: string
   is_read?: boolean
   tg_message_id?: number
+  tg_peer_id?: number
   // Call-specific fields
   call_id?: string
   duration_seconds?: number
@@ -1331,7 +1332,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             account_id: selectedAccount,
-            peer_id: contacts.find(c => c.client_id === selectedClient)?.tg_peer_id,
+            peer_id: contacts.find(c => c.client_id === selectedClient)?.tg_peer_id || editingMsg.tg_peer_id,
             message_id: editingMsg.tg_message_id,
             text,
           }),
@@ -2342,13 +2343,15 @@ function App() {
     const msg = messages.find(m => m.id === msgId)
     if (!msg?.tg_message_id) return
     const contact = contacts.find(c => c.client_id === selectedClient)
+    const peerId = contact?.tg_peer_id || msg.tg_peer_id
+    if (!peerId) return
     try {
       await authFetch(`${API_BASE}/telegram/send-reaction/`, auth.token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_id: selectedAccount,
-          peer_id: contact?.tg_peer_id,
+          peer_id: peerId,
           message_id: msg.tg_message_id,
           emoji,
         }),
@@ -4286,9 +4289,19 @@ function App() {
       {/* Media context menu */}
       {ctxMenu && (
         <div className="ctx-menu-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}>
-          <div className="ctx-menu" style={{
-          top: Math.min(ctxMenu.y, window.innerHeight - 140),
-          left: Math.min(ctxMenu.x, window.innerWidth - 220),
+          <div className="ctx-menu" ref={el => {
+          if (el) {
+            const rect = el.getBoundingClientRect()
+            const maxY = window.innerHeight - rect.height - 8
+            const maxX = window.innerWidth - rect.width - 8
+            if (rect.top > maxY || rect.left > maxX) {
+              el.style.top = `${Math.max(8, Math.min(ctxMenu.y, maxY))}px`
+              el.style.left = `${Math.max(8, Math.min(ctxMenu.x, maxX))}px`
+            }
+          }
+        }} style={{
+          top: ctxMenu.y,
+          left: ctxMenu.x,
         }} onClick={e => e.stopPropagation()}>
             {ctxMenu.mediaPath && (
               <>
