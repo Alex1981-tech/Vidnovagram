@@ -17,6 +17,9 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.39': [
+    'Виправлено перетягування шаблонів у чат (глобальний обробник drag & drop)',
+  ],
   '0.10.25': [
     'Виправлено: відправка голосових та відеокружків (помилка tg_message_id)',
     'Виправлено: сині фони на кнопках біля поля вводу',
@@ -915,6 +918,7 @@ function App() {
   // Drag template to chat
   const dragTplRef = useRef<QuickReply | null>(null)
   const lastDraggedTplRef = useRef<QuickReply | null>(null) // backup: survives onDragEnd
+  const templateCategoriesRef = useRef<TemplateCategory[]>([])
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -1087,6 +1091,58 @@ function App() {
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
   useEffect(() => { contactsRef.current = contacts }, [contacts])
   useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { templateCategoriesRef.current = templateCategories }, [templateCategories])
+
+  // Global drag/drop handler for templates — WebView2 often doesn't propagate
+  // drag events to nested scrollable containers, so we listen at document level
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      if ((dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current) && selectedClientRef.current) {
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+    const handleDrop = (e: DragEvent) => {
+      if (!selectedClientRef.current) return
+      // Lab patient drag
+      if (dragLabPatientRef.current) {
+        e.preventDefault()
+        const p = dragLabPatientRef.current
+        dragLabPatientRef.current = null
+        setChatDropHighlight(false)
+        setLabSendModal(p)
+        setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
+        return
+      }
+      // Template drag
+      let tpl = dragTplRef.current || lastDraggedTplRef.current
+      dragTplRef.current = null
+      lastDraggedTplRef.current = null
+      if (!tpl && e.dataTransfer) {
+        const title = e.dataTransfer.getData('text/plain')
+        if (title) {
+          for (const cat of templateCategoriesRef.current) {
+            const found = cat.templates.find((t: any) => t.title === title)
+            if (found) { tpl = found; break }
+          }
+        }
+      }
+      if (tpl) {
+        e.preventDefault()
+        setChatDropHighlight(false)
+        setPreviewTpl(tpl)
+        setTplEditText(tpl.text)
+        setTplIncludeMedia(!!tpl.media_file)
+        setTplSendExtraFiles([])
+      }
+    }
+    document.addEventListener('dragover', handleDragOver)
+    document.addEventListener('drop', handleDrop)
+    return () => {
+      document.removeEventListener('dragover', handleDragOver)
+      document.removeEventListener('drop', handleDrop)
+    }
+  }, [])
 
   // Sound toggle persist
   useEffect(() => {
