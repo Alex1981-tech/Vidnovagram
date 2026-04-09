@@ -827,9 +827,10 @@ function App() {
   const [editTplMedia, setEditTplMedia] = useState<File | null>(null)
   const [editTplRemoveMedia, setEditTplRemoveMedia] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'template' | 'category'; id: string; name: string } | null>(null)
-  // Inline category rename
+  // Inline category rename + color
   const [editingCatId, setEditingCatId] = useState<string | null>(null)
   const [editingCatName, setEditingCatName] = useState('')
+  const [editingCatColor, setEditingCatColor] = useState('')
   // Drag template to chat
   const dragTplRef = useRef<QuickReply | null>(null)
 
@@ -2095,14 +2096,14 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token, loadTemplateCategories])
 
-  // Rename category (inline edit)
-  const renameCategory = useCallback(async (id: string, newName: string) => {
+  // Rename/recolor category (inline edit)
+  const saveCategory = useCallback(async (id: string, newName: string, newColor: string) => {
     if (!newName.trim() || !auth?.token) return
     try {
       await authFetch(`${API_BASE}/messenger/template-categories/${id}/`, auth.token, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), color: newColor }),
       })
       loadTemplateCategories()
     } catch { /* ignore */ }
@@ -4324,18 +4325,26 @@ function App() {
                         <svg className="tpl-drag-handle" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/></svg>
                         <svg className={`tpl-chevron ${expandedCats.has(cat.id) ? 'open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                         {editingCatId === cat.id ? (
-                          <input
-                            className="tpl-cat-name-edit"
-                            value={editingCatName}
-                            onChange={e => setEditingCatName(e.target.value)}
-                            onBlur={() => renameCategory(cat.id, editingCatName)}
-                            onKeyDown={e => { if (e.key === 'Enter') renameCategory(cat.id, editingCatName); if (e.key === 'Escape') setEditingCatId(null) }}
-                            onClick={e => e.stopPropagation()}
-                            autoFocus
-                            style={{ color: cat.color }}
-                          />
+                          <div className="tpl-cat-inline-edit" onClick={e => e.stopPropagation()}>
+                            <input
+                              className="tpl-cat-name-edit"
+                              value={editingCatName}
+                              onChange={e => setEditingCatName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveCategory(cat.id, editingCatName, editingCatColor); if (e.key === 'Escape') setEditingCatId(null) }}
+                              autoFocus
+                              style={{ color: editingCatColor }}
+                            />
+                            <div className="tpl-cat-inline-colors">
+                              {['#6366f1','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#64748b'].map(c => (
+                                <button key={c} className={`tpl-color-dot-sm ${editingCatColor === c ? 'active' : ''}`} style={{ background: c }} onClick={() => setEditingCatColor(c)} />
+                              ))}
+                            </div>
+                            <button className="tpl-cat-save-btn" onClick={() => saveCategory(cat.id, editingCatName, editingCatColor)} title="Зберегти">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                            </button>
+                          </div>
                         ) : (
-                          <span className="tpl-cat-name" style={{ color: cat.color }} onDoubleClick={e => { e.stopPropagation(); setEditingCatId(cat.id); setEditingCatName(cat.name) }}>{cat.name}</span>
+                          <span className="tpl-cat-name" style={{ color: cat.color }} onDoubleClick={e => { e.stopPropagation(); setEditingCatId(cat.id); setEditingCatName(cat.name); setEditingCatColor(cat.color) }}>{cat.name}</span>
                         )}
                         <span className="tpl-cat-count">{cat.templates.length}</span>
                         <div className="tpl-cat-actions">

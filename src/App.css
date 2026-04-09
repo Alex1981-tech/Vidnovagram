@@ -1962,6 +1962,13 @@ body {
   flex: 1;
   cursor: default;
 }
+.tpl-cat-inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
 .tpl-cat-name-edit {
   font-size: 0.8rem;
   font-weight: 600;
@@ -1972,6 +1979,36 @@ body {
   padding: 1px 4px;
   outline: none;
   min-width: 0;
+}
+.tpl-cat-inline-colors {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.tpl-color-dot-sm {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s;
+}
+.tpl-color-dot-sm.active {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--background);
+}
+.tpl-cat-save-btn {
+  background: none;
+  border: none;
+  color: oklch(0.72 0.17 152);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.tpl-cat-save-btn:hover {
+  color: oklch(0.82 0.17 152);
 }
 .tpl-cat-count {
   font-size: 0.6875rem;
