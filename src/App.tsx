@@ -2642,7 +2642,7 @@ function App() {
                 // Windows notification
                 showNotification(`${sender} → ${account}`, body || '📎 Медіа')
                 // In-app toast
-                addToastRef.current(clientId, accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
+                addToastRef.current(clientId || '', accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
 
                 // Track per-account unread
                 if (accountId) {
