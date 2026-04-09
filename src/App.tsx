@@ -202,6 +202,16 @@ interface ChatMessage {
   reactions?: { emoji: string; count: number; chosen?: boolean }[]
 }
 
+interface WsReactionEvent {
+  type: string
+  client_id?: string
+  account_id?: string
+  tg_message_id?: number
+  reactions?: { emoji: string; count: number; chosen?: boolean }[]
+  actor?: 'self' | 'peer'
+  [key: string]: any
+}
+
 interface LinkPreview {
   url: string
   title: string
@@ -856,6 +866,8 @@ function App() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
+  const contactsRef = useRef<Contact[]>([])
+  const messagesRef = useRef<ChatMessage[]>([])
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const linkSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -989,6 +1001,8 @@ function App() {
   }, [auth])
 
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
+  useEffect(() => { contactsRef.current = contacts }, [contacts])
+  useEffect(() => { messagesRef.current = messages }, [messages])
 
   // Sound toggle persist
   useEffect(() => {
@@ -2605,7 +2619,7 @@ function App() {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data)
+          const data: WsReactionEvent = JSON.parse(event.data)
 
           if (data.type === 'new_message') {
             const msg = data.message || {}
@@ -2674,14 +2688,23 @@ function App() {
                 ? { ...m, reactions: data.reactions || [] }
                 : m
             ))
-            // Notification for incoming reactions (not our own)
-            const hasNonChosen = (data.reactions || []).some((r: any) => !r.chosen)
-            if (hasNonChosen) {
-              const emoji = (data.reactions || []).filter((r: any) => !r.chosen).map((r: any) => r.emoji).join('')
+            // Notify only about peer reactions, not our own local reaction updates.
+            if (data.actor === 'peer' && data.client_id) {
               const clientId = data.client_id
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
-                showNotification('Реакція', emoji || '👍')
+                const emoji = (data.reactions || []).find(r => !r.chosen)?.emoji || data.reactions?.[0]?.emoji || '👍'
+                const contact = contactsRef.current.find(c => c.client_id === clientId)
+                const sender = contact?.full_name || contact?.phone || 'Клієнт'
+                const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
+                const preview = reactedMsg?.text?.trim()
+                  ? reactedMsg.text.trim().slice(0, 100)
+                  : reactedMsg?.has_media
+                    ? 'медіаповідомлення'
+                    : 'повідомлення'
+
+                showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${preview}`)
+                addToastRef.current(clientId, data.account_id || '', sender, '', `Відреагував(ла) ${emoji} · ${preview}`, false, '')
                 if (soundEnabledRef.current) {
                   try { notifAudioRef.current?.play().catch(() => {}) } catch {}
                 }
