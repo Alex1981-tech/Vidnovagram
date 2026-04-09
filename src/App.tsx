@@ -2403,7 +2403,7 @@ function App() {
         }),
       })
       const data = resp.ok ? await resp.json() : null
-      const deletedBy = data?.deleted_by || auth.user?.username || 'Ви'
+      const deletedBy = data?.deleted_by || auth.name || 'Ви'
       const deletedAt = data?.deleted_at || new Date().toISOString()
       // Optimistic update — message stays visible with deleted mark
       setMessages(prev => prev.map(m =>
