@@ -1438,9 +1438,16 @@ function App() {
         if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         loadMessages(selectedClient)
       } else {
-        const err = await resp.text().catch(() => '')
-        console.error('Send failed:', resp.status, err)
-        alert(`Помилка відправки: ${resp.status}`)
+        const raw = await resp.text().catch(() => '')
+        console.error('Send failed:', resp.status, raw)
+        let message = `Помилка відправки: ${resp.status}`
+        try {
+          const parsed = raw ? JSON.parse(raw) : null
+          if (parsed?.error) message = `Помилка відправки: ${parsed.error}`
+        } catch {
+          if (raw) message = `Помилка відправки: ${raw}`
+        }
+        alert(message)
       }
     } catch (e) { console.error('Send:', e) }
     finally { setSending(false) }
@@ -2614,6 +2621,8 @@ function App() {
 
       ws.onopen = () => {
         console.log('[WS] connected')
+        // Subscribe to all allowed accounts (on-demand subscription model)
+        ws.send(JSON.stringify({ type: 'subscribe_all' }))
       }
 
       ws.onmessage = (event) => {
