@@ -914,6 +914,7 @@ function App() {
   const [editingCatColor, setEditingCatColor] = useState('')
   // Drag template to chat
   const dragTplRef = useRef<QuickReply | null>(null)
+  const lastDraggedTplRef = useRef<QuickReply | null>(null) // backup: survives onDragEnd
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
@@ -3699,7 +3700,7 @@ function App() {
                   setShowScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 200)
                 }}
                 onDragOver={e => {
-                  if (selectedClient && (dragLabPatientRef.current || dragTplRef.current || e.dataTransfer.types.includes('text/plain'))) {
+                  if (selectedClient) {
                     e.preventDefault()
                     e.dataTransfer.dropEffect = 'copy'
                     setChatDropHighlight(true)
@@ -3716,9 +3717,10 @@ function App() {
                     setLabSendSelected(new Set(p.results.filter(r => r.media_file).map(r => r.id)))
                     return
                   }
-                  // Template drag — try ref first, then fallback to dataTransfer lookup
-                  let tpl = dragTplRef.current
+                  // Template drag — 3 fallbacks: ref → backup ref → dataTransfer title lookup
+                  let tpl = dragTplRef.current || lastDraggedTplRef.current
                   dragTplRef.current = null
+                  lastDraggedTplRef.current = null
                   if (!tpl && selectedClient) {
                     const title = e.dataTransfer.getData('text/plain')
                     if (title) {
@@ -4492,7 +4494,7 @@ function App() {
                         <div className="tpl-cat-body">
                           {cat.templates.map(tpl => (
                             <div key={tpl.id} className="tpl-item" draggable
-                              onDragStart={e => { dragTplRef.current = tpl; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', tpl.title) }}
+                              onDragStart={e => { dragTplRef.current = tpl; lastDraggedTplRef.current = tpl; e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', tpl.title) }}
                               onDragEnd={() => { dragTplRef.current = null }}
                               onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFiles([]) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
