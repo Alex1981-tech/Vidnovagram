@@ -17,6 +17,12 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.19': [
+    'Реакції: відображення з мініатюрою аватарки (як у Telegram)',
+    'Реакції: збереження при переключенні чатів',
+    'Реакції: real-time оновлення через WebSocket',
+    'Підказка «Виберіть акаунт» при спробі відправити без вибраного акаунту',
+  ],
   '0.10.3': [
     'Кольорові заголовки правої панелі (Аналізи / Нотатки / Шаблони)',
     'Gmail: фільтр Усі/Вхідні/Надіслані — мінімалістичні іконки',
@@ -901,6 +907,7 @@ function App() {
   const [gmailDirection, setGmailDirection] = useState<'' | 'inbox' | 'sent'>('inbox')
   const [gmailLoading, setGmailLoading] = useState(false)
   const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
+  const [showSelectAccountHint, setShowSelectAccountHint] = useState(false)
   const [showCompose, setShowCompose] = useState(false)
   const [composeTo, setComposeTo] = useState('')
   const [composeSubject, setComposeSubject] = useState('')
@@ -1308,6 +1315,10 @@ function App() {
   // Send message (text, file, voice/video note)
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
+    if (!selectedAccount) {
+      setShowSelectAccountHint(true)
+      return
+    }
     const text = messageText.trim()
     const fileToSend = file || attachedFile
     if (!text && !fileToSend) return
@@ -2339,7 +2350,12 @@ function App() {
 
   // Send reaction
   const sendReaction = useCallback(async (msgId: number | string, emoji: string) => {
-    if (!auth?.token || !selectedAccount) return
+    if (!auth?.token) return
+    if (!selectedAccount) {
+      setCtxMenu(null)
+      setShowSelectAccountHint(true)
+      return
+    }
     const msg = messages.find(m => m.id === msgId)
     if (!msg?.tg_message_id) return
     const contact = contacts.find(c => c.client_id === selectedClient)
@@ -2356,12 +2372,13 @@ function App() {
           emoji,
         }),
       })
-      // Optimistic update
-      setMessages(prev => prev.map(m =>
-        m.id === msgId
-          ? { ...m, reactions: [...(m.reactions || []), { emoji, count: 1, chosen: true }] }
-          : m
-      ))
+      // Optimistic update — replace previous chosen reaction
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m
+        const others = (m.reactions || []).filter(r => !r.chosen)
+        const updated = emoji ? [...others, { emoji, count: 1, chosen: true }] : others
+        return { ...m, reactions: updated }
+      }))
     } catch (e) { console.error('Reaction error:', e) }
     setCtxMenu(null)
   }, [auth?.token, selectedAccount, messages, contacts, selectedClient])
@@ -2547,6 +2564,27 @@ function App() {
                 ? { ...m, is_deleted: true, deleted_at: data.deleted_at, deleted_by_peer_name: data.deleted_by || '' }
                 : m
             ))
+          }
+
+          if (data.type === 'reaction_update' || data.type === 'messenger_reaction_update') {
+            setMessages(prev => prev.map(m =>
+              m.tg_message_id === data.tg_message_id
+                ? { ...m, reactions: data.reactions || [] }
+                : m
+            ))
+            // Notification for incoming reactions (not our own)
+            const hasNonChosen = (data.reactions || []).some((r: any) => !r.chosen)
+            if (hasNonChosen) {
+              const emoji = (data.reactions || []).filter((r: any) => !r.chosen).map((r: any) => r.emoji).join('')
+              const clientId = data.client_id
+              const isCurrentChat = clientId === selectedClientRef.current
+              if (!isCurrentChat) {
+                showNotification('Реакція', emoji || '👍')
+                if (soundEnabledRef.current) {
+                  try { notifAudioRef.current?.play().catch(() => {}) } catch {}
+                }
+              }
+            }
           }
 
           if (data.type === 'tg_typing') {
@@ -3645,6 +3683,13 @@ function App() {
                           <div className="msg-reactions">
                             {m.reactions.map((r, i) => (
                               <span key={i} className={`msg-reaction${r.chosen ? ' chosen' : ''}`}>
+                                {!r.chosen && selectedClient && photoMap[selectedClient] ? (
+                                  <img src={photoMap[selectedClient]} className="reaction-avatar" alt="" />
+                                ) : !r.chosen ? (
+                                  <span className="reaction-avatar reaction-avatar-placeholder">
+                                    {(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
+                                  </span>
+                                ) : null}
                                 {r.emoji}{r.count > 1 ? ` ${r.count}` : ''}
                               </span>
                             ))}
@@ -4464,6 +4509,24 @@ function App() {
                 setConfirmDelete(null)
               }}>Видалити</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select Account Hint Modal */}
+      {showSelectAccountHint && (
+        <div className="modal-overlay" onClick={() => setShowSelectAccountHint(false)}>
+          <div className="select-account-hint-modal" onClick={e => e.stopPropagation()}>
+            <div className="select-account-hint-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+              </svg>
+            </div>
+            <h3 className="select-account-hint-title">Виберіть акаунт</h3>
+            <p className="select-account-hint-text">
+              Для відправки повідомлень та реакцій потрібно вибрати конкретний акаунт у верхній панелі.
+            </p>
+            <button className="select-account-hint-btn" onClick={() => setShowSelectAccountHint(false)}>Зрозуміло</button>
           </div>
         </div>
       )}
