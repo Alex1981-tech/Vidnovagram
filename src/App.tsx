@@ -17,6 +17,11 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.20': [
+    'Видалення повідомлень: видаляється тільки у співрозмовника',
+    'Видалене повідомлення залишається у чаті з позначкою (хто видалив, дата)',
+    'Текст видаленого повідомлення — закреслений, з міткою червоного кольору',
+  ],
   '0.10.19': [
     'Реакції: відображення з мініатюрою аватарки (як у Telegram)',
     'Реакції: збереження при переключенні чатів',
@@ -908,6 +913,7 @@ function App() {
   const [gmailLoading, setGmailLoading] = useState(false)
   const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
   const [showSelectAccountHint, setShowSelectAccountHint] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: number | string; tgMsgId: number; peerId: number } | null>(null)
   const [showCompose, setShowCompose] = useState(false)
   const [composeTo, setComposeTo] = useState('')
   const [composeSubject, setComposeSubject] = useState('')
@@ -2383,6 +2389,32 @@ function App() {
     setCtxMenu(null)
   }, [auth?.token, selectedAccount, messages, contacts, selectedClient])
 
+  // Delete message
+  const deleteMessage = useCallback(async (tgMsgId: number, peerId: number) => {
+    if (!auth?.token || !selectedAccount) return
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/delete-message/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: selectedAccount,
+          peer_id: peerId,
+          message_ids: [tgMsgId],
+        }),
+      })
+      const data = resp.ok ? await resp.json() : null
+      const deletedBy = data?.deleted_by || auth.user?.username || 'Ви'
+      const deletedAt = data?.deleted_at || new Date().toISOString()
+      // Optimistic update — message stays visible with deleted mark
+      setMessages(prev => prev.map(m =>
+        m.tg_message_id === tgMsgId
+          ? { ...m, is_deleted: true, deleted_at: deletedAt, deleted_by_peer_name: deletedBy }
+          : m
+      ))
+    } catch (e) { console.error('Delete error:', e) }
+    setDeleteConfirm(null)
+  }, [auth?.token, selectedAccount])
+
   const searchLabPatients = useCallback(async (q: string) => {
     if (!auth?.token || q.length < 2) { setLabAssignResults([]); return }
     setLabAssignLoading(true)
@@ -3669,15 +3701,16 @@ function App() {
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
                         )}
-                        {/* Deleted message overlay */}
+                        {/* Message text — always shown, even for deleted */}
+                        {m.text && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
+                        {/* Deleted label under message */}
                         {m.is_deleted && (
-                          <div className="msg-deleted">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                            <span>Повідомлення видалено{m.deleted_by_peer_name ? ` (${m.deleted_by_peer_name})` : ''}</span>
+                          <div className="msg-deleted-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                            <span>Видалено{m.deleted_by_peer_name ? ` · ${m.deleted_by_peer_name}` : ''}{m.deleted_at ? ` · ${new Date(m.deleted_at).toLocaleDateString('uk-UA')} ${new Date(m.deleted_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
                           </div>
                         )}
-                        {!m.is_deleted && m.text && <div className="msg-text"><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
-                        {!m.is_deleted && m.text && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Reactions */}
                         {m.reactions && m.reactions.length > 0 && (
                           <div className="msg-reactions">
@@ -4388,6 +4421,16 @@ function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
               Додати аналіз
             </button>
+            {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
+              <button className="ctx-menu-item ctx-menu-item-danger" onClick={() => {
+                const msg = messages.find(m => m.id === ctxMenu.messageId)
+                if (msg) setDeleteConfirm({ msgId: msg.id, tgMsgId: msg.tg_message_id!, peerId: msg.tg_peer_id! })
+                setCtxMenu(null)
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Видалити
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -4527,6 +4570,24 @@ function App() {
               Для відправки повідомлень та реакцій потрібно вибрати конкретний акаунт у верхній панелі.
             </p>
             <button className="select-account-hint-btn" onClick={() => setShowSelectAccountHint(false)}>Зрозуміло</button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="delete-confirm-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="delete-confirm-title">Видалити повідомлення?</h3>
+            <p className="delete-confirm-text">Повідомлення буде видалено у співрозмовника, але залишиться у вас з позначкою.</p>
+            <div className="delete-confirm-actions">
+              <button className="delete-confirm-btn delete-btn-revoke" onClick={() => deleteMessage(deleteConfirm.tgMsgId, deleteConfirm.peerId)}>
+                Видалити у співрозмовника
+              </button>
+              <button className="delete-confirm-btn delete-btn-cancel" onClick={() => setDeleteConfirm(null)}>
+                Скасувати
+              </button>
+            </div>
           </div>
         </div>
       )}
