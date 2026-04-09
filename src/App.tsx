@@ -2735,6 +2735,18 @@ function App() {
             }
           }
 
+          if (data.type === 'read_outbox') {
+            // Peer read our sent messages up to max_id — update is_read
+            const maxId = data.max_id
+            if (maxId) {
+              setMessages(prev => prev.map(m =>
+                m.direction === 'sent' && m.tg_message_id && m.tg_message_id <= maxId && !m.is_read
+                  ? { ...m, is_read: true }
+                  : m
+              ))
+            }
+          }
+
           if (data.type === 'tg_typing') {
             const clientId = data.client_id
             if (clientId) {
@@ -3604,7 +3616,7 @@ function App() {
 
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
                 onDragOver={e => {
-                  if ((dragLabPatientRef.current || dragTplRef.current) && selectedClient) {
+                  if (selectedClient && (dragLabPatientRef.current || dragTplRef.current || e.dataTransfer.types.includes('text/plain'))) {
                     e.preventDefault()
                     e.dataTransfer.dropEffect = 'copy'
                     setChatDropHighlight(true)
@@ -3918,13 +3930,8 @@ function App() {
                             {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           {m.direction === 'sent' && (
-                            <span className="msg-status">
-                              {m.is_read
-                                ? <DoubleCheckIcon color="var(--primary)" />
-                                : m.is_read === false
-                                  ? <DoubleCheckIcon color="var(--muted-foreground)" />
-                                  : <SingleCheckIcon color="var(--muted-foreground)" />
-                              }
+                            <span className={`msg-status-text ${m.is_read ? 'read' : m.is_read === false ? 'delivered' : 'sent'}`}>
+                              {m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
                             </span>
                           )}
                         </div>
