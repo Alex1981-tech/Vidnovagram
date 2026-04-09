@@ -900,7 +900,7 @@ function App() {
   const [previewTpl, setPreviewTpl] = useState<QuickReply | null>(null)
   const [tplEditText, setTplEditText] = useState('')
   const [tplIncludeMedia, setTplIncludeMedia] = useState(true)
-  const [tplSendExtraFile, setTplSendExtraFile] = useState<File | null>(null) // extra attachment for send
+  const [tplSendExtraFiles, setTplSendExtraFiles] = useState<File[]>([]) // extra attachments for send
   // Global edit mode
   const [editingTpl, setEditingTpl] = useState<QuickReply | null>(null)
   const [editTplTitle, setEditTplTitle] = useState('')
@@ -945,6 +945,8 @@ function App() {
   const _linkPreviewCache = useRef<Map<string, LinkPreview | null>>(new Map())
   linkPreviewCacheRef = _linkPreviewCache
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+  const [showScrollDown, setShowScrollDown] = useState(false)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
   const contactsRef = useRef<Contact[]>([])
@@ -2277,10 +2279,10 @@ function App() {
   }, [auth?.token])
 
   // Send template to current chat: text first, then each media separately
-  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null, extraFile: File | null) => {
+  const sendTemplate = useCallback(async (text: string, mediaUrl: string | null, extraFiles: File[]) => {
     if (!selectedClient || !auth?.token) return
     setPreviewTpl(null)
-    setTplSendExtraFile(null)
+    setTplSendExtraFiles([])
     const acctId = selectedAccount || ''
     const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
 
@@ -2314,8 +2316,8 @@ function App() {
         } catch (e) { console.error('sendTemplate media download error:', e) }
       }
 
-      // Step 3: Send extra file as separate message
-      if (extraFile) {
+      // Step 3: Send each extra file as separate message
+      for (const extraFile of extraFiles) {
         const fd = new FormData()
         fd.append('text', '')
         fd.append('account_id', acctId)
@@ -3691,6 +3693,11 @@ function App() {
               )}
 
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
+                ref={chatContainerRef}
+                onScroll={e => {
+                  const el = e.currentTarget
+                  setShowScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 200)
+                }}
                 onDragOver={e => {
                   if (selectedClient && (dragLabPatientRef.current || dragTplRef.current || e.dataTransfer.types.includes('text/plain'))) {
                     e.preventDefault()
@@ -3725,7 +3732,7 @@ function App() {
                     setPreviewTpl(tpl)
                     setTplEditText(tpl.text)
                     setTplIncludeMedia(!!tpl.media_file)
-                    setTplSendExtraFile(null)
+                    setTplSendExtraFiles([])
                   }
                 }}
               >
@@ -3903,38 +3910,57 @@ function App() {
                         )}
                         {/* Video note (round video / кружок) */}
                         {m.has_media && m.media_type === 'video_note' && m.media_file && (
-                          <div className={`msg-vnote${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
-                            {mediaBlobMap[`vid_${m.id}`] ? (
-                              <video
-                                controls
-                                autoPlay
-                                preload="auto"
-                                src={mediaBlobMap[`vid_${m.id}`]}
-                                className="msg-vnote-player"
-                              />
-                            ) : (
-                              <>
-                                {m.thumbnail && (
-                                  <AuthMedia
-                                    mediaKey={`vnthumb_${m.id}`}
-                                    mediaPath={m.thumbnail}
-                                    type="image"
-                                    className="msg-vnote-thumb"
-                                    token={auth?.token || ''}
-                                    blobMap={mediaBlobMap}
-                                    loadBlob={loadMediaBlob}
-                                  />
-                                )}
-                                <button
-                                  className="msg-vnote-play"
-                                  onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
-                                  disabled={mediaLoading[`vid_${m.id}`]}
-                                >
-                                  {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                          <div className={`msg-vnote-wrap ${m.direction}`}>
+                            <div className={`msg-vnote${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
+                              {mediaBlobMap[`vid_${m.id}`] ? (
+                                <video
+                                  autoPlay
+                                  preload="auto"
+                                  src={mediaBlobMap[`vid_${m.id}`]}
+                                  className="msg-vnote-player"
+                                  id={`vnote_${m.id}`}
+                                  onEnded={e => { (e.target as HTMLVideoElement).currentTime = 0; (e.target as HTMLVideoElement).pause() }}
+                                />
+                              ) : (
+                                <>
+                                  {m.thumbnail && (
+                                    <AuthMedia
+                                      mediaKey={`vnthumb_${m.id}`}
+                                      mediaPath={m.thumbnail}
+                                      type="image"
+                                      className="msg-vnote-thumb"
+                                      token={auth?.token || ''}
+                                      blobMap={mediaBlobMap}
+                                      loadBlob={loadMediaBlob}
+                                    />
                                   )}
+                                  <button
+                                    className="msg-vnote-play"
+                                    onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
+                                    disabled={mediaLoading[`vid_${m.id}`]}
+                                  >
+                                    {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
+                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                    )}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {mediaBlobMap[`vid_${m.id}`] && (
+                              <div className="msg-vnote-controls">
+                                <button className="vnote-ctrl-btn" onClick={() => {
+                                  const v = document.getElementById(`vnote_${m.id}`) as HTMLVideoElement
+                                  if (v) v.paused ? v.play() : v.pause()
+                                }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
                                 </button>
-                              </>
+                                <button className="vnote-ctrl-btn" onClick={() => {
+                                  const v = document.getElementById(`vnote_${m.id}`) as HTMLVideoElement
+                                  if (v) v.muted = !v.muted
+                                }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+                                </button>
+                              </div>
                             )}
                           </div>
                         )}
@@ -4066,6 +4092,11 @@ function App() {
                   )
                 })}
                 <div ref={chatEndRef} />
+                {showScrollDown && (
+                  <button className="chat-scroll-down" onClick={() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                )}
               </div>
               {/* Forward mode bar */}
               {forwardMode && (
@@ -4463,7 +4494,7 @@ function App() {
                             <div key={tpl.id} className="tpl-item" draggable
                               onDragStart={e => { dragTplRef.current = tpl; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', tpl.title) }}
                               onDragEnd={() => { dragTplRef.current = null }}
-                              onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFile(null) }}>
+                              onClick={() => { setPreviewTpl(tpl); setTplEditText(tpl.text); setTplIncludeMedia(!!tpl.media_file); setTplSendExtraFiles([]) }}>
                               <span className="tpl-item-title">{tpl.title}</span>
                               {tpl.media_file && <svg className="tpl-media-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>}
                               <button className="tpl-edit-global-btn" onClick={e => { e.stopPropagation(); setEditingTpl(tpl); setEditTplTitle(tpl.title); setEditTplText(tpl.text); setEditTplMedia(null); setEditTplRemoveMedia(false) }} title="Редагувати шаблон">
@@ -5252,7 +5283,7 @@ function App() {
               value={newTplText}
               onChange={e => setNewTplText(e.target.value)}
               placeholder="Текст повідомлення..."
-              rows={8}
+              rows={12}
             />
             <label className="tpl-media-label">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -5299,20 +5330,23 @@ function App() {
                   Повернути вкладення шаблону
                 </button>
               )}
-              {/* Extra file attachment */}
-              {tplSendExtraFile ? (
-                <div className="tpl-extra-file">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                  <span>{tplSendExtraFile.name}</span>
-                  <button onClick={() => setTplSendExtraFile(null)} title="Видалити">✕</button>
+              {/* Extra file attachments (multiple) */}
+              {tplSendExtraFiles.length > 0 && (
+                <div className="tpl-extra-files">
+                  {tplSendExtraFiles.map((f, i) => (
+                    <div className="tpl-extra-file" key={i}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                      <span>{f.name}</span>
+                      <button onClick={() => setTplSendExtraFiles(prev => prev.filter((_, j) => j !== i))} title="Видалити">✕</button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <label className="tpl-attach-extra">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                  Додати файл
-                  <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setTplSendExtraFile(e.target.files?.[0] || null); if (e.target.files?.[0]) setTplIncludeMedia(false) }} hidden />
-                </label>
               )}
+              <label className="tpl-attach-extra">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                Додати файл{tplSendExtraFiles.length > 0 ? ` (${tplSendExtraFiles.length})` : ''}
+                <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" multiple onChange={e => { if (e.target.files?.length) { setTplSendExtraFiles(prev => [...prev, ...Array.from(e.target.files!)]); setTplIncludeMedia(false) }; e.target.value = '' }} hidden />
+              </label>
               {/* Editable text */}
               <textarea
                 className="tpl-edit-textarea"
@@ -5327,8 +5361,8 @@ function App() {
               </span>
               <button
                 className="tpl-btn-send"
-                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null, tplSendExtraFile)}
-                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file) && !tplSendExtraFile)}
+                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null, tplSendExtraFiles)}
+                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file) && !tplSendExtraFiles.length)}
               >
                 <SendIcon /> Відправити
               </button>

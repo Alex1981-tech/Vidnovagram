@@ -725,6 +725,30 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  position: relative;
+}
+/* Scroll-to-bottom button (Telegram-style) */
+.chat-scroll-down {
+  position: sticky;
+  bottom: 12px;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--card);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.2);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.chat-scroll-down:hover {
+  background: var(--accent);
+  transform: scale(1.1);
 }
 
 .load-older-wrap {
@@ -2095,12 +2119,12 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 24px;
-  width: 440px;
+  padding: 28px;
+  width: 560px;
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 .tpl-modal h3 {
   margin: 0;
@@ -2335,7 +2359,12 @@ body {
   max-width: 440px;
 }
 
-/* Send preview — extra file attachment */
+/* Send preview — extra file attachments */
+.tpl-extra-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .tpl-extra-file {
   display: flex;
   align-items: center;
@@ -2919,6 +2948,37 @@ body {
 }
 .msg-video-btn:hover {
   background: rgba(0,0,0,0.5);
+}
+/* Video note wrapper — circle + controls side by side */
+.msg-vnote-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.msg-vnote-wrap.outgoing {
+  flex-direction: row-reverse;
+}
+.msg-vnote-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.vnote-ctrl-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: oklch(0.25 0 0 / 0.7);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.vnote-ctrl-btn:hover {
+  background: oklch(0.35 0 0 / 0.8);
 }
 /* Video note (round/circle video — Telegram style) */
 .msg-vnote {
