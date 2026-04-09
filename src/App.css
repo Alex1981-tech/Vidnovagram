@@ -4440,3 +4440,158 @@ body {
   font-size: 12px;
   color: var(--muted-foreground);
 }
+
+/* ========== Telegram Features: Reactions, Typing, Edit, Delete ========== */
+
+/* Deleted message */
+.msg-deleted {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+.msg-deleted svg { opacity: 0.5; }
+
+/* Edited label */
+.msg-edited {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  font-style: italic;
+  margin-right: 4px;
+  cursor: help;
+}
+
+/* Reactions row under message */
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 0;
+}
+.msg-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 13px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.msg-reaction:hover { background: var(--accent); }
+.msg-reaction.chosen {
+  border-color: var(--primary);
+  background: oklch(from var(--primary) l c h / 0.15);
+}
+
+/* Context menu reactions row */
+.ctx-menu-reactions {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ctx-reaction-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.ctx-reaction-btn:hover {
+  background: var(--accent);
+  transform: scale(1.2);
+}
+
+/* Typing indicator */
+.typing-indicator {
+  color: var(--primary);
+  font-size: 12px;
+  font-style: italic;
+}
+.typing-dots span {
+  animation: typingBlink 1.4s infinite both;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBlink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+/* Reply / Edit bar above input */
+.reply-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  margin: 0 8px;
+}
+.reply-edit-bar-accent {
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+.reply-edit-bar-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.reply-edit-bar-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.reply-edit-bar-text {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-edit-bar-close {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  border-radius: 4px;
+}
+.reply-edit-bar-close:hover { background: var(--accent); }
+
+/* Chat search button */
+.chat-search-btn {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+.chat-search-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
