@@ -865,6 +865,9 @@ function App() {
   // File attachment
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  const [showFileModal, setShowFileModal] = useState(false)
+  const [fileCaption, setFileCaption] = useState('')
+  const [forceDocument, setForceDocument] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Voice/video recording
@@ -1352,10 +1355,15 @@ function App() {
     if (!text && !fileToSend) return
     setSending(true)
     const fd = new FormData()
-    if (text) fd.append('text', text)
     if (fileToSend) {
       const name = fileToSend instanceof File ? fileToSend.name : (mediaType === 'voice' ? 'voice.webm' : 'video.webm')
       fd.append('file', fileToSend, name)
+      // For file sends, use caption from modal
+      if (fileCaption.trim()) fd.append('text', fileCaption.trim())
+      else if (text) fd.append('text', text)
+      if (forceDocument) fd.append('force_document', '1')
+    } else {
+      if (text) fd.append('text', text)
     }
     if (mediaType) fd.append('media_type', mediaType)
     // Reply context
@@ -1409,6 +1417,9 @@ function App() {
         setMessageText('')
         setAttachedFile(null)
         setAttachedPreview(null)
+        setShowFileModal(false)
+        setFileCaption('')
+        setForceDocument(false)
         setEditingMsg(null)
         ;(window as any).__replyTo = null
         if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
@@ -1420,7 +1431,7 @@ function App() {
       }
     } catch (e) { console.error('Send:', e) }
     finally { setSending(false) }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFile])
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFile, fileCaption, forceDocument])
 
   // Send lab results to current chat: text header + files sequentially
   const sendLabResults = useCallback(async () => {
@@ -1569,11 +1580,14 @@ function App() {
     const file = e.target.files?.[0]
     if (!file) return
     setAttachedFile(file)
+    setFileCaption('')
+    setForceDocument(false)
     if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
       setAttachedPreview(URL.createObjectURL(file))
     } else {
       setAttachedPreview(null)
     }
+    setShowFileModal(true)
     // Reset input so same file can be selected again
     e.target.value = ''
   }, [])
@@ -1582,6 +1596,9 @@ function App() {
     if (attachedPreview) URL.revokeObjectURL(attachedPreview)
     setAttachedFile(null)
     setAttachedPreview(null)
+    setShowFileModal(false)
+    setFileCaption('')
+    setForceDocument(false)
   }, [attachedPreview])
 
   // Audio analyser for visualizer
@@ -3910,8 +3927,53 @@ function App() {
                   <input type="file" ref={fileInputRef} hidden
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
                     onChange={handleFileSelect} />
-                  {/* Attachment preview */}
-                  {attachedFile && (
+                  {/* File upload modal */}
+                  {showFileModal && attachedFile && (
+                    <div className="file-modal-overlay" onClick={clearAttachment}>
+                      <div className="file-modal" onClick={e => e.stopPropagation()}>
+                        <div className="file-modal-header">
+                          <span className="file-modal-title">Надіслати файл</span>
+                          <button className="file-modal-close" onClick={clearAttachment}>✕</button>
+                        </div>
+                        <div className="file-modal-preview">
+                          {attachedPreview && attachedFile.type.startsWith('image/') ? (
+                            <img src={attachedPreview} alt="" className="file-modal-img" />
+                          ) : attachedPreview && attachedFile.type.startsWith('video/') ? (
+                            <video src={attachedPreview} controls className="file-modal-video" />
+                          ) : (
+                            <div className="file-modal-doc">
+                              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              <span className="file-modal-doc-name">{attachedFile.name}</span>
+                              <span className="file-modal-doc-size">{(attachedFile.size / 1024).toFixed(0)} KB</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="file-modal-caption">
+                          <textarea
+                            value={fileCaption}
+                            onChange={e => setFileCaption(e.target.value)}
+                            placeholder="Підпис (необов'язково)…"
+                            rows={1}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                          />
+                          {attachedFile.type.startsWith('image/') && (
+                            <label className="file-modal-checkbox">
+                              <input type="checkbox" checked={forceDocument} onChange={e => setForceDocument(e.target.checked)} />
+                              Надіслати як файл (без стиснення)
+                            </label>
+                          )}
+                        </div>
+                        <div className="file-modal-actions">
+                          <button className="file-modal-send" onClick={() => sendMessage()} disabled={sending}>
+                            {sending ? <div className="spinner-sm" /> : <SendIcon />}
+                            Надіслати
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Attachment indicator (fallback when modal closed) */}
+                  {attachedFile && !showFileModal && (
                     <div className="attached-preview">
                       {attachedPreview && attachedFile.type.startsWith('image/') ? (
                         <img src={attachedPreview} alt="" className="attached-thumb" />
