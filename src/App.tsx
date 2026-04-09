@@ -17,10 +17,15 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.10.21': [
+    'Емодзі пікер біля поля вводу повідомлення',
+    'Видалення: червоний контур на видаленому повідомленні',
+    'Виправлено: розмір поля вводу після редагування повідомлення',
+    'Виправлено: реакції від співрозмовника тепер приходять в реальному часі',
+  ],
   '0.10.20': [
     'Видалення повідомлень: видаляється тільки у співрозмовника',
     'Видалене повідомлення залишається у чаті з позначкою (хто видалив, дата)',
-    'Текст видаленого повідомлення — закреслений, з міткою червоного кольору',
   ],
   '0.10.19': [
     'Реакції: відображення з мініатюрою аватарки (як у Telegram)',
@@ -913,6 +918,7 @@ function App() {
   const [gmailLoading, setGmailLoading] = useState(false)
   const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
   const [showSelectAccountHint, setShowSelectAccountHint] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: number | string; tgMsgId: number; peerId: number } | null>(null)
   const [showCompose, setShowCompose] = useState(false)
   const [composeTo, setComposeTo] = useState('')
@@ -1360,6 +1366,7 @@ function App() {
           ))
           setMessageText('')
           setEditingMsg(null)
+          if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         }
       } catch (e) { console.error('Edit:', e) }
       finally { setSending(false) }
@@ -3565,7 +3572,7 @@ function App() {
                           {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
                         </div>
                       )}
-                      <div className="msg-bubble">
+                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}`}>
                         {/* Forwarded header */}
                         {m.fwd_from_name && (
                           <div className="msg-forward-header">
@@ -3852,6 +3859,22 @@ function App() {
                       <button className="chat-input-btn" onClick={() => fileInputRef.current?.click()} title="Вкласти файл">
                         <PaperclipIcon />
                       </button>
+                      <div className="emoji-picker-wrap">
+                        <button className="chat-input-btn" onClick={() => setShowEmojiPicker(p => !p)} title="Емодзі">
+                          <span style={{ fontSize: 18, lineHeight: 1 }}>😊</span>
+                        </button>
+                        {showEmojiPicker && (
+                          <div className="emoji-picker-panel">
+                            {['😊','😂','❤️','👍','🙏','😍','🥰','😘','🤗','😎','🔥','✨','💪','👏','🎉','😢','😭','🤔','😮','😡','👋','🤝','💕','⭐','🌟','✅','❌','💯','🫶','🤩','😇','🥺','😋','🤣','😅','🫡','🙌','💐','🌹','🎂'].map(e => (
+                              <button key={e} className="emoji-picker-item" onClick={() => {
+                                setMessageText(prev => prev + e)
+                                setShowEmojiPicker(false)
+                                chatInputRef.current?.focus()
+                              }}>{e}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <textarea
                         ref={chatInputRef}
                         value={messageText}
