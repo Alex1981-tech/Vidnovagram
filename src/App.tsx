@@ -661,12 +661,6 @@ const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
     <polyline points="20 6 9 17 4 12"/>
   </svg>
 )
-const DoubleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="18 6 7 17 2 12"/><polyline points="22 6 11 17"/>
-  </svg>
-)
-
 // Attachment & media icons
 const PaperclipIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
