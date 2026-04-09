@@ -4739,7 +4739,7 @@ function App() {
                 <span className="contact-profile-stat-label">отримано</span>
               </div>
             </div>
-            {'source' in chatContact && chatContact.source === 'telegram' && 'tg_peer_id' in chatContact && chatContact.tg_peer_id && (
+            {(chatContact as any).source === 'telegram' && (chatContact as any).tg_peer_id && (
               <a className="contact-profile-link" href={`https://t.me/+${(clientPhone || chatContact.phone || '').replace(/^0/, '38')}`} onClick={e => { e.preventDefault(); shellOpen((e.target as HTMLAnchorElement).href) }}>
                 Відкрити в Telegram
               </a>
