@@ -9,7 +9,12 @@
     "process:allow-restart",
     "notification:default",
     "dialog:default",
+    "dialog:allow-open",
     "fs:default",
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "**" }]
+    },
     "shell:default"
   ]
 }

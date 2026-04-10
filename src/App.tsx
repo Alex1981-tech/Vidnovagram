@@ -3,8 +3,8 @@ import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@tauri-apps/plugin-fs'
+import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
+import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import './App.css'
 
@@ -65,6 +65,7 @@ interface Wallpaper {
 const CHANGELOG: Record<string, string[]> = {
   '0.12.1': [
     'Налаштування — збільшене вікно, вирівняні іконки дзвіночка та динаміка',
+    'Шаблони — виправлено додавання файлів у вікні редагування (Tauri file dialog)',
   ],
   '0.12.0': [
     'Drag&drop шаблонів у чат — виправлено (увімкнено нативний drag)',
@@ -5799,11 +5800,22 @@ function App() {
                   ))}
                 </div>
               )}
-              <label className="tpl-attach-extra">
+              <button type="button" className="tpl-attach-extra" onClick={async () => {
+                try {
+                  const selected = await openFileDialog({ multiple: true, title: 'Додати файли' })
+                  if (!selected) return
+                  const paths = Array.isArray(selected) ? selected : [selected]
+                  for (const p of paths) {
+                    const data = await readFile(p)
+                    const name = p.split(/[/\\]/).pop() || 'file'
+                    const file = new File([data], name)
+                    setTplSendExtraFiles(prev => [...prev, file])
+                  }
+                } catch (e) { console.log('File pick cancelled', e) }
+              }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 Додати файл{tplSendExtraFiles.length > 0 ? ` (${tplSendExtraFiles.length})` : ''}
-                <input type="file" multiple onChange={e => { if (e.target.files?.length) { setTplSendExtraFiles(prev => [...prev, ...Array.from(e.target.files!)]) }; e.target.value = '' }} hidden />
-              </label>
+              </button>
               {/* Editable text */}
               <textarea
                 className="tpl-edit-textarea"
