@@ -5925,7 +5925,7 @@ function App() {
                     </button>
                     <button
                       className={`settings-bg-option${appSettings.chatBackground.type === 'wallpaper' ? ' active' : ''}`}
-                      onClick={() => { if (wallpapers.length > 0 && appSettings.chatBackground.type !== 'wallpaper') setAppSettings(prev => ({ ...prev, chatBackground: { type: 'wallpaper', value: wallpapers[0].full } })) }}
+                      onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'wallpaper', value: prev.chatBackground.type === 'wallpaper' ? prev.chatBackground.value : (wallpapers[0]?.full || '') } }))}
                     >
                       <div className="settings-bg-preview settings-bg-wallpaper-icon">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
