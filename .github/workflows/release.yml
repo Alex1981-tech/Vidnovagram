@@ -42,3 +42,36 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+      - name: Generate and upload latest.json
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          TAG="v${VERSION}"
+          NSIS_SIG=$(cat "src-tauri/target/release/bundle/nsis/Vidnovagram_${VERSION}_x64-setup.nsis.zip.sig" 2>/dev/null || echo "")
+          if [ -z "$NSIS_SIG" ]; then
+            echo "No NSIS signature found, skipping latest.json"
+            exit 0
+          fi
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Vidnovagram ${TAG}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${NSIS_SIG}",
+                "url": "${RELEASE_URL}/Vidnovagram_${VERSION}_x64-setup.nsis.zip"
+              }
+            }
+          }
+          EOF
+          # Upload nsis.zip and latest.json to the release
+          gh release upload "${TAG}" \
+            "src-tauri/target/release/bundle/nsis/Vidnovagram_${VERSION}_x64-setup.nsis.zip" \
+            latest.json \
+            --clobber
+          echo "Uploaded latest.json with signature for ${TAG}"
