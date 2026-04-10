@@ -60,9 +60,13 @@ jobs:
             exit 0
           }
 
-          # Create nsis.zip from exe (use 7z for compatible Deflate compression)
-          $nsisZip = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip"
-          7z a -tzip -mx=5 $nsisZip $nsisExe
+          # Create nsis.zip from exe (flat, no directory structure)
+          $nsisDir = Split-Path $nsisExe
+          $exeName = Split-Path $nsisExe -Leaf
+          $nsisZip = Join-Path $nsisDir "Vidnovagram_${version}_x64-setup.nsis.zip"
+          cd $nsisDir
+          7z a -tzip -mx=5 $nsisZip $exeName
+          cd $env:GITHUB_WORKSPACE
           Write-Host "Created nsis.zip: $((Get-Item $nsisZip).Length) bytes"
 
           # Sign the nsis.zip
