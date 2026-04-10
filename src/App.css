@@ -4507,25 +4507,83 @@ body {
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
-.gmail-attachment-item {
+/* Attachment grid */
+.gmail-att-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.gmail-att-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--bg-secondary);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 12px;
-  width: 100%;
   text-align: left;
-  transition: background 0.1s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.gmail-attachment-item:hover { background: var(--bg-hover); }
-.gmail-att-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gmail-att-size { color: var(--text-secondary); flex-shrink: 0; }
+.gmail-att-card:hover {
+  background: var(--bg-hover);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.att-card-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.att-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.att-card-name {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.att-card-size {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+/* File type colors */
+.att-pdf .att-card-icon { background: rgba(234,67,53,0.12); color: #EA4335; }
+.att-img .att-card-icon { background: rgba(52,168,83,0.12); color: #34A853; }
+.att-doc .att-card-icon { background: rgba(66,133,244,0.12); color: #4285F4; }
+.att-sheet .att-card-icon { background: rgba(15,157,88,0.12); color: #0F9D58; }
+.att-zip .att-card-icon { background: rgba(251,188,4,0.12); color: #FBBC04; }
+.att-audio .att-card-icon { background: rgba(171,71,188,0.12); color: #AB47BC; }
+.att-video .att-card-icon { background: rgba(255,112,67,0.12); color: #FF7043; }
+.att-file .att-card-icon { background: rgba(158,158,158,0.12); color: #9E9E9E; }
+/* Hover border accent */
+.att-pdf:hover { border-color: rgba(234,67,53,0.3); }
+.att-img:hover { border-color: rgba(52,168,83,0.3); }
+.att-doc:hover { border-color: rgba(66,133,244,0.3); }
+.att-sheet:hover { border-color: rgba(15,157,88,0.3); }
+.att-zip:hover { border-color: rgba(251,188,4,0.3); }
+.att-audio:hover { border-color: rgba(171,71,188,0.3); }
+.att-video:hover { border-color: rgba(255,112,67,0.3); }
+/* Dark mode adjustments */
+.dark .att-pdf .att-card-icon { background: rgba(234,67,53,0.18); }
+.dark .att-img .att-card-icon { background: rgba(52,168,83,0.18); }
+.dark .att-doc .att-card-icon { background: rgba(66,133,244,0.18); }
+.dark .att-sheet .att-card-icon { background: rgba(15,157,88,0.18); }
+.dark .att-zip .att-card-icon { background: rgba(251,188,4,0.18); }
+.dark .att-audio .att-card-icon { background: rgba(171,71,188,0.18); }
+.dark .att-video .att-card-icon { background: rgba(255,112,67,0.18); }
+.dark .att-file .att-card-icon { background: rgba(158,158,158,0.18); }
+.dark .gmail-att-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
 
 /* Gmail reply bar */
 .gmail-reply-bar {
