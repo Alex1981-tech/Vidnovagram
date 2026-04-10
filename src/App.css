@@ -3657,10 +3657,10 @@ body {
 .settings-modal {
   background: var(--card);
   border-radius: 12px;
-  width: 480px;
-  max-width: 90vw;
-  height: 520px;
-  max-height: 80vh;
+  width: 670px;
+  max-width: 95vw;
+  height: 780px;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 40px oklch(0 0 0 / 0.25);
@@ -3742,9 +3742,10 @@ body {
   text-overflow: ellipsis;
 }
 .settings-notif-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: 30px 30px auto;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 .settings-notif-icon-btn {
@@ -3758,6 +3759,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  justify-self: center;
   transition: all 0.15s;
   opacity: 0.4;
   padding: 0;
