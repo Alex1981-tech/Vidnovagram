@@ -6,7 +6,6 @@
 const API_BASE = 'https://cc.vidnova.app/api'
 const FLUSH_INTERVAL = 60_000    // 60s
 const HEARTBEAT_INTERVAL = 300_000 // 5min
-const OFFLINE_THRESHOLD = 360_000  // 6min (server checks last_seen < 6min)
 
 interface TelemetryEvent {
   event_type: string
