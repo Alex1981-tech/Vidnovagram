@@ -287,12 +287,17 @@ body {
   border-right: 1px solid var(--border);
   position: relative;
   z-index: 20;
-  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 .account-rail.expanded {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: 200px;
   min-width: 200px;
+  z-index: 50;
+  box-shadow: 4px 0 16px oklch(0 0 0 / 0.15);
 }
 
 .rail-accounts {
@@ -474,6 +479,7 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 /* === Sidebar === */
@@ -2470,6 +2476,20 @@ body {
 }
 .tpl-btn-send:disabled { opacity: 0.3; cursor: default; }
 .tpl-btn-send:hover:not(:disabled) { opacity: 0.9; }
+
+/* Send button in template list */
+.tpl-send-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--primary);
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.tpl-item:hover .tpl-send-btn { opacity: 0.7; }
+.tpl-send-btn:hover { opacity: 1 !important; }
 
 /* Edit global button in template list */
 .tpl-edit-global-btn {
