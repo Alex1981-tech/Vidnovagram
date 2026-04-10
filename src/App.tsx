@@ -17,6 +17,13 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.0': [
+    'Бічна панель акаунтів — розгортається/згортається (замість тултіпу)',
+    'Кнопка налаштувань і версія додатку в панелі акаунтів',
+    'Прикріплення кількох файлів до повідомлення',
+    'Виправлено відображення всіх реакцій та серце-емодзі',
+    'Кнопка "вниз" — кругла, справа, з анімацією',
+  ],
   '0.10.40': [
     'Темна тема — кольори як в оригінальному Telegram Desktop',
     'Виправлено перетягування шаблонів у чат (глобальний обробник drag & drop)',
@@ -428,16 +435,22 @@ async function oggToWav(blob: Blob): Promise<Blob> {
 }
 
 /** Authenticated media loader — triggers blob fetch on mount */
-function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick }: {
+function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick, fallbackPath }: {
   mediaKey: string; mediaPath: string; type: 'image'; className?: string;
   token: string; blobMap: Record<string, string>;
   loadBlob: (key: string, path: string) => Promise<string | null>;
-  onClick?: () => void
+  onClick?: () => void;
+  fallbackPath?: string;
 }) {
+  const fallbackKey = fallbackPath ? mediaKey.replace('thumb_', 'full_') : ''
   useEffect(() => {
-    if (token && !blobMap[mediaKey]) loadBlob(mediaKey, mediaPath)
+    if (!token || blobMap[mediaKey] || blobMap[fallbackKey]) return
+    loadBlob(mediaKey, mediaPath).then(result => {
+      // If thumbnail 404, try full image as fallback
+      if (!result && fallbackPath) loadBlob(fallbackKey, fallbackPath)
+    })
   }, [token, mediaKey, mediaPath])
-  const src = blobMap[mediaKey]
+  const src = blobMap[mediaKey] || blobMap[fallbackKey]
   if (!src) return <div className="msg-media-placeholder">📷 ...</div>
   if (type === 'image') return <img src={src} alt="" className={className} onClick={onClick} />
   return null
@@ -482,8 +495,18 @@ function VoicePlayer({ messageId, mediaFile, blobMap, loadBlob, loading, directi
     return () => { a.removeEventListener('timeupdate', onTime); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd) }
   }, [src])
 
+  // Auto-play when blob finishes loading
+  const pendingPlayRef = useRef(false)
+  useEffect(() => {
+    if (src && pendingPlayRef.current) {
+      pendingPlayRef.current = false
+      const a = audioRef.current
+      if (a) { a.play().then(() => setPlaying(true)).catch(() => {}) }
+    }
+  }, [src])
+
   const togglePlay = async () => {
-    if (!src) { await loadBlob(key, mediaFile); return }
+    if (!src) { pendingPlayRef.current = true; await loadBlob(key, mediaFile); return }
     const a = audioRef.current
     if (!a) return
     if (playing) { a.pause(); setPlaying(false) }
@@ -817,6 +840,8 @@ function App() {
   const [updating, setUpdating] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [currentVersion, setCurrentVersion] = useState('')
+  const [railExpanded, setRailExpanded] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -893,6 +918,7 @@ function App() {
   const [templateCategories, setTemplateCategories] = useState<TemplateCategory[]>([])
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
   const [newNoteText, setNewNoteText] = useState('')
+  const [showNoteModal, setShowNoteModal] = useState(false)
   // Template modals
   const [showCatModal, setShowCatModal] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -962,10 +988,15 @@ function App() {
 
   // Lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  // Video note modal
+  const [vnoteModal, setVnoteModal] = useState<{ src: string; id: string | number } | null>(null)
+  const vnoteModalRef = useRef<HTMLVideoElement>(null)
+  const [vnoteProgress, setVnoteProgress] = useState(0)
+  const [vnotePlaying, setVnotePlaying] = useState(true)
 
-  // File attachment
-  const [attachedFile, setAttachedFile] = useState<File | null>(null)
-  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  // File attachment (multi-file)
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [showFileModal, setShowFileModal] = useState(false)
   const [fileCaption, setFileCaption] = useState('')
   const [forceDocument, setForceDocument] = useState(false)
@@ -1094,31 +1125,35 @@ function App() {
   useEffect(() => { messagesRef.current = messages }, [messages])
   useEffect(() => { templateCategoriesRef.current = templateCategories }, [templateCategories])
 
-  // Global drag/drop handler for templates — WebView2 often doesn't propagate
-  // drag events to nested scrollable containers, so we listen at document level
+  // Global drag/drop handler for templates and lab patients
+  // WebView2 doesn't reliably fire onDrop on nested scrollable containers
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
       if ((dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current) && selectedClientRef.current) {
         e.preventDefault()
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+        setChatDropHighlight(true)
       }
     }
+    const handleDragLeave = (e: DragEvent) => {
+      // Only hide highlight when leaving the window
+      if (!e.relatedTarget) setChatDropHighlight(false)
+    }
     const handleDrop = (e: DragEvent) => {
+      setChatDropHighlight(false)
       if (!selectedClientRef.current) return
       // Lab patient drag
       if (dragLabPatientRef.current) {
         e.preventDefault()
+        e.stopPropagation()
         const p = dragLabPatientRef.current
         dragLabPatientRef.current = null
-        setChatDropHighlight(false)
         setLabSendModal(p)
         setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
         return
       }
-      // Template drag
+      // Template drag — check refs + dataTransfer fallback
       let tpl = dragTplRef.current || lastDraggedTplRef.current
-      dragTplRef.current = null
-      lastDraggedTplRef.current = null
       if (!tpl && e.dataTransfer) {
         const title = e.dataTransfer.getData('text/plain')
         if (title) {
@@ -1128,9 +1163,11 @@ function App() {
           }
         }
       }
+      dragTplRef.current = null
+      lastDraggedTplRef.current = null
       if (tpl) {
         e.preventDefault()
-        setChatDropHighlight(false)
+        e.stopPropagation()
         setPreviewTpl(tpl)
         setTplEditText(tpl.text)
         setTplIncludeMedia(!!tpl.media_file)
@@ -1138,9 +1175,11 @@ function App() {
       }
     }
     document.addEventListener('dragover', handleDragOver)
+    document.addEventListener('dragleave', handleDragLeave)
     document.addEventListener('drop', handleDrop)
     return () => {
       document.removeEventListener('dragover', handleDragOver)
+      document.removeEventListener('dragleave', handleDragLeave)
       document.removeEventListener('drop', handleDrop)
     }
   }, [])
@@ -1498,6 +1537,32 @@ function App() {
   }, [auth?.token, selectedClient, selectedAccount, msgCursor, loadingOlder, hasOlderMessages])
 
   // Send message (text, file, voice/video note)
+  // Helper: build FormData for one send request
+  const _buildSendFd = useCallback((opts: { text?: string; file?: File | Blob; fileName?: string; mediaType?: string; forceDoc?: boolean; replyMsgId?: number }) => {
+    const fd = new FormData()
+    if (opts.file) {
+      fd.append('file', opts.file, opts.fileName || (opts.file instanceof File ? opts.file.name : 'file'))
+      if (opts.text) fd.append('text', opts.text)
+      if (opts.forceDoc) fd.append('force_document', '1')
+    } else if (opts.text) {
+      fd.append('text', opts.text)
+    }
+    if (opts.mediaType) fd.append('media_type', opts.mediaType)
+    if (opts.replyMsgId) fd.append('reply_to_msg_id', String(opts.replyMsgId))
+    // Account routing
+    const contact = contacts.find(c => c.client_id === selectedClient)
+    if (selectedAccount) {
+      const isWaAccount = accounts.some(a => a.id === selectedAccount && a.type === 'whatsapp')
+      const isTgContact = contact?.has_telegram
+      if (isWaAccount && isTgContact) {
+        fd.append('source', 'telegram')
+      } else {
+        fd.append('account_id', selectedAccount)
+      }
+    }
+    return fd
+  }, [contacts, selectedClient, selectedAccount, accounts])
+
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
     if (!selectedAccount) {
@@ -1505,28 +1570,12 @@ function App() {
       return
     }
     const text = messageText.trim()
-    const fileToSend = file || attachedFile
-    if (!text && !fileToSend) return
+    const filesToSend = file ? [file] : attachedFiles.length > 0 ? attachedFiles : []
+    if (!text && filesToSend.length === 0) return
     setSending(true)
-    const fd = new FormData()
-    if (fileToSend) {
-      const name = fileToSend instanceof File ? fileToSend.name : (mediaType === 'voice' ? 'voice.webm' : 'video.webm')
-      fd.append('file', fileToSend, name)
-      // For file sends, use caption from modal
-      if (fileCaption.trim()) fd.append('text', fileCaption.trim())
-      else if (text) fd.append('text', text)
-      if (forceDocument) fd.append('force_document', '1')
-    } else {
-      if (text) fd.append('text', text)
-    }
-    if (mediaType) fd.append('media_type', mediaType)
-    // Reply context
-    const replyTo = (window as any).__replyTo
-    if (replyTo?.msg_id) {
-      fd.append('reply_to_msg_id', String(replyTo.msg_id))
-    }
-    // Edit mode — use edit endpoint instead
-    if (editingMsg && text && !fileToSend) {
+
+    // Edit mode — no files
+    if (editingMsg && text && filesToSend.length === 0) {
       try {
         const resp = await authFetch(`${API_BASE}/telegram/edit-message/`, auth.token, {
           method: 'POST',
@@ -1550,49 +1599,58 @@ function App() {
       finally { setSending(false) }
       return
     }
-    // Determine source from contact info to avoid WA/TG mixup
-    const contact = contacts.find(c => c.client_id === selectedClient)
-    if (selectedAccount) {
-      // Only pass account_id if it matches the contact's messenger type
-      const isWaAccount = accounts.some(a => a.id === selectedAccount && a.type === 'whatsapp')
-      const isTgContact = contact?.has_telegram
-      if (isWaAccount && isTgContact) {
-        // Don't pass WA account_id for TG contact — let backend decide
-        fd.append('source', 'telegram')
-      } else {
-        fd.append('account_id', selectedAccount)
-      }
-    }
+
+    const replyTo = (window as any).__replyTo
+    const replyMsgId = replyTo?.msg_id || undefined
+    const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
+
     try {
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
-        method: 'POST', body: fd,
-      })
-      if (resp.ok) {
-        setMessageText('')
-        setAttachedFile(null)
-        setAttachedPreview(null)
-        setShowFileModal(false)
-        setFileCaption('')
-        setForceDocument(false)
-        setEditingMsg(null)
-        ;(window as any).__replyTo = null
-        if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
-        loadMessages(selectedClient)
+      if (filesToSend.length === 0) {
+        // Text-only
+        const fd = _buildSendFd({ text, replyMsgId })
+        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      } else if (filesToSend.length === 1 && !file) {
+        // Single file from modal — send with caption
+        const caption = fileCaption.trim() || text
+        const fd = _buildSendFd({ text: caption, file: filesToSend[0], forceDoc: forceDocument, replyMsgId })
+        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      } else if (file) {
+        // Direct file (voice/video recording) — single send with text
+        const name = file instanceof File ? file.name : (mediaType === 'voice' ? 'voice.webm' : 'video.webm')
+        const fd = _buildSendFd({ text, file, fileName: name, mediaType, replyMsgId })
+        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
       } else {
-        const raw = await resp.text().catch(() => '')
-        console.error('Send failed:', resp.status, raw)
-        let message = `Помилка відправки: ${resp.status}`
-        try {
-          const parsed = raw ? JSON.parse(raw) : null
-          if (parsed?.error) message = `Помилка відправки: ${parsed.error}`
-        } catch {
-          if (raw) message = `Помилка відправки: ${raw}`
+        // Multiple files: send caption/text first, then files one by one
+        const caption = fileCaption.trim() || text
+        if (caption) {
+          const fd = _buildSendFd({ text: caption, replyMsgId })
+          const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+          if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
         }
-        alert(message)
+        for (const f of filesToSend) {
+          const fd = _buildSendFd({ file: f, forceDoc: forceDocument })
+          const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+          if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+        }
       }
-    } catch (e) { console.error('Send:', e) }
-    finally { setSending(false) }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFile, fileCaption, forceDocument])
+
+      // Success — clean up
+      setMessageText('')
+      clearAttachment()
+      setEditingMsg(null)
+      ;(window as any).__replyTo = null
+      if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+      loadMessages(selectedClient)
+    } catch (e: any) {
+      console.error('Send:', e)
+      alert(`Помилка відправки: ${e.message || e}`)
+    } finally {
+      setSending(false)
+    }
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFiles, fileCaption, forceDocument, _buildSendFd, clearAttachment])
 
   // Send lab results to current chat: text header + files sequentially
   const sendLabResults = useCallback(async () => {
@@ -1672,6 +1730,15 @@ function App() {
     finally { setRpClientLoading(false) }
   }, [auth?.token])
 
+  // Debounced search for contacts tab
+  useEffect(() => {
+    if (rightTab !== 'clients') return
+    const timer = setTimeout(() => {
+      loadRpClients(1, rpClientSearch)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [rpClientSearch, rightTab])
+
   const loadRpClientDetail = useCallback(async (clientId: string) => {
     if (!auth?.token) return
     setRpSelectedClient(clientId)
@@ -1738,29 +1805,38 @@ function App() {
 
   // Handle file attachment
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setAttachedFile(file)
-    setFileCaption('')
-    setForceDocument(false)
-    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      setAttachedPreview(URL.createObjectURL(file))
-    } else {
-      setAttachedPreview(null)
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    const newFiles = Array.from(files)
+    setAttachedFiles(prev => [...prev, ...newFiles])
+    setAttachedPreviews(prev => [
+      ...prev,
+      ...newFiles.map(f => (f.type.startsWith('image/') || f.type.startsWith('video/')) ? URL.createObjectURL(f) : ''),
+    ])
+    if (!showFileModal) {
+      setFileCaption('')
+      setForceDocument(false)
     }
     setShowFileModal(true)
-    // Reset input so same file can be selected again
     e.target.value = ''
+  }, [showFileModal])
+
+  const removeAttachedFile = useCallback((index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+    setAttachedPreviews(prev => {
+      if (prev[index]) URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
   }, [])
 
   const clearAttachment = useCallback(() => {
-    if (attachedPreview) URL.revokeObjectURL(attachedPreview)
-    setAttachedFile(null)
-    setAttachedPreview(null)
+    attachedPreviews.forEach(p => { if (p) URL.revokeObjectURL(p) })
+    setAttachedFiles([])
+    setAttachedPreviews([])
     setShowFileModal(false)
     setFileCaption('')
     setForceDocument(false)
-  }, [attachedPreview])
+  }, [attachedPreviews])
 
   // Audio analyser for visualizer
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -2852,7 +2928,10 @@ function App() {
               const clientId = data.client_id
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
-                const emoji = (data.reactions || []).find(r => !r.chosen)?.emoji || data.reactions?.[0]?.emoji || '👍'
+                const peerReactions = (data.reactions || []).filter(r => !r.chosen)
+                const emoji = peerReactions.length > 0
+                  ? peerReactions.map(r => r.emoji).join(' ')
+                  : data.reactions?.[0]?.emoji || '👍'
                 const contact = contactsRef.current.find(c => c.client_id === clientId)
                 const sender = contact?.full_name || contact?.phone || 'Клієнт'
                 const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
@@ -2972,17 +3051,31 @@ function App() {
     }
   }, [contacts, newChatClient])
 
-  // Group messages by date
-  const groupedMessages: (ChatMessage | { type: 'date'; date: string })[] = []
-  let lastDateStr = ''
-  for (const m of messages) {
-    const d = formatDateSeparator(m.message_date)
-    if (d !== lastDateStr) {
-      groupedMessages.push({ type: 'date', date: d })
-      lastDateStr = d
+  // Group messages + notes by date
+  const groupedMessages: (ChatMessage | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = useMemo(() => {
+    // Merge messages and notes into a single timeline
+    type Item = { date: string; kind: 'msg'; data: ChatMessage } | { date: string; kind: 'note'; data: ClientNote }
+    const items: Item[] = []
+    for (const m of messages) items.push({ date: m.message_date, kind: 'msg', data: m })
+    for (const n of clientNotes) items.push({ date: n.created_at, kind: 'note', data: n })
+    items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const result: (ChatMessage | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = []
+    let lastDateStr = ''
+    for (const item of items) {
+      const d = formatDateSeparator(item.date)
+      if (d !== lastDateStr) {
+        result.push({ type: 'date', date: d })
+        lastDateStr = d
+      }
+      if (item.kind === 'note') {
+        result.push({ ...item.data, _isNote: true } as ClientNote & { _isNote: true })
+      } else {
+        result.push(item.data)
+      }
     }
-    groupedMessages.push(m)
-  }
+    return result
+  }, [messages, clientNotes])
 
   // Select client handler
   const selectClient = useCallback((clientId: string) => {
@@ -3169,93 +3262,91 @@ function App() {
 
       {/* Main content */}
       <div className="main-content">
-        {/* Account rail — icons only, flyout on hover */}
-        <div className="account-rail">
-          {/* "All" button */}
-          <button
-            className={`rail-icon ${!selectedAccount ? 'active' : ''}`}
-            onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
-            title="Усі месенджери"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        {/* Account rail — collapsible left panel */}
+        <div className={`account-rail ${railExpanded ? 'expanded' : ''}`}>
+          {/* Toggle button */}
+          <button className="rail-toggle" onClick={() => setRailExpanded(p => !p)} title={railExpanded ? 'Згорнути' : 'Розгорнути'}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: railExpanded ? 'rotate(180deg)' : 'none' }}>
+              <polyline points="9 18 15 12 9 6"/>
             </svg>
-            {unreadCount > 0 && <span className="rail-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
           </button>
-          {/* Account icons */}
-          {accounts.map(acc => (
+          {/* Accounts list */}
+          <div className="rail-accounts">
+            {/* "All" button */}
             <button
-              key={acc.id}
-              className={`rail-icon ${selectedAccount === acc.id ? 'active' : ''}`}
-              onClick={() => handleAccountClick(acc.id)}
-              title={`${acc.label} ${acc.phone}`}
-            >
-              {acc.type === 'telegram'
-                ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
-                : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
-              }
-              {accountUnreads[acc.id] > 0 && <span className="rail-badge">{accountUnreads[acc.id] > 99 ? '99+' : accountUnreads[acc.id]}</span>}
-              <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
-            </button>
-          ))}
-          {/* Gmail account icons */}
-          {gmailAccounts.length > 0 && <div className="rail-divider" />}
-          {gmailAccounts.map(gm => (
-            <button
-              key={gm.id}
-              className={`rail-icon ${selectedGmail === gm.id ? 'active' : ''}`}
-              onClick={() => handleGmailAccountClick(gm.id)}
-              title={`${gm.label} — ${gm.email}`}
-            >
-              <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
-              <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
-            </button>
-          ))}
-          {/* Flyout panel on hover */}
-          <div className="rail-flyout">
-            <button
-              className={`rail-flyout-item ${!selectedAccount ? 'active' : ''}`}
+              className={`rail-item ${!selectedAccount ? 'active' : ''}`}
               onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
+              title="Усі месенджери"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-              <div className="rail-flyout-text">
-                <span className="rail-flyout-name">Усі</span>
-                <span className="rail-flyout-phone">Месенджер</span>
-              </div>
+              <span className="rail-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                {unreadCount > 0 && <span className="rail-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+              </span>
+              {railExpanded && <span className="rail-item-label">Усі месенджери</span>}
             </button>
+            {/* Account items */}
             {accounts.map(acc => (
               <button
                 key={acc.id}
-                className={`rail-flyout-item ${selectedAccount === acc.id ? 'active' : ''}`}
+                className={`rail-item ${selectedAccount === acc.id ? 'active' : ''}`}
                 onClick={() => handleAccountClick(acc.id)}
+                title={`${acc.label} ${acc.phone}`}
               >
-                {acc.type === 'telegram'
-                  ? <TelegramIcon size={16} color="#2AABEE" />
-                  : <WhatsAppIcon size={16} color="#25D366" />
-                }
-                <div className="rail-flyout-text">
-                  <span className="rail-flyout-name">{acc.label}</span>
-                  <span className="rail-flyout-phone">{acc.phone}</span>
-                </div>
-                <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+                <span className="rail-item-icon">
+                  {acc.type === 'telegram'
+                    ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
+                    : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
+                  }
+                  {accountUnreads[acc.id] > 0 && <span className="rail-badge">{accountUnreads[acc.id] > 99 ? '99+' : accountUnreads[acc.id]}</span>}
+                  <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+                </span>
+                {railExpanded && (
+                  <span className="rail-item-text">
+                    <span className="rail-item-name">{acc.label}</span>
+                    <span className="rail-item-phone">{acc.phone}</span>
+                  </span>
+                )}
               </button>
             ))}
+            {/* Gmail accounts */}
+            {gmailAccounts.length > 0 && <div className="rail-divider" />}
             {gmailAccounts.map(gm => (
               <button
                 key={gm.id}
-                className={`rail-flyout-item ${selectedGmail === gm.id ? 'active' : ''}`}
+                className={`rail-item ${selectedGmail === gm.id ? 'active' : ''}`}
                 onClick={() => handleGmailAccountClick(gm.id)}
+                title={`${gm.label} — ${gm.email}`}
               >
-                <GmailIcon size={16} color="#EA4335" />
-                <div className="rail-flyout-text">
-                  <span className="rail-flyout-name">{gm.label}</span>
-                  <span className="rail-flyout-phone">{gm.email}</span>
-                </div>
-                <span className={`status-dot ${gm.status === 'active' ? 'online' : ''}`} />
+                <span className="rail-item-icon">
+                  <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
+                  <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
+                </span>
+                {railExpanded && (
+                  <span className="rail-item-text">
+                    <span className="rail-item-name">{gm.label}</span>
+                    <span className="rail-item-phone">{gm.email}</span>
+                  </span>
+                )}
               </button>
             ))}
+          </div>
+          {/* Bottom: settings + version */}
+          <div className="rail-bottom">
+            <button className="rail-item rail-settings-btn" onClick={() => setShowSettingsModal(true)} title="Налаштування">
+              <span className="rail-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </span>
+              {railExpanded && <span className="rail-item-label">Налаштування</span>}
+            </button>
+            {railExpanded && currentVersion && (
+              <div className="rail-version">
+                <span>v{currentVersion}</span>
+              </div>
+            )}
           </div>
         </div>
         {/* Sidebar with contacts */}
@@ -3764,36 +3855,6 @@ function App() {
                   }
                 }}
                 onDragLeave={() => setChatDropHighlight(false)}
-                onDrop={e => {
-                  e.preventDefault()
-                  setChatDropHighlight(false)
-                  if (dragLabPatientRef.current && selectedClient) {
-                    const p = dragLabPatientRef.current
-                    dragLabPatientRef.current = null
-                    setLabSendModal(p)
-                    setLabSendSelected(new Set(p.results.filter(r => r.media_file).map(r => r.id)))
-                    return
-                  }
-                  // Template drag — 3 fallbacks: ref → backup ref → dataTransfer title lookup
-                  let tpl = dragTplRef.current || lastDraggedTplRef.current
-                  dragTplRef.current = null
-                  lastDraggedTplRef.current = null
-                  if (!tpl && selectedClient) {
-                    const title = e.dataTransfer.getData('text/plain')
-                    if (title) {
-                      for (const cat of templateCategories) {
-                        const found = cat.templates.find(t => t.title === title)
-                        if (found) { tpl = found; break }
-                      }
-                    }
-                  }
-                  if (tpl && selectedClient) {
-                    setPreviewTpl(tpl)
-                    setTplEditText(tpl.text)
-                    setTplIncludeMedia(!!tpl.media_file)
-                    setTplSendExtraFiles([])
-                  }
-                }}
               >
                 {hasOlderMessages && (
                   <div className="load-older-wrap">
@@ -3807,6 +3868,27 @@ function App() {
                     return (
                       <div key={`date-${i}`} className="date-separator">
                         <span>{item.date}</span>
+                      </div>
+                    )
+                  }
+                  // Note item
+                  if ('_isNote' in item && (item as any)._isNote) {
+                    const note = item as ClientNote & { _isNote: true }
+                    return (
+                      <div key={`note-${note.id}`} data-note-id={note.id} className="msg msg-note">
+                        <div className="msg-bubble msg-bubble-note">
+                          <div className="msg-note-header">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
+                            <span className="msg-note-author">{note.author_name}</span>
+                            <button className="msg-note-delete" onClick={() => deleteClientNote(note.id)} title="Видалити">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                          </div>
+                          <div className="msg-note-text">{note.text}</div>
+                          <div className="msg-time">
+                            {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
                       </div>
                     )
                   }
@@ -3902,7 +3984,7 @@ function App() {
                           {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
                         </div>
                       )}
-                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}`}>
+                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}`}>
                         {/* Forwarded header */}
                         {m.fwd_from_name && (
                           <div className="msg-forward-header">
@@ -3930,6 +4012,7 @@ function App() {
                             token={auth?.token || ''}
                             blobMap={mediaBlobMap}
                             loadBlob={loadMediaBlob}
+                            fallbackPath={m.media_file || undefined}
                             onClick={async () => {
                               if (m.media_file) {
                                 const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, m.media_file)
@@ -3970,57 +4053,29 @@ function App() {
                         {/* Video note (round video / кружок) */}
                         {m.has_media && m.media_type === 'video_note' && m.media_file && (
                           <div className={`msg-vnote-wrap ${m.direction}`}>
-                            <div className={`msg-vnote${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
-                              {mediaBlobMap[`vid_${m.id}`] ? (
-                                <video
-                                  autoPlay
-                                  preload="auto"
-                                  src={mediaBlobMap[`vid_${m.id}`]}
-                                  className="msg-vnote-player"
-                                  id={`vnote_${m.id}`}
-                                  onEnded={e => { (e.target as HTMLVideoElement).currentTime = 0; (e.target as HTMLVideoElement).pause() }}
+                            <div className="msg-vnote" onClick={async () => {
+                              const key = `vid_${m.id}`
+                              let src = mediaBlobMap[key]
+                              if (!src) { src = await loadMediaBlob(key, m.media_file) || ''; }
+                              if (src) { setVnoteModal({ src, id: m.id }); setVnotePlaying(true); setVnoteProgress(0) }
+                            }}>
+                              {m.thumbnail ? (
+                                <AuthMedia
+                                  mediaKey={`vnthumb_${m.id}`}
+                                  mediaPath={m.thumbnail}
+                                  type="image"
+                                  className="msg-vnote-thumb"
+                                  token={auth?.token || ''}
+                                  blobMap={mediaBlobMap}
+                                  loadBlob={loadMediaBlob}
                                 />
-                              ) : (
-                                <>
-                                  {m.thumbnail && (
-                                    <AuthMedia
-                                      mediaKey={`vnthumb_${m.id}`}
-                                      mediaPath={m.thumbnail}
-                                      type="image"
-                                      className="msg-vnote-thumb"
-                                      token={auth?.token || ''}
-                                      blobMap={mediaBlobMap}
-                                      loadBlob={loadMediaBlob}
-                                    />
-                                  )}
-                                  <button
-                                    className="msg-vnote-play"
-                                    onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
-                                    disabled={mediaLoading[`vid_${m.id}`]}
-                                  >
-                                    {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                                    )}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            {mediaBlobMap[`vid_${m.id}`] && (
-                              <div className="msg-vnote-controls">
-                                <button className="vnote-ctrl-btn" onClick={() => {
-                                  const v = document.getElementById(`vnote_${m.id}`) as HTMLVideoElement
-                                  if (v) v.paused ? v.play() : v.pause()
-                                }}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                                </button>
-                                <button className="vnote-ctrl-btn" onClick={() => {
-                                  const v = document.getElementById(`vnote_${m.id}`) as HTMLVideoElement
-                                  if (v) v.muted = !v.muted
-                                }}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-                                </button>
+                              ) : <div className="msg-vnote-thumb" style={{background: 'var(--muted)'}} />}
+                              <div className="msg-vnote-play">
+                                {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
+                                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                )}
                               </div>
-                            )}
+                            </div>
                           </div>
                         )}
                         {/* Regular video */}
@@ -4035,15 +4090,18 @@ function App() {
                                 className="msg-video-player"
                               />
                             ) : (
-                              <button
-                                className="msg-video-btn"
-                                onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
-                                disabled={mediaLoading[`vid_${m.id}`]}
-                              >
-                                {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                )}
-                              </button>
+                              <>
+                                {m.thumbnail && <AuthMedia mediaKey={`vthumb_${m.id}`} mediaPath={m.thumbnail} type="image" className="msg-video-thumb" token={auth?.token || ''} blobMap={mediaBlobMap} loadBlob={loadMediaBlob} />}
+                                <button
+                                  className={`msg-video-btn${!m.thumbnail ? ' msg-video-btn-static' : ''}`}
+                                  onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
+                                  disabled={mediaLoading[`vid_${m.id}`]}
+                                >
+                                  {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                  )}
+                                </button>
+                              </>
                             )}
                           </div>
                         )}
@@ -4089,7 +4147,7 @@ function App() {
                                     {(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
                                   </span>
                                 ) : null}
-                                {r.emoji}{r.count > 1 ? ` ${r.count}` : ''}
+                                <span className="reaction-emoji">{r.emoji}</span>{r.count > 1 ? ` ${r.count}` : ''}
                               </span>
                             ))}
                           </div>
@@ -4114,30 +4172,33 @@ function App() {
                           )}
                         </div>
                       </div>
-                      {/* Lab result card: linked */}
+                      {/* Lab result strip: linked */}
                       {m.is_lab_result && (m.patient_client_id || m.patient_name) && (
-                        <div className="lab-card lab-card-linked">
-                          <svg className="lab-card-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
-                          <div className="lab-card-info">
-                            <span className="lab-card-name">{m.patient_client_name || m.patient_name}</span>
-                            {m.patient_phone && <span className="lab-card-phone">{m.patient_phone}</span>}
+                        <div className="lab-strip lab-strip-linked" onClick={(e) => {
+                          e.stopPropagation()
+                          // Open lab tab and highlight the patient
+                          setRightTab('lab')
+                          if (labPatients.length === 0 && !labLoading) loadLabResults(1, '')
+                          const patientKey = m.patient_client_id || m.patient_name || ''
+                          setExpandedLabPatient(patientKey)
+                        }}>
+                          <svg className="lab-strip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
+                          <span className="lab-strip-name">{m.patient_client_name || m.patient_name}</span>
+                          <div className="lab-strip-actions">
+                            <button onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Змінити пацієнта">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); unlinkLabResult(m) }} title="Відкріпити">
+                              <XIcon />
+                            </button>
                           </div>
-                          <button className="lab-card-edit" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Змінити пацієнта">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                          </button>
-                          <button className="lab-card-unlink" onClick={(e) => { e.stopPropagation(); unlinkLabResult(m) }} title="Відкріпити">
-                            <XIcon />
-                          </button>
                         </div>
                       )}
-                      {/* Lab result card: unlinked (detected but no patient) */}
+                      {/* Lab result strip: unlinked (detected but no patient) */}
                       {m.is_lab_result && !m.patient_client_id && !m.patient_name && (
-                        <div className="lab-card lab-card-unlinked">
-                          <svg className="lab-card-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 11v4"/><path d="M12 17h.01"/></svg>
-                          <span className="lab-card-label">Аналіз</span>
-                          <button className="lab-card-edit" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Привʼязати пацієнта">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                          </button>
+                        <div className="lab-strip lab-strip-unlinked" onClick={(e) => { e.stopPropagation(); editLabResult(m) }}>
+                          <svg className="lab-strip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 11v4"/><path d="M12 17h.01"/></svg>
+                          <span className="lab-strip-label">Привʼязати пацієнта</span>
                         </div>
                       )}
                       {/* Incoming media, not yet classified — manual assign button */}
@@ -4169,29 +4230,44 @@ function App() {
               )}
               {auth.isAdmin && !forwardMode && (
                 <div className="chat-input">
-                  <input type="file" ref={fileInputRef} hidden
+                  <input type="file" ref={fileInputRef} hidden multiple
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
                     onChange={handleFileSelect} />
-                  {/* File upload modal */}
-                  {showFileModal && attachedFile && (
+                  {/* File upload modal (multi-file) */}
+                  {showFileModal && attachedFiles.length > 0 && (
                     <div className="file-modal-overlay" onClick={clearAttachment}>
                       <div className="file-modal" onClick={e => e.stopPropagation()}>
                         <div className="file-modal-header">
-                          <span className="file-modal-title">Надіслати файл</span>
+                          <span className="file-modal-title">
+                            {attachedFiles.length === 1 ? 'Надіслати файл' : `Надіслати ${attachedFiles.length} файлів`}
+                          </span>
                           <button className="file-modal-close" onClick={clearAttachment}>✕</button>
                         </div>
-                        <div className="file-modal-preview">
-                          {attachedPreview && attachedFile.type.startsWith('image/') ? (
-                            <img src={attachedPreview} alt="" className="file-modal-img" />
-                          ) : attachedPreview && attachedFile.type.startsWith('video/') ? (
-                            <video src={attachedPreview} controls className="file-modal-video" />
-                          ) : (
-                            <div className="file-modal-doc">
-                              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                              <span className="file-modal-doc-name">{attachedFile.name}</span>
-                              <span className="file-modal-doc-size">{(attachedFile.size / 1024).toFixed(0)} KB</span>
+                        <div className={`file-modal-preview${attachedFiles.length > 1 ? ' file-modal-grid' : ''}`}>
+                          {attachedFiles.map((f, i) => (
+                            <div key={i} className="file-modal-item">
+                              {attachedFiles.length > 1 && (
+                                <button className="file-modal-item-remove" onClick={() => {
+                                  removeAttachedFile(i)
+                                  if (attachedFiles.length <= 1) setShowFileModal(false)
+                                }}>✕</button>
+                              )}
+                              {attachedPreviews[i] && f.type.startsWith('image/') ? (
+                                <img src={attachedPreviews[i]} alt="" className="file-modal-img" />
+                              ) : attachedPreviews[i] && f.type.startsWith('video/') ? (
+                                <video src={attachedPreviews[i]} className="file-modal-video" />
+                              ) : (
+                                <div className="file-modal-doc">
+                                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                  <span className="file-modal-doc-name">{f.name}</span>
+                                  <span className="file-modal-doc-size">{(f.size / 1024).toFixed(0)} KB</span>
+                                </div>
+                              )}
                             </div>
-                          )}
+                          ))}
+                          <button className="file-modal-add" onClick={() => fileInputRef.current?.click()}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          </button>
                         </div>
                         <div className="file-modal-caption">
                           <textarea
@@ -4201,7 +4277,7 @@ function App() {
                             rows={1}
                             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                           />
-                          {attachedFile.type.startsWith('image/') && (
+                          {attachedFiles.some(f => f.type.startsWith('image/')) && (
                             <label className="file-modal-checkbox">
                               <input type="checkbox" checked={forceDocument} onChange={e => setForceDocument(e.target.checked)} />
                               Надіслати як файл (без стиснення)
@@ -4211,19 +4287,21 @@ function App() {
                         <div className="file-modal-actions">
                           <button className="file-modal-send" onClick={() => sendMessage()} disabled={sending}>
                             {sending ? <div className="spinner-sm" /> : <SendIcon />}
-                            Надіслати
+                            Надіслати{attachedFiles.length > 1 ? ` (${attachedFiles.length})` : ''}
                           </button>
                         </div>
                       </div>
                     </div>
                   )}
                   {/* Attachment indicator (fallback when modal closed) */}
-                  {attachedFile && !showFileModal && (
+                  {attachedFiles.length > 0 && !showFileModal && (
                     <div className="attached-preview">
-                      {attachedPreview && attachedFile.type.startsWith('image/') ? (
-                        <img src={attachedPreview} alt="" className="attached-thumb" />
+                      {attachedFiles.length === 1 && attachedPreviews[0] && attachedFiles[0].type.startsWith('image/') ? (
+                        <img src={attachedPreviews[0]} alt="" className="attached-thumb" />
                       ) : (
-                        <span className="attached-name">{attachedFile.name}</span>
+                        <span className="attached-name">
+                          {attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} файлів`}
+                        </span>
                       )}
                       <button className="attached-remove" onClick={clearAttachment}><XIcon /></button>
                     </div>
@@ -4291,12 +4369,15 @@ function App() {
                         placeholder="Написати повідомлення..."
                         rows={1}
                       />
-                      {messageText.trim() || attachedFile ? (
+                      {messageText.trim() || attachedFiles.length > 0 ? (
                         <button className="chat-send-btn" onClick={() => sendMessage()} disabled={sending}>
                           {sending ? <div className="spinner-sm" /> : <SendIcon />}
                         </button>
                       ) : (
                         <div className="chat-input-media-btns">
+                          <button className="chat-input-btn" onClick={() => { setNewNoteText(''); setShowNoteModal(true) }} title="Нотатка">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
+                          </button>
                           <button className="chat-input-btn" onClick={startVoiceRecording} title="Голосове повідомлення">
                             <MicIcon />
                           </button>
@@ -4349,7 +4430,15 @@ function App() {
                       <div className="rp-empty">Немає нотаток</div>
                     )}
                     {clientNotes.map(note => (
-                      <div key={note.id} className="rp-note">
+                      <div key={note.id} className="rp-note rp-note-clickable" onClick={() => {
+                        // Scroll to note in chat
+                        const el = document.querySelector(`[data-note-id="${note.id}"]`)
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          el.classList.add('note-highlight')
+                          setTimeout(() => el.classList.remove('note-highlight'), 1500)
+                        }
+                      }}>
                         <div className="rp-note-header">
                           <span className="rp-note-author">{note.author_name}</span>
                           <span className="rp-note-date">
@@ -4357,25 +4446,13 @@ function App() {
                             {' '}
                             {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                          <button className="rp-delete-btn" onClick={() => deleteClientNote(note.id)} title="Видалити">
+                          <button className="rp-delete-btn" onClick={(e) => { e.stopPropagation(); deleteClientNote(note.id) }} title="Видалити">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                           </button>
                         </div>
                         <div className="rp-note-text">{note.text}</div>
                       </div>
                     ))}
-                  </div>
-                  <div className="rp-add-form">
-                    <textarea
-                      value={newNoteText}
-                      onChange={e => setNewNoteText(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addClientNote() } }}
-                      placeholder="Додати нотатку... (Ctrl+Enter)"
-                      rows={2}
-                    />
-                    <button onClick={addClientNote} disabled={!newNoteText.trim()}>
-                      <SendIcon />
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -4398,7 +4475,8 @@ function App() {
                 {!labLoading && labPatients.length === 0 && <div className="rp-empty">Немає аналізів</div>}
                 <div className="rp-lab-list">
                   {labPatients.map(p => (
-                    <div key={p.key} className="lab-patient"
+                    <div key={p.key} className={`lab-patient${expandedLabPatient === p.key ? ' lab-patient-active' : ''}`}
+                      ref={expandedLabPatient === p.key ? el => { if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100) } : undefined}
                       draggable
                       onDragStart={e => {
                         dragLabPatientRef.current = p
@@ -4892,6 +4970,90 @@ function App() {
       {lightboxSrc && (
         <div className="lightbox" onClick={() => setLightboxSrc(null)}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* Note modal */}
+      {showNoteModal && (
+        <div className="note-modal-overlay" onClick={() => setShowNoteModal(false)}>
+          <div className="note-modal" onClick={e => e.stopPropagation()}>
+            <div className="note-modal-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
+              <span>Нотатка</span>
+              <button className="note-modal-close" onClick={() => setShowNoteModal(false)}>✕</button>
+            </div>
+            <textarea
+              className="note-modal-input"
+              value={newNoteText}
+              onChange={e => setNewNoteText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addClientNote(); setShowNoteModal(false) } }}
+              placeholder="Текст нотатки..."
+              rows={4}
+              autoFocus
+            />
+            <button
+              className="note-modal-save"
+              disabled={!newNoteText.trim()}
+              onClick={() => { addClientNote(); setShowNoteModal(false) }}
+            >
+              Зберегти
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Video note modal */}
+      {vnoteModal && (
+        <div className="vnote-modal-overlay" onClick={() => { setVnoteModal(null); setVnotePlaying(false) }}>
+          <div className="vnote-modal" onClick={e => e.stopPropagation()}>
+            <button className="vnote-modal-close" onClick={() => { setVnoteModal(null); setVnotePlaying(false) }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <div className="vnote-modal-video">
+              <video
+                ref={vnoteModalRef}
+                src={vnoteModal.src}
+                autoPlay
+                className="vnote-modal-player"
+                onTimeUpdate={e => {
+                  const v = e.target as HTMLVideoElement
+                  setVnoteProgress(v.duration ? v.currentTime / v.duration : 0)
+                }}
+                onPlay={() => setVnotePlaying(true)}
+                onPause={() => setVnotePlaying(false)}
+                onEnded={() => { setVnotePlaying(false); setVnoteProgress(1) }}
+              />
+            </div>
+            <div className="vnote-modal-seek" onClick={e => {
+              const v = vnoteModalRef.current
+              if (!v || !v.duration) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+              v.currentTime = pct * v.duration
+            }}>
+              <div className="vnote-modal-seek-fill" style={{ width: `${vnoteProgress * 100}%` }} />
+              <div className="vnote-modal-seek-thumb" style={{ left: `${vnoteProgress * 100}%` }} />
+            </div>
+            <div className="vnote-modal-controls">
+              <button className="vnote-modal-btn" onClick={() => {
+                const v = vnoteModalRef.current
+                if (!v) return
+                v.paused ? v.play() : v.pause()
+              }}>
+                {vnotePlaying ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                )}
+              </button>
+              <button className="vnote-modal-btn" onClick={() => {
+                const v = vnoteModalRef.current
+                if (v) v.muted = !v.muted
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -5538,6 +5700,31 @@ function App() {
               <button className="gmail-send-btn" onClick={sendGmailEmail} disabled={composeSending || !composeTo.trim()}>
                 {composeSending ? 'Надсилаю...' : 'Надіслати'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings modal */}
+      {showSettingsModal && (
+        <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
+          <div className="settings-modal" onClick={e => e.stopPropagation()}>
+            <div className="settings-modal-header">
+              <h2>Налаштування</h2>
+              <button className="icon-btn" onClick={() => setShowSettingsModal(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="settings-modal-body">
+              <div className="settings-placeholder">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <p>Налаштування будуть додані незабаром</p>
+              </div>
+            </div>
+            <div className="settings-modal-footer">
+              <span className="settings-version">Vidnovagram v{currentVersion}</span>
             </div>
           </div>
         </div>
