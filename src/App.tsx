@@ -63,6 +63,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.4': [
+    'Налаштування — фіксований розмір модалки (не стрибає при перемиканні)',
+    'Шпалери — виправлено доступ до медіа (авторизація)',
+    'Фон чату — виправлено застосування кольору',
+  ],
   '0.11.3': [
     'Налаштування сповіщень — компактний вигляд, іконки-тогли, випадаючий список звуків з превʼю',
     'Шпалери — виправлено завантаження (авторизація через blob)',
@@ -3985,8 +3990,8 @@ function App() {
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
                 ref={chatContainerRef}
                 style={
-                  appSettings.chatBackground.type === 'color'
-                    ? { background: appSettings.chatBackground.value }
+                  appSettings.chatBackground.type === 'color' && appSettings.chatBackground.value
+                    ? { backgroundColor: appSettings.chatBackground.value }
                     : appSettings.chatBackground.type === 'wallpaper' && wallpaperBlobUrl
                     ? { backgroundImage: `url(${wallpaperBlobUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                     : undefined

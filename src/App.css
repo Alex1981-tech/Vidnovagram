@@ -3601,6 +3601,7 @@ body {
   border-radius: 12px;
   width: 480px;
   max-width: 90vw;
+  height: 520px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
