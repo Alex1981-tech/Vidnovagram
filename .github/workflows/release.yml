@@ -49,6 +49,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $tag = "v$version"
@@ -64,8 +65,8 @@ jobs:
           Compress-Archive -Path $nsisExe -DestinationPath $nsisZip -Force
           Write-Host "Created nsis.zip: $((Get-Item $nsisZip).Length) bytes"
 
-          # Sign the nsis.zip using tauri CLI (pipe empty password)
-          "" | npx tauri signer sign $nsisZip
+          # Sign the nsis.zip
+          npx tauri signer sign $nsisZip
           $sigPath = "${nsisZip}.sig"
 
           if (-not (Test-Path $sigPath)) {
