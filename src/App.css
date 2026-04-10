@@ -309,22 +309,19 @@ body {
   display: flex;
   flex-direction: column;
   width: 48px;
-  min-width: 48px;
   padding: 6px;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
-  position: relative;
-  z-index: 20;
-  overflow: hidden;
-}
-.account-rail.expanded {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  width: 200px;
-  min-width: 200px;
   z-index: 50;
+  overflow: hidden;
+  transition: width 0.15s ease;
+}
+.account-rail.expanded {
+  width: 200px;
   box-shadow: 4px 0 16px oklch(0 0 0 / 0.15);
 }
 
@@ -508,6 +505,7 @@ body {
   flex: 1;
   overflow: hidden;
   position: relative;
+  padding-left: 48px;
 }
 
 /* === Sidebar === */
