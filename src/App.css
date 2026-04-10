@@ -919,6 +919,18 @@ body {
   font-size: 0.75rem;
   margin-bottom: 4px;
 }
+.msg-media-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--muted) 30%, transparent);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
 
 /* Contact (vCard) card */
 .msg-contact-card {

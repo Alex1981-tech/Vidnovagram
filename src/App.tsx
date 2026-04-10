@@ -63,6 +63,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.5': [
+    'Індикатор завантаження медіа (фото/відео/документ) — замість пустого повідомлення',
+  ],
   '0.11.4': [
     'Налаштування — фіксований розмір модалки (не стрибає при перемиканні)',
     'Шпалери — виправлено доступ до медіа (авторизація)',
@@ -241,6 +244,7 @@ interface ChatMessage {
   has_media: boolean
   media_type: string
   media_file: string
+  media_status?: string
   thumbnail: string
   message_date: string
   account_label: string
@@ -4290,8 +4294,15 @@ function App() {
                             </div>
                           )
                         })()}
+                        {/* Media pending download — show loading indicator */}
+                        {m.has_media && m.media_status === 'pending' && !m.media_file && (
+                          <div className="msg-media-pending">
+                            <div className="spinner-sm" />
+                            <span>{m.media_type === 'photo' ? 'Фото' : m.media_type === 'video' ? 'Відео' : m.media_type === 'document' ? 'Файл' : m.media_type === 'voice' ? 'Голосове' : 'Медіа'} завантажується...</span>
+                          </div>
+                        )}
                         {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact'].includes(m.media_type) && !m.media_file && (
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
                           <div className="msg-media-placeholder">
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
