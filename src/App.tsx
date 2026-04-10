@@ -17,7 +17,8 @@ const LAST_VERSION_KEY = 'vidnovagram_last_version'
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.10.39': [
+  '0.10.40': [
+    'Темна тема — кольори як в оригінальному Telegram Desktop',
     'Виправлено перетягування шаблонів у чат (глобальний обробник drag & drop)',
   ],
   '0.10.25': [
