@@ -60,13 +60,15 @@ jobs:
             exit 0
           }
 
-          # Create nsis.zip from exe (flat, no nested dirs)
+          # Create nsis.zip using .NET ZipArchive (NoCompression = Store, most compatible)
           $nsisZip = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip"
-          $cwd = Get-Location
-          Set-Location (Split-Path $nsisExe)
-          & 7z a -tzip -mx=5 (Join-Path $cwd $nsisZip) (Split-Path $nsisExe -Leaf)
-          Set-Location $cwd
-          Write-Host "Created nsis.zip: $((Get-Item $nsisZip).Length) bytes"
+          Add-Type -Assembly System.IO.Compression.FileSystem
+          $absZip = Join-Path (Resolve-Path (Split-Path $nsisExe)).Path "Vidnovagram_${version}_x64-setup.nsis.zip"
+          $absExe = (Resolve-Path $nsisExe).Path
+          $zip = [System.IO.Compression.ZipFile]::Open($absZip, 'Create')
+          [void]$zip.CreateEntryFromFile($absExe, (Split-Path $nsisExe -Leaf), [System.IO.Compression.CompressionLevel]::NoCompression)
+          $zip.Dispose()
+          Write-Host "Created nsis.zip (Store): $((Get-Item $nsisZip).Length) bytes"
 
           # Sign the nsis.zip
           npx tauri signer sign $nsisZip
