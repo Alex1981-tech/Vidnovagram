@@ -63,6 +63,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.3': [
+    'Налаштування — компактний layout: іконки дзвіночка, динаміка і звук в одному ряду з назвою',
+  ],
   '0.12.2': [
     'Автооновлення — показ помилки при невдалому оновленні',
   ],
