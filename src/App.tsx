@@ -63,6 +63,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.7': [
+    'Тихе автооновлення — завантажується у фоні, перезапуск при неактивності',
+    'Перевірка оновлень кожні 30 хвилин',
+  ],
   '0.11.6': [
     'Бічна панель акаунтів — накладається поверх контактів замість зсуву',
     'Шаблони — кнопка швидкої відправки (іконка стрілки) на кожному шаблоні',
@@ -906,8 +910,8 @@ function App() {
   })
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
-  const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [updating, setUpdating] = useState(false)
+  const [updateReady, setUpdateReady] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState('')
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [currentVersion, setCurrentVersion] = useState('')
   const [railExpanded, setRailExpanded] = useState(false)
@@ -1317,11 +1321,10 @@ function App() {
     }
   }, [showSettingsModal])
 
-  // Check for updates on startup
-  // Check for updates + show "What's New" after update
+  // Check for updates on startup + show "What's New" after update
   useEffect(() => {
+    // Show changelog if version changed
     (async () => {
-      // Get current version and check if it changed
       try {
         const ver = await getVersion()
         setCurrentVersion(ver)
@@ -1331,20 +1334,41 @@ function App() {
         }
         localStorage.setItem(LAST_VERSION_KEY, ver)
       } catch { /* ignore */ }
+    })()
 
-      // Check for new updates
+    // Silent background update check
+    const doUpdateCheck = async () => {
       try {
         const update = await check()
         if (update) {
-          setUpdateAvailable(true)
-          setUpdating(true)
+          setUpdateProgress('downloading')
           await update.downloadAndInstall()
-          await relaunch()
+          setUpdateProgress('')
+          setUpdateReady(true)
+          // Auto-relaunch after 5 seconds if user is idle (no mouse/key activity in last 60s)
+          let lastActivity = Date.now()
+          const trackActivity = () => { lastActivity = Date.now() }
+          window.addEventListener('mousemove', trackActivity)
+          window.addEventListener('keydown', trackActivity)
+          const tryRelaunch = setInterval(async () => {
+            if (Date.now() - lastActivity > 60_000) {
+              clearInterval(tryRelaunch)
+              window.removeEventListener('mousemove', trackActivity)
+              window.removeEventListener('keydown', trackActivity)
+              await relaunch()
+            }
+          }, 5_000)
         }
       } catch (e) {
         console.log('Update check:', e)
+        setUpdateProgress('')
       }
-    })()
+    }
+
+    // Check immediately + every 30 min
+    const delay = setTimeout(doUpdateCheck, 3_000) // 3s delay after startup
+    const interval = setInterval(doUpdateCheck, 30 * 60 * 1000)
+    return () => { clearTimeout(delay); clearInterval(interval) }
   }, [])
 
   const logout = useCallback(() => {
@@ -3380,17 +3404,6 @@ function App() {
     setAccountUnreads(prev => { const n = { ...prev }; delete n[accountId]; return n })
   }, [])
 
-  // Update screen
-  if (updateAvailable && updating) {
-    return (
-      <div className="center-screen">
-        <h2>Оновлення Vidnovagram...</h2>
-        <p>Завантаження нової версії</p>
-        <div className="spinner" />
-      </div>
-    )
-  }
-
   if (!auth?.authorized) {
     return <LoginScreen onLogin={login} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
   }
@@ -3406,6 +3419,16 @@ function App() {
           </button>
         </div>
         <div className="top-bar-right">
+          {updateProgress === 'downloading' && (
+            <span className="update-indicator" title="Завантаження оновлення...">
+              <div className="spinner-xs" />
+            </span>
+          )}
+          {updateReady && (
+            <button className="update-ready-btn" onClick={() => relaunch()} title="Натисніть для перезапуску">
+              Оновлення готове
+            </button>
+          )}
           <ThemeToggle theme={theme} setTheme={setTheme} />
           <span className="user-badge">{auth.name}</span>
           <button className="icon-btn logout" onClick={logout} title="Вийти">

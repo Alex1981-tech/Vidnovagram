@@ -276,6 +276,34 @@ body {
   margin-left: auto;
 }
 
+/* Update indicators */
+.update-indicator {
+  display: flex;
+  align-items: center;
+  padding: 2px 6px;
+  opacity: 0.6;
+}
+.spinner-xs {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--muted);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.update-ready-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  animation: pulse 2s ease-in-out infinite;
+  white-space: nowrap;
+}
+.update-ready-btn:hover { opacity: 0.9; }
+
 /* === Account Rail (collapsible left panel) === */
 .account-rail {
   display: flex;
