@@ -63,6 +63,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.0': [
+    'Drag&drop шаблонів у чат — виправлено (увімкнено нативний drag)',
+    'Модалка відправки — файли додаються без видалення медіа шаблону',
+    'Автооновлення — виправлено генерацію latest.json (updater)',
+  ],
   '0.11.9': [
     'Панель акаунтів — більше не зсуває контакти при наведенні/розгортанні',
   ],
@@ -1262,13 +1267,19 @@ function App() {
         setTplSendExtraFiles([])
       }
     }
+    // Prevent WebView2 default file handling (opening dragged files)
+    const preventDefault = (e: DragEvent) => { e.preventDefault() }
     document.addEventListener('dragover', handleDragOver)
     document.addEventListener('dragleave', handleDragLeave)
     document.addEventListener('drop', handleDrop)
+    window.addEventListener('dragover', preventDefault)
+    window.addEventListener('drop', preventDefault)
     return () => {
       document.removeEventListener('dragover', handleDragOver)
       document.removeEventListener('dragleave', handleDragLeave)
       document.removeEventListener('drop', handleDrop)
+      window.removeEventListener('dragover', preventDefault)
+      window.removeEventListener('drop', preventDefault)
     }
   }, [])
 
@@ -5788,7 +5799,7 @@ function App() {
               <label className="tpl-attach-extra">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 Додати файл{tplSendExtraFiles.length > 0 ? ` (${tplSendExtraFiles.length})` : ''}
-                <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" multiple onChange={e => { if (e.target.files?.length) { setTplSendExtraFiles(prev => [...prev, ...Array.from(e.target.files!)]); setTplIncludeMedia(false) }; e.target.value = '' }} hidden />
+                <input type="file" multiple onChange={e => { if (e.target.files?.length) { setTplSendExtraFiles(prev => [...prev, ...Array.from(e.target.files!)]) }; e.target.value = '' }} hidden />
               </label>
               {/* Editable text */}
               <textarea
