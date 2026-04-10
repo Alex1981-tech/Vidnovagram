@@ -56,6 +56,15 @@ jobs:
           Write-Host "Looking for sig at: $sigPath"
           Write-Host "Looking for zip at: $nsisZip"
 
+          # Debug: list all files in nsis bundle dir
+          $nsisDir = "src-tauri/target/release/bundle/nsis"
+          if (Test-Path $nsisDir) {
+            Write-Host "Files in nsis dir:"
+            Get-ChildItem $nsisDir | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+          } else {
+            Write-Host "NSIS dir does not exist!"
+          }
+
           if (-not (Test-Path $sigPath)) {
             Write-Host "No NSIS signature found, skipping latest.json"
             exit 0
