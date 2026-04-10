@@ -60,9 +60,9 @@ jobs:
             exit 0
           }
 
-          # Create nsis.zip from exe
+          # Create nsis.zip from exe (use 7z for compatible Deflate compression)
           $nsisZip = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip"
-          Compress-Archive -Path $nsisExe -DestinationPath $nsisZip -Force
+          7z a -tzip -mx=5 $nsisZip $nsisExe
           Write-Host "Created nsis.zip: $((Get-Item $nsisZip).Length) bytes"
 
           # Sign the nsis.zip
