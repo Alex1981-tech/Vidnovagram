@@ -1369,7 +1369,7 @@ function App() {
           console.log('Update available:', update.version)
           setUpdateProgress('downloading')
           await update.downloadAndInstall((ev) => {
-            console.log('Update event:', ev.event, ev.data)
+            console.log('Update event:', JSON.stringify(ev))
           })
           setUpdateProgress('')
           setUpdateReady(true)
