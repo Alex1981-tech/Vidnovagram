@@ -6,6 +6,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from '@tauri
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import * as telemetry from './telemetry'
 import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
@@ -1512,6 +1513,10 @@ function App() {
         setContactPage(1)
         setHasMoreContacts(list.length >= (data.per_page || 50) && list.length < (data.count || 0))
 
+        if (search) {
+          telemetry.trackSearch(search.length, data.count || 0)
+        }
+
         // Save to cache (only default view without search)
         if (!search) {
           putJsonCache(CONTACTS_STORE, cacheKey, { contacts: list, count: data.count || 0 })
@@ -1830,6 +1835,7 @@ function App() {
       ;(window as any).__replyTo = null
       if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
       loadMessages(selectedClient)
+      telemetry.trackChatWrite(selectedClient, selectedAccount, filesToSend.length > 0 ? 'media' : 'text')
     } catch (e: any) {
       console.error('Send:', e)
       alert(`Помилка відправки: ${e.message || e}`)
@@ -2944,11 +2950,13 @@ function App() {
     })
   }, [])
 
-  // Load accounts on auth
+  // Load accounts on auth + init telemetry
   useEffect(() => {
-    if (auth?.authorized) {
+    if (auth?.authorized && auth.token) {
       loadAccounts()
       loadTemplateCategories()
+      telemetry.init(auth.token)
+      return () => { telemetry.stop() }
     }
   }, [auth?.authorized, loadAccounts, loadTemplateCategories])
 
@@ -3301,7 +3309,8 @@ function App() {
     setReadTs(clientId, new Date().toISOString())
     loadMessages(clientId)
     loadClientNotes(clientId)
-  }, [loadMessages, loadClientNotes])
+    telemetry.trackChatView(clientId, selectedAccount)
+  }, [loadMessages, loadClientNotes, selectedAccount])
 
   const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
     if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
@@ -3429,6 +3438,7 @@ function App() {
   // Account tab click
   const handleAccountClick = useCallback((accountId: string) => {
     setSelectedAccount(prev => prev === accountId ? '' : accountId)
+    telemetry.trackTabSwitch(accountId)
     setSelectedClient(null)
     setMessages([])
     setSelectedGmail(null); setGmailEmails([]); setGmailSelectedMsg(null)
