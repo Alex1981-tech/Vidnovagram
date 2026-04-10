@@ -64,6 +64,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.6': [
+    'Gmail — сповіщення про нові листи (popup + звук + Windows notification)',
+    'Gmail — налаштування сповіщень per-account (як TG/WA)',
+    'Gmail — клік на сповіщення відкриває лист',
+  ],
   '0.12.3': [
     'Налаштування — компактний layout: іконки дзвіночка, динаміка і звук в одному ряду з назвою',
   ],
@@ -3227,6 +3232,58 @@ function App() {
     }
   }, [auth?.authorized, auth?.token])
 
+  // Gmail polling — check for new emails every 60s
+  const gmailLastCheckRef = useRef<string>(new Date().toISOString())
+  const gmailSeenRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!auth?.authorized || !auth?.token || gmailAccounts.length === 0) return
+    let alive = true
+
+    const checkGmail = async () => {
+      try {
+        const since = gmailLastCheckRef.current
+        const resp = await authFetch(`${API_BASE}/mail/new-messages/?since=${encodeURIComponent(since)}`, auth.token)
+        if (!resp.ok || !alive) return
+        const data: { results: { id: string; account_id: string; account_label: string; subject: string; sender: string; snippet: string; date: string; has_attachments: boolean }[] } = await resp.json()
+        if (!data.results.length) return
+
+        gmailLastCheckRef.current = data.results[0].date
+
+        for (const msg of data.results) {
+          if (gmailSeenRef.current.has(msg.id)) continue
+          gmailSeenRef.current.add(msg.id)
+
+          const senderName = msg.sender.replace(/<[^>]+>/g, '').trim() || msg.sender
+          const body = msg.subject || msg.snippet?.slice(0, 100) || ''
+
+          // Desktop notification (respects per-account popup toggle)
+          if (isPopupEnabled(msg.account_id)) {
+            showNotification(`📧 ${senderName}`, body)
+          }
+          // In-app toast (use msg.id as clientId for grouping, account_id for account)
+          addToastRef.current(msg.id, msg.account_id, senderName, msg.account_label || 'Gmail', body, msg.has_attachments, msg.has_attachments ? 'document' : '')
+
+          playNotifSound(msg.account_id)
+        }
+
+        // Bound seen set
+        if (gmailSeenRef.current.size > 200) {
+          const arr = [...gmailSeenRef.current]
+          gmailSeenRef.current = new Set(arr.slice(-100))
+        }
+      } catch { /* ignore */ }
+    }
+
+    const initTimer = setTimeout(checkGmail, 5000)
+    const pollTimer = setInterval(checkGmail, 60_000)
+
+    return () => {
+      alive = false
+      clearTimeout(initTimer)
+      clearInterval(pollTimer)
+    }
+  }, [auth?.authorized, auth?.token, gmailAccounts.length, isPopupEnabled, playNotifSound])
+
   // Compute unread (uses updates for external change detection)
   const isUnread = useCallback((contact: Contact) => {
     if (!contact.last_message_date || contact.last_message_direction !== 'received') return false
@@ -6100,6 +6157,95 @@ function App() {
                         </div>
                       )
                     })}
+                    {gmailAccounts.map(gm => {
+                      const as = appSettings.accounts[gm.id] || DEFAULT_ACCOUNT_SETTINGS
+                      const updateAcct = (patch: Partial<AccountSettings>) => {
+                        setAppSettings(prev => ({
+                          ...prev,
+                          accounts: { ...prev.accounts, [gm.id]: { ...as, ...patch } }
+                        }))
+                      }
+                      const currentSound = SOUND_OPTIONS.find(s => s.id === as.soundId) || SOUND_OPTIONS[0]
+                      return (
+                        <div key={gm.id} className="settings-notif-row">
+                          <div className="settings-notif-acct">
+                            <GmailIcon size={14} />
+                            <span className="settings-notif-name">{gm.label || gm.email}</span>
+                          </div>
+                          <div className="settings-notif-controls">
+                            <button
+                              className={`settings-notif-icon-btn${as.popupEnabled ? ' on' : ''}`}
+                              onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}
+                              title={as.popupEnabled ? 'Сповіщення увімкнено' : 'Сповіщення вимкнено'}
+                            >
+                              {as.popupEnabled ? (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                              ) : (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                              )}
+                            </button>
+                            <button
+                              className={`settings-notif-icon-btn${as.soundEnabled ? ' on' : ''}`}
+                              onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}
+                              title={as.soundEnabled ? 'Звук увімкнено' : 'Звук вимкнено'}
+                            >
+                              {as.soundEnabled ? (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                              ) : (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                              )}
+                            </button>
+                            {as.soundEnabled && (
+                              <div className="settings-sound-dropdown-wrap">
+                                <button
+                                  className="settings-sound-select"
+                                  onClick={() => setSoundDropdownOpen(prev => prev === gm.id ? null : gm.id)}
+                                >
+                                  <span>{currentSound.label}</span>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                {soundDropdownOpen === gm.id && (
+                                  <div className="settings-sound-dropdown">
+                                    {SOUND_OPTIONS.map(s => (
+                                      <div
+                                        key={s.id}
+                                        className={`settings-sound-item${as.soundId === s.id ? ' active' : ''}`}
+                                        onClick={() => {
+                                          updateAcct({ soundId: s.id })
+                                          setSoundDropdownOpen(null)
+                                        }}
+                                      >
+                                        <span className="settings-sound-item-label">{s.label}</span>
+                                        <button
+                                          className={`settings-sound-play${previewSound === s.id ? ' playing' : ''}`}
+                                          onClick={e => {
+                                            e.stopPropagation()
+                                            if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.currentTime = 0 }
+                                            const a = new Audio(s.src)
+                                            a.volume = 0.5
+                                            a.play().catch(() => {})
+                                            previewAudioRef.current = a
+                                            setPreviewSound(s.id)
+                                            setTimeout(() => setPreviewSound(null), 2000)
+                                          }}
+                                          title="Прослухати"
+                                        >
+                                          {previewSound === s.id ? (
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                                          ) : (
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                          )}
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -6239,18 +6385,26 @@ function App() {
               const latest = group[group.length - 1]
               const isExpanded = expandedToastGroup === gk
               const acctType = accounts.find(a => a.id === latest.accountId)?.type
-              const waClass = acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'
+              const isGmail = gmailAccounts.some(g => g.id === latest.accountId)
+              const toastTypeClass = isGmail ? 'toast-gmail' : acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'
               const avatarUrl = photoMap[latest.clientId]
               const stackCount = group.length
 
               const renderToast = (t: typeof latest, idx: number, isStack = false) => (
                 <div
                   key={t.id}
-                  className={`toast-item ${waClass}${isStack ? ' toast-stack' : ''}`}
+                  className={`toast-item ${toastTypeClass}${isStack ? ' toast-stack' : ''}`}
                   style={isStack ? { '--stack-i': idx } as React.CSSProperties : undefined}
                   onClick={() => {
                     if (!isExpanded && stackCount > 1) {
                       setExpandedToastGroup(gk)
+                    } else if (isGmail) {
+                      // Gmail toast click → open Gmail account and select email
+                      handleGmailAccountClick(t.accountId)
+                      const email = gmailEmails.find(e => e.id === t.clientId)
+                      if (email) setGmailSelectedMsg(email)
+                      setToasts(prev => prev.filter(x => x.id !== t.id))
+                      setExpandedToastGroup(null)
                     } else {
                       setSelectedAccount('')
                       selectClient(t.clientId)

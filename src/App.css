@@ -4039,11 +4039,18 @@ body {
   background: oklch(0.55 0.12 155 / 0.2);
   border-color: oklch(0.6 0.12 155 / 0.3);
 }
+.toast-item.toast-gmail {
+  background: oklch(0.55 0.12 25 / 0.2);
+  border-color: oklch(0.6 0.12 25 / 0.3);
+}
 .toast-item:hover {
   background: oklch(0.55 0.12 240 / 0.3);
 }
 .toast-item.toast-wa:hover {
   background: oklch(0.55 0.12 155 / 0.3);
+}
+.toast-item.toast-gmail:hover {
+  background: oklch(0.55 0.12 25 / 0.3);
 }
 .toast-avatar {
   width: 36px;
@@ -4157,8 +4164,13 @@ body {
   background: oklch(0.4 0.1 155 / 0.25);
   border-color: oklch(0.5 0.1 155 / 0.35);
 }
+.dark .toast-item.toast-gmail {
+  background: oklch(0.4 0.1 25 / 0.25);
+  border-color: oklch(0.5 0.1 25 / 0.35);
+}
 .dark .toast-item.toast-tg:hover { background: oklch(0.4 0.1 240 / 0.35); }
 .dark .toast-item.toast-wa:hover { background: oklch(0.4 0.1 155 / 0.35); }
+.dark .toast-item.toast-gmail:hover { background: oklch(0.4 0.1 25 / 0.35); }
 
 /* Toast groups */
 .toast-group {
