@@ -60,13 +60,15 @@ jobs:
             exit 0
           }
 
-          # Create nsis.zip using .NET ZipArchive (NoCompression = Store, most compatible)
+          # Create nsis.zip using .NET (Store/NoCompression for max compatibility)
           $nsisZip = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip"
+          Add-Type -Assembly System.IO.Compression
           Add-Type -Assembly System.IO.Compression.FileSystem
           $absZip = Join-Path (Resolve-Path (Split-Path $nsisExe)).Path "Vidnovagram_${version}_x64-setup.nsis.zip"
           $absExe = (Resolve-Path $nsisExe).Path
-          $zip = [System.IO.Compression.ZipFile]::Open($absZip, 'Create')
-          [void]$zip.CreateEntryFromFile($absExe, (Split-Path $nsisExe -Leaf), [System.IO.Compression.CompressionLevel]::NoCompression)
+          $exeLeaf = Split-Path $nsisExe -Leaf
+          $zip = [System.IO.Compression.ZipFile]::Open($absZip, [System.IO.Compression.ZipArchiveMode]::Create)
+          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $absExe, $exeLeaf, [System.IO.Compression.CompressionLevel]::NoCompression)
           $zip.Dispose()
           Write-Host "Created nsis.zip (Store): $((Get-Item $nsisZip).Length) bytes"
 
