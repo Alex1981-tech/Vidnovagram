@@ -44,34 +44,42 @@ jobs:
           includeUpdaterJson: true
 
       - name: Generate and upload latest.json
-        shell: bash
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
-          TAG="v${VERSION}"
-          NSIS_SIG=$(cat "src-tauri/target/release/bundle/nsis/Vidnovagram_${VERSION}_x64-setup.nsis.zip.sig" 2>/dev/null || echo "")
-          if [ -z "$NSIS_SIG" ]; then
-            echo "No NSIS signature found, skipping latest.json"
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $sigPath = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip.sig"
+          $nsisZip = "src-tauri/target/release/bundle/nsis/Vidnovagram_${version}_x64-setup.nsis.zip"
+
+          Write-Host "Looking for sig at: $sigPath"
+          Write-Host "Looking for zip at: $nsisZip"
+
+          if (-not (Test-Path $sigPath)) {
+            Write-Host "No NSIS signature found, skipping latest.json"
             exit 0
-          fi
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
-          cat > latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "Vidnovagram ${TAG}",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "windows-x86_64": {
-                "signature": "${NSIS_SIG}",
-                "url": "${RELEASE_URL}/Vidnovagram_${VERSION}_x64-setup.nsis.zip"
+          }
+
+          $sig = (Get-Content $sigPath -Raw).Trim()
+          $pubDate = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ" -AsUTC)
+          $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/$tag"
+
+          $json = @{
+            version = $version
+            notes = "Vidnovagram $tag"
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sig
+                url = "$releaseUrl/Vidnovagram_${version}_x64-setup.nsis.zip"
               }
             }
-          }
-          EOF
-          # Upload nsis.zip and latest.json to the release
-          gh release upload "${TAG}" \
-            "src-tauri/target/release/bundle/nsis/Vidnovagram_${VERSION}_x64-setup.nsis.zip" \
-            latest.json \
-            --clobber
-          echo "Uploaded latest.json with signature for ${TAG}"
+          } | ConvertTo-Json -Depth 4
+
+          $json | Out-File -FilePath latest.json -Encoding utf8NoBOM
+          Write-Host "Generated latest.json:"
+          Get-Content latest.json
+
+          gh release upload $tag $nsisZip latest.json --clobber
+          Write-Host "Uploaded latest.json + nsis.zip for $tag"
