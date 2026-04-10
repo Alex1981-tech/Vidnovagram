@@ -920,6 +920,51 @@ body {
   margin-bottom: 4px;
 }
 
+/* Contact (vCard) card */
+.msg-contact-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-radius: 10px;
+  margin-bottom: 4px;
+  min-width: 180px;
+  cursor: default;
+  border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
+}
+.msg-contact-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.msg-contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.msg-contact-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-contact-phone {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
 .msg-footer {
   display: flex;
   align-items: center;
@@ -3608,95 +3653,128 @@ body {
   flex-direction: column;
   gap: 12px;
 }
-.settings-account-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
+/* Compact notification list */
+.settings-notif-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
-.settings-account-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--foreground);
-}
-.settings-account-name { opacity: 0.9; }
-.settings-row {
+.settings-notif-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.12s;
 }
-.settings-label {
+.settings-notif-row:hover { background: color-mix(in oklch, var(--muted) 30%, transparent); }
+.settings-notif-acct {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-notif-name {
   font-size: 0.8125rem;
-  color: var(--muted-foreground);
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.settings-label-small {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-/* Toggle switch */
-.settings-toggle {
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  background: var(--border);
-  border: none;
-  cursor: pointer;
-  position: relative;
-  transition: background 0.2s;
-  padding: 0;
+.settings-notif-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
-.settings-toggle.on { background: var(--primary); }
-.settings-toggle-knob {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: white;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px oklch(0 0 0 / 0.2);
-}
-.settings-toggle.on .settings-toggle-knob { transform: translateX(16px); }
-/* Sound picker */
-.settings-sound-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 2px;
-}
-.settings-sound-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.settings-sound-btn {
-  width: 32px;
+.settings-notif-icon-btn {
+  width: 30px;
   height: 28px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--background);
+  border: none;
+  background: none;
   color: var(--muted-foreground);
-  font-size: 0.6875rem;
   cursor: pointer;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
+  opacity: 0.4;
   padding: 0;
 }
-.settings-sound-btn:hover { border-color: var(--primary); color: var(--foreground); }
-.settings-sound-btn.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+.settings-notif-icon-btn:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); opacity: 0.8; }
+.settings-notif-icon-btn.on { color: var(--primary); opacity: 1; }
+/* Sound dropdown */
+.settings-sound-dropdown-wrap {
+  position: relative;
+}
+.settings-sound-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s;
+  height: 28px;
+}
+.settings-sound-select:hover { border-color: var(--primary); }
+.settings-sound-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  width: 200px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.2);
+  z-index: 100;
+  padding: 4px;
+}
+.settings-sound-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--foreground);
+  transition: background 0.1s;
+}
+.settings-sound-item:hover { background: color-mix(in oklch, var(--muted) 40%, transparent); }
+.settings-sound-item.active { color: var(--primary); font-weight: 600; }
+.settings-sound-item-label { flex: 1; }
+.settings-sound-play {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  padding: 0;
+}
+.settings-sound-item:hover .settings-sound-play { opacity: 1; }
+.settings-sound-play.playing { opacity: 1; color: var(--primary); }
+.settings-sound-play:hover { background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); }
+.settings-label-small {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 /* Background settings */
 .settings-bg-options {
@@ -3798,6 +3876,16 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+.settings-wallpaper-loading {
+  width: 100%;
+  height: 100%;
+  background: var(--muted);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
 }
 .settings-no-wallpapers {
   text-align: center;

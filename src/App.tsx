@@ -57,10 +57,17 @@ interface Wallpaper {
   id: string
   full: string
   thumb: string
+  _thumbBlob?: string // blob URL for authenticated thumbnail
+  _fullBlob?: string  // blob URL for authenticated full image
 }
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.3': [
+    'Налаштування сповіщень — компактний вигляд, іконки-тогли, випадаючий список звуків з превʼю',
+    'Шпалери — виправлено завантаження (авторизація через blob)',
+    'Контакти (vCard) — відображення картки контакту в чаті',
+  ],
   '0.11.2': [
     'Налаштування — вкл/вимк сповіщень та звуку для кожного акаунту',
     'Вибір звуку сповіщення (стандартний + 26 мелодій)',
@@ -897,6 +904,8 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<'notifications' | 'background'>('notifications')
   const [previewSound, setPreviewSound] = useState<string | null>(null)
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [wallpaperBlobUrl, setWallpaperBlobUrl] = useState('')
+  const [soundDropdownOpen, setSoundDropdownOpen] = useState<string | null>(null) // account ID
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -1256,12 +1265,41 @@ function App() {
   // Persist appSettings
   useEffect(() => { saveSettings(appSettings) }, [appSettings])
 
-  // Load wallpapers when settings modal opens
+  // Load wallpaper blob when wallpaper background is active
+  useEffect(() => {
+    if (appSettings.chatBackground.type === 'wallpaper' && appSettings.chatBackground.value && auth?.token) {
+      const fullUrl = `${API_BASE.replace('/api', '')}${appSettings.chatBackground.value}`
+      authFetch(fullUrl, auth.token).then(async resp => {
+        if (resp.ok) {
+          const blob = await resp.blob()
+          setWallpaperBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
+        }
+      }).catch(() => {})
+    } else {
+      setWallpaperBlobUrl('')
+    }
+  }, [appSettings.chatBackground.type, appSettings.chatBackground.value, auth?.token])
+
+  // Load wallpapers when settings modal opens — fetch thumbnails as blobs (auth required)
   useEffect(() => {
     if (showSettingsModal && wallpapers.length === 0 && auth?.token) {
       fetch(`${API_BASE}/vidnovagram/wallpapers/`, { headers: { 'Authorization': `Token ${auth.token}` } })
         .then(r => r.ok ? r.json() : [])
-        .then(setWallpapers)
+        .then(async (wps: Wallpaper[]) => {
+          // Pre-load thumbnail blobs via authFetch
+          const loaded = await Promise.all(wps.map(async wp => {
+            try {
+              const thumbUrl = `${API_BASE.replace('/api', '')}${wp.thumb}`
+              const resp = await authFetch(thumbUrl, auth!.token)
+              if (resp.ok) {
+                const blob = await resp.blob()
+                return { ...wp, _thumbBlob: URL.createObjectURL(blob) }
+              }
+            } catch {}
+            return { ...wp, _thumbBlob: '' }
+          }))
+          setWallpapers(loaded)
+        })
         .catch(() => {})
     }
   }, [showSettingsModal])
@@ -3949,8 +3987,8 @@ function App() {
                 style={
                   appSettings.chatBackground.type === 'color'
                     ? { background: appSettings.chatBackground.value }
-                    : appSettings.chatBackground.type === 'wallpaper'
-                    ? { backgroundImage: `url(${API_BASE.replace('/api', '')}${appSettings.chatBackground.value})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    : appSettings.chatBackground.type === 'wallpaper' && wallpaperBlobUrl
+                    ? { backgroundImage: `url(${wallpaperBlobUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                     : undefined
                 }
                 onScroll={e => {
@@ -4226,8 +4264,29 @@ function App() {
                             {mediaLoading[`doc_${m.media_file}`] && <div className="spinner-sm" />}
                           </div>
                         )}
+                        {/* Contact (vCard) — inline card with name & phone */}
+                        {m.media_type === 'contact' && (() => {
+                          // Parse contact info from text: "👤 Name\n📞 Phone" or just text
+                          const lines = (m.text || '').split('\n')
+                          let cName = '', cPhone = ''
+                          for (const l of lines) {
+                            const lt = l.trim()
+                            if (lt.startsWith('👤')) cName = lt.slice(2).trim()
+                            else if (lt.startsWith('📞')) cPhone = lt.slice(2).trim()
+                          }
+                          if (!cName && !cPhone) { cName = m.text || 'Контакт' }
+                          return (
+                            <div className="msg-contact-card">
+                              <div className="msg-contact-avatar">{(cName || cPhone || '?')[0].toUpperCase()}</div>
+                              <div className="msg-contact-info">
+                                {cName && <span className="msg-contact-name">{cName}</span>}
+                                {cPhone && <span className="msg-contact-phone">{cPhone}</span>}
+                              </div>
+                            </div>
+                          )
+                        })()}
                         {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo'].includes(m.media_type) && !m.media_file && (
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact'].includes(m.media_type) && !m.media_file && (
                           <div className="msg-media-placeholder">
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
@@ -5818,7 +5877,7 @@ function App() {
       {/* Settings modal */}
       {showSettingsModal && (
         <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
-          <div className="settings-modal" onClick={e => e.stopPropagation()}>
+          <div className="settings-modal" onClick={e => { e.stopPropagation(); setSoundDropdownOpen(null) }}>
             <div className="settings-modal-header">
               <h2>Налаштування</h2>
               <button className="icon-btn" onClick={() => setShowSettingsModal(false)}>
@@ -5839,69 +5898,105 @@ function App() {
             <div className="settings-modal-body">
               {settingsTab === 'notifications' && (
                 <div className="settings-section">
-                  {/* Per-account notification settings */}
-                  {accounts.map(acct => {
-                    const as = appSettings.accounts[acct.id] || DEFAULT_ACCOUNT_SETTINGS
-                    const updateAcct = (patch: Partial<AccountSettings>) => {
-                      setAppSettings(prev => ({
-                        ...prev,
-                        accounts: { ...prev.accounts, [acct.id]: { ...as, ...patch } }
-                      }))
-                    }
-                    return (
-                      <div key={acct.id} className="settings-account-card">
-                        <div className="settings-account-header">
-                          {acct.type === 'telegram' ? (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" opacity="0.6"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-                          ) : (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" opacity="0.6"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M20.52 3.449A11.94 11.94 0 0 0 12.003.002C5.376.002.003 5.376.003 12c0 2.119.553 4.187 1.602 6.012L0 24l6.176-1.62A11.96 11.96 0 0 0 12.003 24C18.628 24 24 18.624 24 12c0-3.205-1.248-6.219-3.48-8.551zM12.003 21.785a9.74 9.74 0 0 1-5.212-1.51l-.373-.222-3.866 1.014 1.032-3.77-.244-.387A9.765 9.765 0 0 1 2.218 12c0-5.39 4.39-9.78 9.783-9.78a9.725 9.725 0 0 1 6.918 2.868 9.727 9.727 0 0 1 2.864 6.919c-.002 5.388-4.39 9.778-9.78 9.778z"/></svg>
-                          )}
-                          <span className="settings-account-name">{acct.label || acct.phone}</span>
-                        </div>
-                        <div className="settings-row">
-                          <span className="settings-label">Спливаючі сповіщення</span>
-                          <button className={`settings-toggle${as.popupEnabled ? ' on' : ''}`} onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}>
-                            <span className="settings-toggle-knob" />
-                          </button>
-                        </div>
-                        <div className="settings-row">
-                          <span className="settings-label">Звукові сповіщення</span>
-                          <button className={`settings-toggle${as.soundEnabled ? ' on' : ''}`} onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}>
-                            <span className="settings-toggle-knob" />
-                          </button>
-                        </div>
-                        {as.soundEnabled && (
-                          <div className="settings-sound-picker">
-                            <span className="settings-label-small">Звук сповіщення</span>
-                            <div className="settings-sound-grid">
-                              {SOUND_OPTIONS.map(s => (
-                                <button
-                                  key={s.id}
-                                  className={`settings-sound-btn${as.soundId === s.id ? ' active' : ''}`}
-                                  onClick={() => {
-                                    updateAcct({ soundId: s.id })
-                                    // Preview sound
-                                    if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.currentTime = 0 }
-                                    const a = new Audio(s.src)
-                                    a.volume = 0.5
-                                    a.play().catch(() => {})
-                                    previewAudioRef.current = a
-                                    setPreviewSound(s.id)
-                                    setTimeout(() => setPreviewSound(null), 2000)
-                                  }}
-                                  title={s.label}
-                                >
-                                  {previewSound === s.id ? (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                                  ) : s.id === 'default' ? '~' : s.id}
-                                </button>
-                              ))}
-                            </div>
+                  {/* Compact per-account notification settings */}
+                  <div className="settings-notif-list">
+                    {accounts.map(acct => {
+                      const as = appSettings.accounts[acct.id] || DEFAULT_ACCOUNT_SETTINGS
+                      const updateAcct = (patch: Partial<AccountSettings>) => {
+                        setAppSettings(prev => ({
+                          ...prev,
+                          accounts: { ...prev.accounts, [acct.id]: { ...as, ...patch } }
+                        }))
+                      }
+                      const currentSound = SOUND_OPTIONS.find(s => s.id === as.soundId) || SOUND_OPTIONS[0]
+                      return (
+                        <div key={acct.id} className="settings-notif-row">
+                          <div className="settings-notif-acct">
+                            {acct.type === 'telegram' ? (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M20.52 3.449A11.94 11.94 0 0 0 12.003.002C5.376.002.003 5.376.003 12c0 2.119.553 4.187 1.602 6.012L0 24l6.176-1.62A11.96 11.96 0 0 0 12.003 24C18.628 24 24 18.624 24 12c0-3.205-1.248-6.219-3.48-8.551zM12.003 21.785a9.74 9.74 0 0 1-5.212-1.51l-.373-.222-3.866 1.014 1.032-3.77-.244-.387A9.765 9.765 0 0 1 2.218 12c0-5.39 4.39-9.78 9.783-9.78a9.725 9.725 0 0 1 6.918 2.868 9.727 9.727 0 0 1 2.864 6.919c-.002 5.388-4.39 9.778-9.78 9.778z"/></svg>
+                            )}
+                            <span className="settings-notif-name">{acct.label || acct.phone}</span>
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                          <div className="settings-notif-controls">
+                            {/* Popup toggle */}
+                            <button
+                              className={`settings-notif-icon-btn${as.popupEnabled ? ' on' : ''}`}
+                              onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}
+                              title={as.popupEnabled ? 'Сповіщення увімкнено' : 'Сповіщення вимкнено'}
+                            >
+                              {as.popupEnabled ? (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                              ) : (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                              )}
+                            </button>
+                            {/* Sound toggle */}
+                            <button
+                              className={`settings-notif-icon-btn${as.soundEnabled ? ' on' : ''}`}
+                              onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}
+                              title={as.soundEnabled ? 'Звук увімкнено' : 'Звук вимкнено'}
+                            >
+                              {as.soundEnabled ? (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                              ) : (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                              )}
+                            </button>
+                            {/* Sound dropdown */}
+                            {as.soundEnabled && (
+                              <div className="settings-sound-dropdown-wrap">
+                                <button
+                                  className="settings-sound-select"
+                                  onClick={() => setSoundDropdownOpen(prev => prev === acct.id ? null : acct.id)}
+                                >
+                                  <span>{currentSound.label}</span>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                {soundDropdownOpen === acct.id && (
+                                  <div className="settings-sound-dropdown">
+                                    {SOUND_OPTIONS.map(s => (
+                                      <div
+                                        key={s.id}
+                                        className={`settings-sound-item${as.soundId === s.id ? ' active' : ''}`}
+                                        onClick={() => {
+                                          updateAcct({ soundId: s.id })
+                                          setSoundDropdownOpen(null)
+                                        }}
+                                      >
+                                        <span className="settings-sound-item-label">{s.label}</span>
+                                        <button
+                                          className={`settings-sound-play${previewSound === s.id ? ' playing' : ''}`}
+                                          onClick={e => {
+                                            e.stopPropagation()
+                                            if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.currentTime = 0 }
+                                            const a = new Audio(s.src)
+                                            a.volume = 0.5
+                                            a.play().catch(() => {})
+                                            previewAudioRef.current = a
+                                            setPreviewSound(s.id)
+                                            setTimeout(() => setPreviewSound(null), 2000)
+                                          }}
+                                          title="Прослухати"
+                                        >
+                                          {previewSound === s.id ? (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                          ) : (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                          )}
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -5974,7 +6069,7 @@ function App() {
                           className={`settings-wallpaper-thumb${appSettings.chatBackground.value === wp.full ? ' active' : ''}`}
                           onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'wallpaper', value: wp.full } }))}
                         >
-                          <img src={`${API_BASE.replace('/api', '')}${wp.thumb}`} alt="" loading="lazy" />
+                          {wp._thumbBlob ? <img src={wp._thumbBlob} alt="" /> : <div className="settings-wallpaper-loading" />}
                         </button>
                       ))}
                       {wallpapers.length === 0 && <p className="settings-no-wallpapers">Шпалери не знайдено</p>}
