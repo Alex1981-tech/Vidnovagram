@@ -2933,7 +2933,7 @@ function App() {
                   ? peerReactions.map(r => r.emoji).join(' ')
                   : data.reactions?.[0]?.emoji || '👍'
                 const contact = contactsRef.current.find(c => c.client_id === clientId)
-                const sender = contact?.full_name || contact?.phone || 'Клієнт'
+                const sender = contact?.full_name || contact?.phone || data.client_name || data.phone || 'Клієнт'
                 const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
                 const preview = reactedMsg?.text?.trim()
                   ? reactedMsg.text.trim().slice(0, 100)
