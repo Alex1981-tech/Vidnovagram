@@ -1563,6 +1563,15 @@ function App() {
     return fd
   }, [contacts, selectedClient, selectedAccount, accounts])
 
+  const clearAttachment = useCallback(() => {
+    attachedPreviews.forEach(p => { if (p) URL.revokeObjectURL(p) })
+    setAttachedFiles([])
+    setAttachedPreviews([])
+    setShowFileModal(false)
+    setFileCaption('')
+    setForceDocument(false)
+  }, [attachedPreviews])
+
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
     if (!selectedAccount) {
@@ -1828,15 +1837,6 @@ function App() {
       return prev.filter((_, i) => i !== index)
     })
   }, [])
-
-  const clearAttachment = useCallback(() => {
-    attachedPreviews.forEach(p => { if (p) URL.revokeObjectURL(p) })
-    setAttachedFiles([])
-    setAttachedPreviews([])
-    setShowFileModal(false)
-    setFileCaption('')
-    setForceDocument(false)
-  }, [attachedPreviews])
 
   // Audio analyser for visualizer
   const analyserRef = useRef<AnalyserNode | null>(null)
