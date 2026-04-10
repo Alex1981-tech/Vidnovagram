@@ -14,9 +14,59 @@ const AUTH_KEY = 'vidnovagram_auth'
 const THEME_KEY = 'vidnovagram_theme'
 const READ_TS_KEY = 'vidnovagram_read_ts'
 const LAST_VERSION_KEY = 'vidnovagram_last_version'
+const SETTINGS_KEY = 'vidnovagram_settings'
+
+// Sound files available in /public/sounds/
+const SOUND_OPTIONS = [
+  { id: 'default', label: 'Стандартний', src: '/notification.mp3' },
+  ...Array.from({ length: 26 }, (_, i) => ({ id: String(i + 1), label: `Звук ${i + 1}`, src: `/sounds/${i + 1}.mp3` })),
+]
+
+interface AccountSettings {
+  popupEnabled: boolean
+  soundEnabled: boolean
+  soundId: string // 'default' | '1'..'26'
+}
+
+interface ChatBackground {
+  type: 'default' | 'color' | 'wallpaper'
+  value: string // hex color or wallpaper URL
+}
+
+interface AppSettings {
+  accounts: Record<string, AccountSettings>
+  chatBackground: ChatBackground
+}
+
+const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = { popupEnabled: true, soundEnabled: true, soundId: 'default' }
+const DEFAULT_SETTINGS: AppSettings = { accounts: {}, chatBackground: { type: 'default', value: '' } }
+
+function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+  } catch {}
+  return { ...DEFAULT_SETTINGS }
+}
+
+function saveSettings(s: AppSettings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+}
+
+interface Wallpaper {
+  id: string
+  full: string
+  thumb: string
+}
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.11.2': [
+    'Налаштування — вкл/вимк сповіщень та звуку для кожного акаунту',
+    'Вибір звуку сповіщення (стандартний + 26 мелодій)',
+    'Фон чату — стандартний, колір (палітра) або шпалери з бібліотеки',
+    'Шпалери з сервера — автоматичне оновлення при додаванні нових файлів',
+  ],
   '0.11.0': [
     'Бічна панель акаунтів — розгортається/згортається (замість тултіпу)',
     'Кнопка налаштувань і версія додатку в панелі акаунтів',
@@ -842,6 +892,11 @@ function App() {
   const [currentVersion, setCurrentVersion] = useState('')
   const [railExpanded, setRailExpanded] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [appSettings, setAppSettings] = useState<AppSettings>(loadSettings)
+  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([])
+  const [settingsTab, setSettingsTab] = useState<'notifications' | 'background'>('notifications')
+  const [previewSound, setPreviewSound] = useState<string | null>(null)
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -1189,12 +1244,27 @@ function App() {
     localStorage.setItem('messenger-sound', String(soundEnabled))
   }, [soundEnabled])
 
-  // Initialize notification sound
+  // Initialize notification sound — rebuild when default sound changes
   useEffect(() => {
-    const audio = new Audio('/notification.mp3')
+    const defaultSoundId = appSettings.accounts['__global']?.soundId || 'default'
+    const soundSrc = SOUND_OPTIONS.find(s => s.id === defaultSoundId)?.src || '/notification.mp3'
+    const audio = new Audio(soundSrc)
     audio.volume = 0.5
     notifAudioRef.current = audio
-  }, [])
+  }, [appSettings.accounts['__global']?.soundId])
+
+  // Persist appSettings
+  useEffect(() => { saveSettings(appSettings) }, [appSettings])
+
+  // Load wallpapers when settings modal opens
+  useEffect(() => {
+    if (showSettingsModal && wallpapers.length === 0 && auth?.token) {
+      fetch(`${API_BASE}/vidnovagram/wallpapers/`, { headers: { 'Authorization': `Token ${auth.token}` } })
+        .then(r => r.ok ? r.json() : [])
+        .then(setWallpapers)
+        .catch(() => {})
+    }
+  }, [showSettingsModal])
 
   // Check for updates on startup
   // Check for updates + show "What's New" after update
@@ -2801,6 +2871,39 @@ function App() {
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
+  const appSettingsRef = useRef(appSettings)
+  useEffect(() => { appSettingsRef.current = appSettings }, [appSettings])
+
+  // Helper: check if notifications/sound enabled for account
+  const getAccountSettings = useCallback((accountId: string): AccountSettings => {
+    return appSettingsRef.current.accounts[accountId] || DEFAULT_ACCOUNT_SETTINGS
+  }, [])
+
+  // Play notification sound respecting per-account settings
+  const playNotifSound = useCallback((accountId?: string) => {
+    if (!soundEnabledRef.current) return
+    if (accountId) {
+      const acctSettings = getAccountSettings(accountId)
+      if (!acctSettings.soundEnabled) return
+      // Use per-account sound if set
+      if (acctSettings.soundId && acctSettings.soundId !== 'default') {
+        const src = SOUND_OPTIONS.find(s => s.id === acctSettings.soundId)?.src
+        if (src) {
+          const a = new Audio(src)
+          a.volume = 0.5
+          a.play().catch(() => {})
+          return
+        }
+      }
+    }
+    try { notifAudioRef.current?.play().catch(() => {}) } catch {}
+  }, [getAccountSettings])
+
+  // Check if popup notifications enabled for account
+  const isPopupEnabled = useCallback((accountId?: string): boolean => {
+    if (!accountId) return true
+    return getAccountSettings(accountId).popupEnabled
+  }, [getAccountSettings])
 
   // Chat search — find matching message IDs
   useEffect(() => {
@@ -2874,8 +2977,10 @@ function App() {
                 const sender = msg.client_name || msg.phone || 'Новий контакт'
                 const account = msg.account_label || ''
                 const body = msg.text?.slice(0, 120) || ''
-                // Windows notification
-                showNotification(`${sender} → ${account}`, body || '📎 Медіа')
+                // Windows notification (respects per-account popup toggle)
+                if (isPopupEnabled(accountId)) {
+                  showNotification(`${sender} → ${account}`, body || '📎 Медіа')
+                }
                 // In-app toast
                 addToastRef.current(clientId || '', accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
 
@@ -2884,9 +2989,9 @@ function App() {
                   setAccountUnreads(prev => ({ ...prev, [accountId]: (prev[accountId] || 0) + 1 }))
                 }
               }
-              // Play notification sound
-              if (soundEnabledRef.current && !isCurrentChat) {
-                try { notifAudioRef.current?.play().catch(() => {}) } catch {}
+              // Play notification sound (respects per-account sound toggle)
+              if (!isCurrentChat) {
+                playNotifSound(accountId)
               }
             }
 
@@ -2941,11 +3046,11 @@ function App() {
                     ? 'медіаповідомлення'
                     : 'повідомлення'
 
-                showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${preview}`)
-                addToastRef.current(clientId, data.account_id || '', sender, '', `Відреагував(ла) ${emoji} · ${preview}`, false, '')
-                if (soundEnabledRef.current) {
-                  try { notifAudioRef.current?.play().catch(() => {}) } catch {}
+                if (isPopupEnabled(data.account_id)) {
+                  showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${preview}`)
                 }
+                addToastRef.current(clientId, data.account_id || '', sender, '', `Відреагував(ла) ${emoji} · ${preview}`, false, '')
+                playNotifSound(data.account_id)
               }
             }
           }
@@ -3841,6 +3946,13 @@ function App() {
 
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
                 ref={chatContainerRef}
+                style={
+                  appSettings.chatBackground.type === 'color'
+                    ? { background: appSettings.chatBackground.value }
+                    : appSettings.chatBackground.type === 'wallpaper'
+                    ? { backgroundImage: `url(${API_BASE.replace('/api', '')}${appSettings.chatBackground.value})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    : undefined
+                }
                 onScroll={e => {
                   const el = e.currentTarget
                   setShowScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 200)
@@ -5713,13 +5825,163 @@ function App() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
+            {/* Tabs */}
+            <div className="settings-tabs">
+              <button className={`settings-tab${settingsTab === 'notifications' ? ' active' : ''}`} onClick={() => setSettingsTab('notifications')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                Сповіщення
+              </button>
+              <button className={`settings-tab${settingsTab === 'background' ? ' active' : ''}`} onClick={() => setSettingsTab('background')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Фон чату
+              </button>
+            </div>
             <div className="settings-modal-body">
-              <div className="settings-placeholder">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-                <p>Налаштування будуть додані незабаром</p>
-              </div>
+              {settingsTab === 'notifications' && (
+                <div className="settings-section">
+                  {/* Per-account notification settings */}
+                  {accounts.map(acct => {
+                    const as = appSettings.accounts[acct.id] || DEFAULT_ACCOUNT_SETTINGS
+                    const updateAcct = (patch: Partial<AccountSettings>) => {
+                      setAppSettings(prev => ({
+                        ...prev,
+                        accounts: { ...prev.accounts, [acct.id]: { ...as, ...patch } }
+                      }))
+                    }
+                    return (
+                      <div key={acct.id} className="settings-account-card">
+                        <div className="settings-account-header">
+                          {acct.type === 'telegram' ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" opacity="0.6"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" opacity="0.6"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M20.52 3.449A11.94 11.94 0 0 0 12.003.002C5.376.002.003 5.376.003 12c0 2.119.553 4.187 1.602 6.012L0 24l6.176-1.62A11.96 11.96 0 0 0 12.003 24C18.628 24 24 18.624 24 12c0-3.205-1.248-6.219-3.48-8.551zM12.003 21.785a9.74 9.74 0 0 1-5.212-1.51l-.373-.222-3.866 1.014 1.032-3.77-.244-.387A9.765 9.765 0 0 1 2.218 12c0-5.39 4.39-9.78 9.783-9.78a9.725 9.725 0 0 1 6.918 2.868 9.727 9.727 0 0 1 2.864 6.919c-.002 5.388-4.39 9.778-9.78 9.778z"/></svg>
+                          )}
+                          <span className="settings-account-name">{acct.label || acct.phone}</span>
+                        </div>
+                        <div className="settings-row">
+                          <span className="settings-label">Спливаючі сповіщення</span>
+                          <button className={`settings-toggle${as.popupEnabled ? ' on' : ''}`} onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}>
+                            <span className="settings-toggle-knob" />
+                          </button>
+                        </div>
+                        <div className="settings-row">
+                          <span className="settings-label">Звукові сповіщення</span>
+                          <button className={`settings-toggle${as.soundEnabled ? ' on' : ''}`} onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}>
+                            <span className="settings-toggle-knob" />
+                          </button>
+                        </div>
+                        {as.soundEnabled && (
+                          <div className="settings-sound-picker">
+                            <span className="settings-label-small">Звук сповіщення</span>
+                            <div className="settings-sound-grid">
+                              {SOUND_OPTIONS.map(s => (
+                                <button
+                                  key={s.id}
+                                  className={`settings-sound-btn${as.soundId === s.id ? ' active' : ''}`}
+                                  onClick={() => {
+                                    updateAcct({ soundId: s.id })
+                                    // Preview sound
+                                    if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.currentTime = 0 }
+                                    const a = new Audio(s.src)
+                                    a.volume = 0.5
+                                    a.play().catch(() => {})
+                                    previewAudioRef.current = a
+                                    setPreviewSound(s.id)
+                                    setTimeout(() => setPreviewSound(null), 2000)
+                                  }}
+                                  title={s.label}
+                                >
+                                  {previewSound === s.id ? (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                  ) : s.id === 'default' ? '~' : s.id}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {settingsTab === 'background' && (
+                <div className="settings-section">
+                  {/* Background type selector */}
+                  <div className="settings-bg-options">
+                    <button
+                      className={`settings-bg-option${appSettings.chatBackground.type === 'default' ? ' active' : ''}`}
+                      onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'default', value: '' } }))}
+                    >
+                      <div className="settings-bg-preview settings-bg-default" />
+                      <span>Стандартний</span>
+                    </button>
+                    <button
+                      className={`settings-bg-option${appSettings.chatBackground.type === 'color' ? ' active' : ''}`}
+                      onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'color', value: prev.chatBackground.type === 'color' ? prev.chatBackground.value : '#1a1a2e' } }))}
+                    >
+                      <div className="settings-bg-preview" style={{ background: appSettings.chatBackground.type === 'color' ? appSettings.chatBackground.value : '#1a1a2e' }} />
+                      <span>Колір</span>
+                    </button>
+                    <button
+                      className={`settings-bg-option${appSettings.chatBackground.type === 'wallpaper' ? ' active' : ''}`}
+                      onClick={() => { if (wallpapers.length > 0 && appSettings.chatBackground.type !== 'wallpaper') setAppSettings(prev => ({ ...prev, chatBackground: { type: 'wallpaper', value: wallpapers[0].full } })) }}
+                    >
+                      <div className="settings-bg-preview settings-bg-wallpaper-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      </div>
+                      <span>Шпалери</span>
+                    </button>
+                  </div>
+
+                  {/* Color picker */}
+                  {appSettings.chatBackground.type === 'color' && (
+                    <div className="settings-color-section">
+                      <div className="settings-color-palette">
+                        {[
+                          '#0f0f23', '#1a1a2e', '#16213e', '#0f3460', '#1b262c',
+                          '#222831', '#2d3436', '#353b48', '#2c3e50', '#34495e',
+                          '#1e3a5f', '#1a472a', '#2d4a3e', '#3b341f', '#4a3728',
+                          '#3d1f3d', '#2e1a47', '#1a1a3e', '#0d1b2a', '#1b2838',
+                          '#e8d5b7', '#f5e6cc', '#faf3e0', '#f0f0f0', '#d5e5d5',
+                        ].map(color => (
+                          <button
+                            key={color}
+                            className={`settings-color-swatch${appSettings.chatBackground.value === color ? ' active' : ''}`}
+                            style={{ background: color }}
+                            onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'color', value: color } }))}
+                            title={color}
+                          />
+                        ))}
+                      </div>
+                      <div className="settings-color-custom">
+                        <input
+                          type="color"
+                          value={appSettings.chatBackground.value || '#1a1a2e'}
+                          onChange={e => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'color', value: e.target.value } }))}
+                        />
+                        <span className="settings-label-small">Свій колір</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Wallpaper picker */}
+                  {appSettings.chatBackground.type === 'wallpaper' && (
+                    <div className="settings-wallpaper-grid">
+                      {wallpapers.map(wp => (
+                        <button
+                          key={wp.id}
+                          className={`settings-wallpaper-thumb${appSettings.chatBackground.value === wp.full ? ' active' : ''}`}
+                          onClick={() => setAppSettings(prev => ({ ...prev, chatBackground: { type: 'wallpaper', value: wp.full } }))}
+                        >
+                          <img src={`${API_BASE.replace('/api', '')}${wp.thumb}`} alt="" loading="lazy" />
+                        </button>
+                      ))}
+                      {wallpapers.length === 0 && <p className="settings-no-wallpapers">Шпалери не знайдено</p>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="settings-modal-footer">
               <span className="settings-version">Vidnovagram v{currentVersion}</span>
