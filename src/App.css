@@ -295,26 +295,6 @@ body {
   min-width: 200px;
 }
 
-.rail-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  margin-bottom: 4px;
-  transition: background 0.15s, color 0.15s;
-  flex-shrink: 0;
-}
-.rail-toggle:hover {
-  background: var(--accent);
-  color: var(--foreground);
-}
-
 .rail-accounts {
   display: flex;
   flex-direction: column;

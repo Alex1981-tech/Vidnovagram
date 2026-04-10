@@ -3262,14 +3262,12 @@ function App() {
 
       {/* Main content */}
       <div className="main-content">
-        {/* Account rail — collapsible left panel */}
-        <div className={`account-rail ${railExpanded ? 'expanded' : ''}`}>
-          {/* Toggle button */}
-          <button className="rail-toggle" onClick={() => setRailExpanded(p => !p)} title={railExpanded ? 'Згорнути' : 'Розгорнути'}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: railExpanded ? 'rotate(180deg)' : 'none' }}>
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </button>
+        {/* Account rail — expands on hover */}
+        <div
+          className={`account-rail ${railExpanded ? 'expanded' : ''}`}
+          onMouseEnter={() => setRailExpanded(true)}
+          onMouseLeave={() => setRailExpanded(false)}
+        >
           {/* Accounts list */}
           <div className="rail-accounts">
             {/* "All" button */}
