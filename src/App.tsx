@@ -63,6 +63,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.2': [
+    'Автооновлення — показ помилки при невдалому оновленні',
+  ],
   '0.12.1': [
     'Налаштування — збільшене вікно, вирівняні іконки дзвіночка та динаміка',
     'Шаблони — виправлено додавання файлів у вікні редагування (Tauri file dialog)',
@@ -1363,8 +1366,11 @@ function App() {
       try {
         const update = await check()
         if (update) {
+          console.log('Update available:', update.version)
           setUpdateProgress('downloading')
-          await update.downloadAndInstall()
+          await update.downloadAndInstall((ev) => {
+            console.log('Update event:', ev.event, ev.data)
+          })
           setUpdateProgress('')
           setUpdateReady(true)
           // Auto-relaunch after 5 seconds if user is idle (no mouse/key activity in last 60s)
@@ -1381,9 +1387,10 @@ function App() {
             }
           }, 5_000)
         }
-      } catch (e) {
-        console.log('Update check:', e)
-        setUpdateProgress('')
+      } catch (e: any) {
+        console.error('Update failed:', e?.message || e)
+        setUpdateProgress(String(e?.message || 'Помилка оновлення').substring(0, 80))
+        setTimeout(() => setUpdateProgress(''), 10_000)
       }
     }
 
@@ -3444,6 +3451,11 @@ function App() {
           {updateProgress === 'downloading' && (
             <span className="update-indicator" title="Завантаження оновлення...">
               <div className="spinner-xs" />
+            </span>
+          )}
+          {updateProgress && updateProgress !== 'downloading' && (
+            <span className="update-error" title={updateProgress} style={{ color: 'var(--destructive)', fontSize: '0.7rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              ⚠ {updateProgress}
             </span>
           )}
           {updateReady && (
