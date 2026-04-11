@@ -65,7 +65,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.13.0': [
+  '0.13.1': [
+    'Контакти — натисніть на контакт щоб додати в акаунт або відкрити чат',
+    'Списки задач — інтерактивний чеклист з галочками',
     'Gmail вкладення (Excel, Word та ін.) — автоматичне відкриття у програмі за замовчуванням',
   ],
   '0.12.9': [
@@ -727,6 +729,42 @@ const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi
 function extractFirstUrl(text: string): string | null {
   const m = text.match(URL_REGEX)
   return m ? m[0] : null
+}
+
+function PollCard({ question, options, messageId }: { question: string; options: string[]; messageId: number | string }) {
+  const [checked, setChecked] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem(`poll_${messageId}`)
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch { return new Set() }
+  })
+  const toggle = (idx: number) => {
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx); else next.add(idx)
+      localStorage.setItem(`poll_${messageId}`, JSON.stringify([...next]))
+      return next
+    })
+  }
+  const doneCount = checked.size
+  return (
+    <div className="msg-poll-card">
+      <div className="msg-poll-title">📊 {question}</div>
+      <div className="msg-poll-options">
+        {options.map((opt, i) => {
+          const label = opt.replace(/^[☐☑]\s*/, '')
+          const done = checked.has(i)
+          return (
+            <button key={i} className={`msg-poll-option${done ? ' checked' : ''}`} onClick={() => toggle(i)}>
+              <span className="msg-poll-check">{done ? '☑' : '☐'}</span>
+              <span className={`msg-poll-label${done ? ' done' : ''}`}>{label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="msg-poll-footer">{doneCount} з {options.length} виконано</div>
+    </div>
+  )
 }
 
 function Linkify({ text, onLinkClick }: { text: string; onLinkClick: (url: string) => void }) {
@@ -4492,19 +4530,32 @@ function App() {
                         {m.media_type === 'contact' && m.text && m.text.startsWith('👤') && (() => {
                           const lines = m.text.split('\n')
                           const name = lines[0]?.replace('👤 ', '') || ''
-                          const phone = lines[1]?.replace('📞 ', '') || ''
+                          const phone = lines[1]?.replace('📞 ', '').replace(/\D/g, '') || ''
+                          const normPhone = phone.startsWith('380') ? '0' + phone.slice(3) : phone
                           return (
-                            <div className="msg-contact-card" onClick={() => { if (phone) { const norm = phone.replace(/\D/g, ''); navigator.clipboard.writeText(norm) } }}>
+                            <div className="msg-contact-card" onClick={() => {
+                              if (normPhone) {
+                                setAddToAcctModal({ phone: normPhone, name, clientId: '' })
+                                checkPhoneMessengers(normPhone)
+                              }
+                            }}>
                               <div className="msg-contact-avatar">{name.charAt(0) || '?'}</div>
                               <div className="msg-contact-info">
                                 <div className="msg-contact-name">{name}</div>
-                                {phone && <div className="msg-contact-phone">{phone}</div>}
+                                {phone && <div className="msg-contact-phone">{phone.startsWith('380') ? '+' + phone : phone}</div>}
                               </div>
                             </div>
                           )
                         })()}
+                        {/* Poll/checklist card */}
+                        {m.media_type === 'poll' && m.text && m.text.startsWith('📊') && (() => {
+                          const lines = m.text.split('\n')
+                          const question = lines[0]?.replace('📊 ', '') || 'Опитування'
+                          const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
+                          return <PollCard question={question} options={options} messageId={m.id} />
+                        })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && !(m.media_type === 'poll' && m.text.startsWith('📊')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Deleted label under message */}
                         {m.is_deleted && (

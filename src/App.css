@@ -985,6 +985,60 @@ body {
   color: var(--muted-foreground);
   margin-top: 1px;
 }
+.msg-poll-card {
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 4px;
+  min-width: 200px;
+}
+.msg-poll-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.msg-poll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.msg-poll-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.82rem;
+  color: var(--foreground);
+  transition: background 0.15s;
+}
+.msg-poll-option:hover {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+.msg-poll-check {
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.msg-poll-option.checked .msg-poll-check {
+  opacity: 1;
+  color: var(--primary);
+}
+.msg-poll-label.done {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+.msg-poll-footer {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  margin-top: 6px;
+  text-align: right;
+}
 .msg-media-placeholder {
   padding: 8px 12px;
   background: color-mix(in oklch, var(--muted) 50%, transparent);
