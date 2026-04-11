@@ -1290,10 +1290,15 @@ function App() {
   // Global drag/drop handler for templates and lab patients
   // WebView2 doesn't reliably fire onDrop on nested scrollable containers
   useEffect(() => {
+    let _dragOverLogCount = 0
     const handleDragOver = (e: DragEvent) => {
-      if (!selectedClientRef.current) return
-      if (dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current ||
-          (e.dataTransfer && e.dataTransfer.types.includes('Files'))) {
+      const hasClient = !!selectedClientRef.current
+      const hasLab = !!dragLabPatientRef.current
+      const hasTpl = !!dragTplRef.current || !!lastDraggedTplRef.current
+      const hasFiles = !!(e.dataTransfer && e.dataTransfer.types.includes('Files'))
+      if (_dragOverLogCount++ < 3) console.log('dragOver:', { hasClient, hasLab, hasTpl, hasFiles, target: (e.target as HTMLElement)?.className?.slice(0,40) })
+      if (!hasClient) return
+      if (hasTpl || hasLab || hasFiles) {
         e.preventDefault()
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
         setChatDropHighlight(true)
