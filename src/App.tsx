@@ -1931,7 +1931,11 @@ function App() {
 
   // Send lab results to current chat: text header + files sequentially
   const sendLabResults = useCallback(async () => {
-    if (!selectedClient || !auth?.token || !labSendModal || labSendSelected.size === 0) return
+    console.log('sendLabResults called', { selectedClient, hasToken: !!auth?.token, hasModal: !!labSendModal, selectedSize: labSendSelected.size })
+    if (!selectedClient || !auth?.token || !labSendModal || labSendSelected.size === 0) {
+      console.warn('sendLabResults: early return', { selectedClient, hasToken: !!auth?.token, hasModal: !!labSendModal, selectedSize: labSendSelected.size })
+      return
+    }
     setLabSending(true)
     const patient = labSendModal
     const results = patient.results.filter(r => labSendSelected.has(r.id))
@@ -1941,24 +1945,27 @@ function App() {
       const fd = new FormData()
       fd.append('text', header)
       if (selectedAccount) fd.append('account_id', selectedAccount)
-      await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+      const headerResp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
         method: 'POST', body: fd,
       })
+      console.log('Lab header send:', headerResp.status, await headerResp.clone().text())
       // 2. Send each file sequentially
       for (const r of results) {
         if (!r.media_file) continue
         const url = r.media_file.startsWith('http') ? r.media_file : `${API_BASE.replace('/api', '')}${r.media_file}`
+        console.log('Lab file download:', url)
         const resp = await authFetch(url, auth.token)
-        if (!resp.ok) continue
+        if (!resp.ok) { console.warn('Lab file download failed:', resp.status); continue }
         const blob = await resp.blob()
         const ext = r.media_file.split('.').pop() || 'jpg'
         const filename = `${r.lab_result_type || 'lab'}_${new Date(r.message_date).toLocaleDateString('uk-UA').replace(/\./g, '-')}.${ext}`
         const fileFd = new FormData()
         fileFd.append('file', blob, filename)
         if (selectedAccount) fileFd.append('account_id', selectedAccount)
-        await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
+        const sendResp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/send/`, auth.token, {
           method: 'POST', body: fileFd,
         })
+        console.log('Lab file send:', sendResp.status, filename)
       }
       setLabSendModal(null)
       setLabSendSelected(new Set())
