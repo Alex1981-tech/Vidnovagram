@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
+import { tempDir, join } from '@tauri-apps/api/path'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
@@ -64,6 +65,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.0': [
+    'Gmail вкладення (Excel, Word та ін.) — автоматичне відкриття у програмі за замовчуванням',
+  ],
   '0.12.9': [
     'Шпалери — завантаження по 8 штук (без перевантаження сервера)',
   ],
@@ -3490,12 +3494,12 @@ function App() {
         setLightboxSrc(URL.createObjectURL(blob))
         return
       }
-      // Other — save dialog
-      const filePath = await save({ defaultPath: filename })
-      if (filePath) {
-        const ab = await blob.arrayBuffer()
-        await writeFile(filePath, new Uint8Array(ab))
-      }
+      // Other files (Excel, Word, etc.) — save to temp and open with default app
+      const tmp = await tempDir()
+      const filePath = await join(tmp, filename)
+      const ab = await blob.arrayBuffer()
+      await writeFile(filePath, new Uint8Array(ab))
+      await shellOpen(filePath)
     } catch (e) { console.error('Attachment download:', e) }
   }, [auth?.token, selectedGmail])
 
