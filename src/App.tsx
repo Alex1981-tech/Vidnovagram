@@ -4488,8 +4488,23 @@ function App() {
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
                         )}
+                        {/* Contact card */}
+                        {m.media_type === 'contact' && m.text && m.text.startsWith('👤') && (() => {
+                          const lines = m.text.split('\n')
+                          const name = lines[0]?.replace('👤 ', '') || ''
+                          const phone = lines[1]?.replace('📞 ', '') || ''
+                          return (
+                            <div className="msg-contact-card" onClick={() => { if (phone) { const norm = phone.replace(/\D/g, ''); navigator.clipboard.writeText(norm) } }}>
+                              <div className="msg-contact-avatar">{name.charAt(0) || '?'}</div>
+                              <div className="msg-contact-info">
+                                <div className="msg-contact-name">{name}</div>
+                                {phone && <div className="msg-contact-phone">{phone}</div>}
+                              </div>
+                            </div>
+                          )
+                        })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Deleted label under message */}
                         {m.is_deleted && (
