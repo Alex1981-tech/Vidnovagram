@@ -1292,7 +1292,6 @@ function App() {
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
       if (!selectedClientRef.current) return
-      // Templates, lab patients, or external files
       if (dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current ||
           (e.dataTransfer && e.dataTransfer.types.includes('Files'))) {
         e.preventDefault()
@@ -4958,6 +4957,7 @@ function App() {
                         e.dataTransfer.effectAllowed = 'copy'
                         e.dataTransfer.setData('text/plain', p.name || '')
                         ;(e.currentTarget as HTMLElement).classList.add('dragging')
+                        console.log('Lab drag start:', p.name, 'selectedClient:', selectedClient)
                       }}
                       onDragEnd={e => {
                         dragLabPatientRef.current = null
