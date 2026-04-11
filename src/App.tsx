@@ -1291,7 +1291,10 @@ function App() {
   // WebView2 doesn't reliably fire onDrop on nested scrollable containers
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
-      if ((dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current) && selectedClientRef.current) {
+      if (!selectedClientRef.current) return
+      // Templates, lab patients, or external files
+      if (dragTplRef.current || lastDraggedTplRef.current || dragLabPatientRef.current ||
+          (e.dataTransfer && e.dataTransfer.types.includes('Files'))) {
         e.preventDefault()
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
         setChatDropHighlight(true)
@@ -1334,6 +1337,21 @@ function App() {
         setTplEditText(tpl.text)
         setTplIncludeMedia(!!tpl.media_file)
         setTplSendExtraFiles([])
+        return
+      }
+      // External file drop (from file manager)
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        e.preventDefault()
+        e.stopPropagation()
+        const newFiles = Array.from(e.dataTransfer.files)
+        setAttachedFiles(prev => [...prev, ...newFiles])
+        setAttachedPreviews(prev => [...prev,
+          ...newFiles.map(f => (f.type.startsWith('image/') || f.type.startsWith('video/'))
+            ? URL.createObjectURL(f) : '')
+        ])
+        setFileCaption('')
+        setForceDocument(false)
+        setShowFileModal(true)
       }
     }
     // Prevent WebView2 default file handling (opening dragged files)
@@ -4521,7 +4539,7 @@ function App() {
                           </div>
                         )}
                         {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
                           <div className="msg-media-placeholder">
                             {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
                           </div>
@@ -4554,8 +4572,26 @@ function App() {
                           const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
                           return <PollCard question={question} options={options} messageId={m.id} />
                         })()}
+                        {/* Geo location card */}
+                        {m.media_type === 'geo' && m.text && m.text.includes('📍') && (() => {
+                          const lines = (m.text || '').split('\n')
+                          const title = lines[0]?.replace('📍 ', '') || 'Геолокація'
+                          const mapUrl = lines.find(l => l.startsWith('https://maps.google.com'))
+                          const address = lines.length > 2 ? lines.slice(1, -1).join(', ') : ''
+                          const isLive = title.startsWith('Маячок')
+                          return (
+                            <div className="msg-geo-card" onClick={() => mapUrl && shellOpen(mapUrl)}>
+                              <div className="msg-geo-icon">{isLive ? '📡' : '📍'}</div>
+                              <div className="msg-geo-info">
+                                <span className="msg-geo-title">{title}</span>
+                                {address && <span className="msg-geo-address">{address}</span>}
+                                {mapUrl && <span className="msg-geo-link">Відкрити на карті</span>}
+                              </div>
+                            </div>
+                          )
+                        })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && !(m.media_type === 'poll' && m.text.startsWith('📊')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && !(m.media_type === 'poll' && m.text.startsWith('📊')) && !(m.media_type === 'geo' && m.text.includes('📍')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Deleted label under message */}
                         {m.is_deleted && (
