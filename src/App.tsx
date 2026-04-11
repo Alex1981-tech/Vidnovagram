@@ -64,6 +64,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.8': [
+    'Налаштування — виправлено вибір звуку для акаунтів (dropdown не відкривався)',
+  ],
   '0.12.7': [
     'Gmail — вкладення відображаються карточками з іконками по типу файлу',
     'Gmail — кольорові іконки: PDF (червона), зображення (зелена), документ (синя), таблиця, архів, аудіо, відео',
@@ -6141,13 +6144,13 @@ function App() {
                               <div className="settings-sound-dropdown-wrap">
                                 <button
                                   className="settings-sound-select"
-                                  onClick={() => setSoundDropdownOpen(prev => prev === acct.id ? null : acct.id)}
+                                  onClick={e => { e.stopPropagation(); setSoundDropdownOpen(prev => prev === acct.id ? null : acct.id) }}
                                 >
                                   <span>{currentSound.label}</span>
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
                                 </button>
                                 {soundDropdownOpen === acct.id && (
-                                  <div className="settings-sound-dropdown">
+                                  <div className="settings-sound-dropdown" onClick={e => e.stopPropagation()}>
                                     {SOUND_OPTIONS.map(s => (
                                       <div
                                         key={s.id}
@@ -6230,13 +6233,13 @@ function App() {
                               <div className="settings-sound-dropdown-wrap">
                                 <button
                                   className="settings-sound-select"
-                                  onClick={() => setSoundDropdownOpen(prev => prev === gm.id ? null : gm.id)}
+                                  onClick={e => { e.stopPropagation(); setSoundDropdownOpen(prev => prev === gm.id ? null : gm.id) }}
                                 >
                                   <span>{currentSound.label}</span>
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
                                 </button>
                                 {soundDropdownOpen === gm.id && (
-                                  <div className="settings-sound-dropdown">
+                                  <div className="settings-sound-dropdown" onClick={e => e.stopPropagation()}>
                                     {SOUND_OPTIONS.map(s => (
                                       <div
                                         key={s.id}
