@@ -64,6 +64,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.12.9': [
+    'Шпалери — завантаження по 8 штук (без перевантаження сервера)',
+  ],
   '0.12.8': [
     'Налаштування — виправлено вибір звуку для акаунтів (dropdown не відкривався)',
   ],
@@ -1345,19 +1348,28 @@ function App() {
       fetch(`${API_BASE}/vidnovagram/wallpapers/`, { headers: { 'Authorization': `Token ${auth.token}` } })
         .then(r => r.ok ? r.json() : [])
         .then(async (wps: Wallpaper[]) => {
-          // Pre-load thumbnail blobs via authFetch
-          const loaded = await Promise.all(wps.map(async wp => {
-            try {
-              const thumbUrl = `${API_BASE.replace('/api', '')}${wp.thumb}`
-              const resp = await authFetch(thumbUrl, auth!.token)
-              if (resp.ok) {
-                const blob = await resp.blob()
-                return { ...wp, _thumbBlob: URL.createObjectURL(blob) }
-              }
-            } catch {}
-            return { ...wp, _thumbBlob: '' }
-          }))
-          setWallpapers(loaded)
+          // Show placeholders immediately, then load thumbs in batches of 8
+          const result = wps.map(wp => ({ ...wp, _thumbBlob: '' }))
+          setWallpapers([...result])
+          const BATCH = 8
+          for (let i = 0; i < wps.length; i += BATCH) {
+            const batch = wps.slice(i, i + BATCH)
+            const loaded = await Promise.all(batch.map(async (wp, j) => {
+              try {
+                const thumbUrl = `${API_BASE.replace('/api', '')}${wp.thumb}`
+                const resp = await authFetch(thumbUrl, auth!.token)
+                if (resp.ok) {
+                  const blob = await resp.blob()
+                  return { idx: i + j, blob: URL.createObjectURL(blob) }
+                }
+              } catch {}
+              return { idx: i + j, blob: '' }
+            }))
+            for (const item of loaded) {
+              result[item.idx]._thumbBlob = item.blob
+            }
+            setWallpapers([...result])
+          }
         })
         .catch(() => {})
     }
