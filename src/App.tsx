@@ -6570,7 +6570,7 @@ function App() {
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
                     } else {
-                      setSelectedAccount('')
+                      if (t.accountId) setSelectedAccount(t.accountId)
                       selectClient(t.clientId)
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
