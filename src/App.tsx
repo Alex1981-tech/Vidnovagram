@@ -286,6 +286,7 @@ interface Contact {
   has_whatsapp?: boolean
   is_employee?: boolean
   tg_peer_id?: number
+  linked_phones?: { id: string; phone: string; full_name: string }[]
 }
 
 interface ChatMessage {
@@ -1027,6 +1028,7 @@ function App() {
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [clientLinkedPhones, setClientLinkedPhones] = useState<{ id: string; phone: string }[]>([])
   const [isPlaceholder, setIsPlaceholder] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkSearch, setLinkSearch] = useState('')
@@ -1050,7 +1052,7 @@ function App() {
   const [rpSelectedClient, setRpSelectedClient] = useState<string | null>(null)
   const [rpClientCalls, setRpClientCalls] = useState<any[]>([])
   const [rpClientMsgs, setRpClientMsgs] = useState<ChatMessage[]>([])
-  const [rpClientInfo, setRpClientInfo] = useState<{ name: string; phone: string } | null>(null)
+  const [rpClientInfo, setRpClientInfo] = useState<{ name: string; phone: string; linked_phones?: { id: string; phone: string }[] } | null>(null)
   const [rpClientDetailLoading, setRpClientDetailLoading] = useState(false)
   const [rpClientPhotos, setRpClientPhotos] = useState<Record<string, string>>({})
   // Add-to-account modal
@@ -1727,6 +1729,7 @@ function App() {
         setHasOlderMessages(!!data.next_cursor || (!!data.has_more))
         setClientName(data.client_name || '')
         setClientPhone(data.client_phone || '')
+        setClientLinkedPhones(data.linked_phones || [])
         setIsPlaceholder(data.is_placeholder || false)
         if (msgs.length > 0) {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
@@ -2046,7 +2049,7 @@ function App() {
       if (msgsResp.ok) {
         const md = await msgsResp.json()
         setRpClientMsgs(md.results || [])
-        setRpClientInfo({ name: md.client_name || '', phone: md.client_phone || '' })
+        setRpClientInfo({ name: md.client_name || '', phone: md.client_phone || '', linked_phones: md.linked_phones || [] })
       }
     } catch (e) { console.error('Client detail:', e) }
     finally { setRpClientDetailLoading(false) }
@@ -5213,6 +5216,16 @@ function App() {
                           )}
                           <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
                           <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
+                          {(rpClientInfo?.linked_phones?.length ?? 0) > 0 && (
+                            <div className="rp-cd-linked-phones">
+                              {rpClientInfo!.linked_phones!.map(lp => (
+                                <div key={lp.id} className="rp-cd-linked-phone">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                                  {lp.phone}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <div className="rp-cd-actions">
                             <button onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)} title="Відкрити чат">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -5708,6 +5721,16 @@ function App() {
             </div>
             <h2 className="contact-profile-name">{clientName || chatContact.full_name || 'Без імені'}</h2>
             <p className="contact-profile-phone">{clientPhone || chatContact.phone}</p>
+            {clientLinkedPhones.length > 0 && (
+              <div className="contact-profile-linked">
+                {clientLinkedPhones.map(lp => (
+                  <span key={lp.id} className="contact-profile-linked-phone">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    {lp.phone}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="contact-profile-stats">
               <div className="contact-profile-stat">
                 <span className="contact-profile-stat-value">{messages.length}</span>
