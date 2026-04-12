@@ -2554,7 +2554,8 @@ function App() {
     } catch { /* ignore */ }
   }, [selectedClient, newNoteText, auth?.token, loadClientNotes])
 
-  // Delete client note
+  // Delete client note (with confirmation)
+  const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<string | null>(null)
   const deleteClientNote = useCallback(async (noteId: string) => {
     if (!selectedClient || !auth?.token) return
     try {
@@ -2563,6 +2564,7 @@ function App() {
       })
       if (resp.ok || resp.status === 204) loadClientNotes(selectedClient)
     } catch { /* ignore */ }
+    setDeleteNoteConfirm(null)
   }, [selectedClient, auth?.token, loadClientNotes])
 
   // Add template category
@@ -4925,7 +4927,7 @@ function App() {
                             {' '}
                             {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                          <button className="rp-delete-btn" onClick={(e) => { e.stopPropagation(); deleteClientNote(note.id) }} title="Видалити">
+                          <button className="rp-delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteNoteConfirm(note.id) }} title="Видалити">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                           </button>
                         </div>
@@ -6522,6 +6524,24 @@ function App() {
             </div>
             <div className="whats-new-footer">
               <button className="whats-new-btn" onClick={() => setShowWhatsNew(false)}>Зрозуміло</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete note confirmation modal */}
+      {deleteNoteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteNoteConfirm(null)}>
+          <div className="modal-dialog modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Видалити нотатку?</h3>
+            </div>
+            <div className="modal-body">
+              <p>Нотатку буде позначено як видалену. Вона залишиться видимою в картці клієнта на сайті.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn modal-btn-cancel" onClick={() => setDeleteNoteConfirm(null)}>Скасувати</button>
+              <button className="modal-btn modal-btn-danger" onClick={() => deleteClientNote(deleteNoteConfirm)}>Видалити</button>
             </div>
           </div>
         </div>

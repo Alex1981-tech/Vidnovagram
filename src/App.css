@@ -1039,6 +1039,46 @@ body {
   margin-top: 6px;
   text-align: right;
 }
+/* Geo location card */
+.msg-geo-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  border-radius: 10px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-width: 180px;
+}
+.msg-geo-card:hover {
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+}
+.msg-geo-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+.msg-geo-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.msg-geo-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.msg-geo-address {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+.msg-geo-link {
+  font-size: 0.72rem;
+  color: var(--primary);
+  opacity: 0.8;
+}
+
 .msg-media-placeholder {
   padding: 8px 12px;
   background: color-mix(in oklch, var(--muted) 50%, transparent);
@@ -3662,6 +3702,28 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Generic confirmation dialog */
+.modal-dialog {
+  width: 400px;
+  max-width: 90vw;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: modal-appear 0.25s ease-out;
+  overflow: hidden;
+}
+.modal-dialog.modal-sm { width: 340px; }
+.modal-header { padding: 16px 20px 8px; }
+.modal-header h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--foreground); }
+.modal-body { padding: 8px 20px 16px; font-size: 13px; color: var(--muted-foreground); line-height: 1.5; }
+.modal-body p { margin: 0; }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border); }
+.modal-btn { padding: 6px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--foreground); transition: all 0.15s; }
+.modal-btn:hover { background: var(--accent); }
+.modal-btn-danger { background: oklch(0.55 0.2 25); color: #fff; border-color: transparent; }
+.modal-btn-danger:hover { background: oklch(0.48 0.2 25); }
 
 .whats-new-modal {
   width: 400px;
