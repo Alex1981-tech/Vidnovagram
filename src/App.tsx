@@ -65,6 +65,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.9': [
+    'Картка клієнта — нова вкладка в правій панелі (теги, соцмережі, email, місто, джерело, коментар, посилання)',
+  ],
   '0.13.1': [
     'Контакти — натисніть на контакт щоб додати в акаунт або відкрити чат',
     'Списки задач — інтерактивний чеклист з галочками',
@@ -1037,10 +1040,10 @@ function App() {
   const [sending, setSending] = useState(false)
 
   // Right panel
-  type RpTab = 'notes' | 'quick' | 'lab' | 'clients'
+  type RpTab = 'notes' | 'quick' | 'lab' | 'clients' | 'card'
   const [rightTabs, setRightTabs] = useState<RpTab[]>(() => {
-    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); if (!a.includes('clients')) a.push('clients'); return a } } catch {}
-    return ['notes', 'quick', 'lab', 'clients']
+    try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); if (!a.includes('clients')) a.push('clients'); if (!a.includes('card')) a.push('card'); return a } } catch {}
+    return ['notes', 'quick', 'lab', 'clients', 'card']
   })
   const [rightTab, setRightTab] = useState<RpTab>('notes')
   // Contacts tab state
@@ -1061,6 +1064,25 @@ function App() {
   const [addToAcctResult, setAddToAcctResult] = useState<{ telegram: boolean; whatsapp: boolean } | null>(null)
   const [addToAcctSelected, setAddToAcctSelected] = useState<string>('')
   const [addToAcctAdding, setAddToAcctAdding] = useState(false)
+  // Client Card tab state
+  interface ClientCardData {
+    id: string; phone: string; full_name: string; email?: string
+    instagram?: string; facebook?: string; tiktok?: string
+    city?: string; source?: string; source_detail?: string; comment?: string
+    tags?: { id: string; name: string; color: string }[]
+    links?: { id: string; url: string; title: string; created_at: string }[]
+    linked_phones?: { id: string; phone: string; full_name: string }[]
+  }
+  const [cardData, setCardData] = useState<ClientCardData | null>(null)
+  const [cardLoading, setCardLoading] = useState(false)
+  const [cardEditField, setCardEditField] = useState<string | null>(null)
+  const [cardEditValue, setCardEditValue] = useState('')
+  const [allTags, setAllTags] = useState<{ id: string; name: string; color: string }[]>([])
+  const [showTagPicker, setShowTagPicker] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [showAddLink, setShowAddLink] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkTitle, setLinkTitle] = useState('')
   // Audio playback for calls in contacts panel
   const [rpPlayingCall, setRpPlayingCall] = useState<string | null>(null)
   const rpAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -2054,6 +2076,86 @@ function App() {
     } catch (e) { console.error('Client detail:', e) }
     finally { setRpClientDetailLoading(false) }
   }, [auth?.token])
+
+  // Client Card functions
+  const loadClientCard = useCallback(async (clientId: string) => {
+    if (!auth?.token) return
+    setCardLoading(true)
+    try {
+      const [clientResp, tagsResp] = await Promise.all([
+        authFetch(`${API_BASE}/clients/${clientId}/`, auth.token),
+        authFetch(`${API_BASE}/client-tags/`, auth.token),
+      ])
+      if (clientResp.ok) { const d = await clientResp.json(); setCardData(d) }
+      if (tagsResp.ok) { const t = await tagsResp.json(); setAllTags(t) }
+    } catch (e) { console.error('Load client card:', e) }
+    finally { setCardLoading(false) }
+  }, [auth?.token])
+
+  const saveCardField = useCallback(async (field: string, value: string) => {
+    if (!auth?.token || !cardData) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${cardData.id}/update-profile/`, auth.token, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      if (resp.ok) { setCardData(prev => prev ? { ...prev, [field]: value } : prev) }
+    } catch (e) { console.error('Save card field:', e) }
+    setCardEditField(null)
+  }, [auth?.token, cardData])
+
+  const toggleCardTag = useCallback(async (tagId: string) => {
+    if (!auth?.token || !cardData) return
+    const current = cardData.tags?.map(t => t.id) || []
+    const newIds = current.includes(tagId) ? current.filter(id => id !== tagId) : [...current, tagId]
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${cardData.id}/tags/`, auth.token, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_ids: newIds }),
+      })
+      if (resp.ok) { setCardData(prev => prev ? { ...prev, tags: allTags.filter(t => newIds.includes(t.id)) } : prev) }
+    } catch (e) { console.error('Toggle tag:', e) }
+  }, [auth?.token, cardData, allTags])
+
+  const createCardTag = useCallback(async (name: string) => {
+    if (!auth?.token || !name.trim()) return
+    const colors = ['#6366f1', '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#f97316']
+    const color = colors[Math.floor(Math.random() * colors.length)]
+    try {
+      const resp = await authFetch(`${API_BASE}/client-tags/`, auth.token, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), color }),
+      })
+      if (resp.ok) {
+        const tag = await resp.json()
+        setAllTags(prev => [...prev, tag])
+        setNewTagName('')
+      }
+    } catch (e) { console.error('Create tag:', e) }
+  }, [auth?.token])
+
+  const addCardLink = useCallback(async () => {
+    if (!auth?.token || !cardData || !linkUrl.trim()) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${cardData.id}/links/`, auth.token, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: linkUrl.trim(), title: linkTitle.trim() }),
+      })
+      if (resp.ok) {
+        const link = await resp.json()
+        setCardData(prev => prev ? { ...prev, links: [...(prev.links || []), link] } : prev)
+        setLinkUrl(''); setLinkTitle(''); setShowAddLink(false)
+      }
+    } catch (e) { console.error('Add link:', e) }
+  }, [auth?.token, cardData, linkUrl, linkTitle])
+
+  const deleteCardLink = useCallback(async (linkId: string) => {
+    if (!auth?.token || !cardData) return
+    try {
+      const resp = await authFetch(`${API_BASE}/clients/${cardData.id}/links/${linkId}/`, auth.token, { method: 'DELETE' })
+      if (resp.ok) { setCardData(prev => prev ? { ...prev, links: prev.links?.filter(l => l.id !== linkId) } : prev) }
+    } catch (e) { console.error('Delete link:', e) }
+  }, [auth?.token, cardData])
 
   const checkPhoneMessengers = useCallback(async (phone: string) => {
     if (!auth?.token) return
@@ -3458,12 +3560,16 @@ function App() {
     setAudioBlobMap({})
     setMediaBlobMap({})
     setExpandedCallId(null)
+    setCardData(null) // Reset card data for new client
     // Mark as read immediately
     setReadTs(clientId, new Date().toISOString())
     loadMessages(clientId)
     loadClientNotes(clientId)
+    // Pre-load card data only for non-employee contacts
+    const contact = contacts.find(c => c.client_id === clientId)
+    if (!contact?.is_employee) loadClientCard(clientId)
     telemetry.trackChatView(clientId, selectedAccount)
-  }, [loadMessages, loadClientNotes, selectedAccount])
+  }, [loadMessages, loadClientNotes, loadClientCard, selectedAccount])
 
   const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
     if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
@@ -4898,10 +5004,12 @@ function App() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
               ) : rightTab === 'clients' ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              ) : rightTab === 'card' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M15 8h4M15 12h4"/><path d="M3 21v0c0-2.21 2.69-4 6-4s6 1.79 6 4"/></svg>
               ) : (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
               )}
-              {rightTab === 'notes' ? 'Нотатки' : rightTab === 'quick' ? 'Шаблони' : rightTab === 'clients' ? (rpSelectedClient ? (
+              {rightTab === 'notes' ? 'Нотатки' : rightTab === 'quick' ? 'Шаблони' : rightTab === 'card' ? 'Картка клієнта' : rightTab === 'clients' ? (rpSelectedClient ? (
                 <><button className="rp-back-btn" onClick={() => { setRpSelectedClient(null); rpAudioRef.current?.pause(); setRpPlayingCall(null) }}>←</button>{rpClientInfo?.name || 'Контакт'}</>
               ) : 'Контакти') : 'Аналізи пацієнтів'}
             </div>
@@ -5292,6 +5400,184 @@ function App() {
                   </div>
                 )}
               </div>
+            ) : rightTab === 'card' ? (
+              selectedClient ? (
+                contacts.find(c => c.client_id === selectedClient)?.is_employee ? (
+                  <div className="rp-empty">Картка доступна тільки для клієнтів</div>
+                ) : <div className="rp-card">
+                  {cardLoading ? (
+                    <div className="rp-empty">Завантаження...</div>
+                  ) : !cardData ? (
+                    <div className="rp-empty">Немає даних</div>
+                  ) : (
+                    <div className="rp-card-content">
+                      {/* Tags */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Теги</div>
+                        <div className="rp-card-tags">
+                          {(cardData.tags || []).map(tag => (
+                            <span key={tag.id} className="rp-card-tag" style={{ backgroundColor: tag.color + '22', color: tag.color, borderColor: tag.color + '44' }}>
+                              {tag.name}
+                              <button className="rp-card-tag-x" onClick={() => toggleCardTag(tag.id)}>×</button>
+                            </span>
+                          ))}
+                          <button className="rp-card-tag-add" onClick={() => setShowTagPicker(!showTagPicker)}>+</button>
+                        </div>
+                        {showTagPicker && (
+                          <div className="rp-card-tag-picker">
+                            {allTags.filter(t => !(cardData.tags || []).find(ct => ct.id === t.id)).map(tag => (
+                              <button key={tag.id} className="rp-card-tag-option" style={{ borderLeft: `3px solid ${tag.color}` }} onClick={() => { toggleCardTag(tag.id); setShowTagPicker(false) }}>
+                                {tag.name}
+                              </button>
+                            ))}
+                            <div className="rp-card-tag-create">
+                              <input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="Новий тег..." onKeyDown={e => { if (e.key === 'Enter' && newTagName.trim()) { createCardTag(newTagName); setShowTagPicker(false) } }} />
+                              {newTagName.trim() && <button onClick={() => { createCardTag(newTagName); setShowTagPicker(false) }}>+</button>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Social Links */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Соцмережі</div>
+                        <div className="rp-card-socials">
+                          {(['instagram', 'facebook', 'tiktok'] as const).map(soc => (
+                            <div key={soc} className="rp-card-social-row">
+                              <span className={`rp-card-social-icon ${soc}`}>
+                                {soc === 'instagram' ? '📷' : soc === 'facebook' ? '📘' : '🎵'}
+                              </span>
+                              {cardEditField === soc ? (
+                                <input className="rp-card-input" autoFocus value={cardEditValue}
+                                  onChange={e => setCardEditValue(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveCardField(soc, cardEditValue); if (e.key === 'Escape') setCardEditField(null) }}
+                                  onBlur={() => saveCardField(soc, cardEditValue)}
+                                  placeholder={`@${soc}`} />
+                              ) : (
+                                <span className={`rp-card-social-value${cardData[soc] ? '' : ' empty'}`}
+                                  onClick={() => { setCardEditField(soc); setCardEditValue(cardData[soc] || '') }}>
+                                  {cardData[soc] || `Додати ${soc}`}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Email */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Email</div>
+                        {cardEditField === 'email' ? (
+                          <input className="rp-card-input" autoFocus value={cardEditValue}
+                            onChange={e => setCardEditValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveCardField('email', cardEditValue); if (e.key === 'Escape') setCardEditField(null) }}
+                            onBlur={() => saveCardField('email', cardEditValue)}
+                            placeholder="email@example.com" />
+                        ) : (
+                          <span className={`rp-card-value${cardData.email ? '' : ' empty'}`}
+                            onClick={() => { setCardEditField('email'); setCardEditValue(cardData.email || '') }}>
+                            {cardData.email || 'Додати email'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* City */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Місто</div>
+                        {cardEditField === 'city' ? (
+                          <input className="rp-card-input" autoFocus value={cardEditValue}
+                            onChange={e => setCardEditValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveCardField('city', cardEditValue); if (e.key === 'Escape') setCardEditField(null) }}
+                            onBlur={() => saveCardField('city', cardEditValue)}
+                            placeholder="Місто" />
+                        ) : (
+                          <span className={`rp-card-value${cardData.city ? '' : ' empty'}`}
+                            onClick={() => { setCardEditField('city'); setCardEditValue(cardData.city || '') }}>
+                            {cardData.city || 'Додати місто'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Source */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Джерело</div>
+                        {cardEditField === 'source' ? (
+                          <select className="rp-card-select" autoFocus value={cardEditValue}
+                            onChange={e => { setCardEditValue(e.target.value); saveCardField('source', e.target.value) }}
+                            onBlur={() => setCardEditField(null)}>
+                            <option value="">— не вказано —</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="google">Google</option>
+                            <option value="recommendation">Рекомендація</option>
+                            <option value="website">Сайт</option>
+                            <option value="walk_in">Самозвернення</option>
+                            <option value="return">Повторний</option>
+                            <option value="other">Інше</option>
+                          </select>
+                        ) : (
+                          <span className={`rp-card-value${cardData.source ? '' : ' empty'}`}
+                            onClick={() => { setCardEditField('source'); setCardEditValue(cardData.source || '') }}>
+                            {cardData.source || 'Вказати джерело'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Comment */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Коментар</div>
+                        {cardEditField === 'comment' ? (
+                          <textarea className="rp-card-textarea" autoFocus value={cardEditValue}
+                            onChange={e => setCardEditValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveCardField('comment', cardEditValue) } if (e.key === 'Escape') setCardEditField(null) }}
+                            onBlur={() => saveCardField('comment', cardEditValue)}
+                            placeholder="Коментар..." rows={3} />
+                        ) : (
+                          <span className={`rp-card-value rp-card-comment${cardData.comment ? '' : ' empty'}`}
+                            onClick={() => { setCardEditField('comment'); setCardEditValue(cardData.comment || '') }}>
+                            {cardData.comment || 'Додати коментар'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Links */}
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">
+                          Посилання
+                          <button className="rp-card-add-btn" onClick={() => setShowAddLink(!showAddLink)}>+</button>
+                        </div>
+                        {showAddLink && (
+                          <div className="rp-card-add-link">
+                            <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://..." />
+                            <input value={linkTitle} onChange={e => setLinkTitle(e.target.value)} placeholder="Назва (необов'язково)" onKeyDown={e => { if (e.key === 'Enter') addCardLink() }} />
+                            <button onClick={addCardLink} disabled={!linkUrl.trim()}>Додати</button>
+                          </div>
+                        )}
+                        {(cardData.links || []).length === 0 && !showAddLink && (
+                          <div className="rp-card-value empty">Немає посилань</div>
+                        )}
+                        {(cardData.links || []).map(link => (
+                          <div key={link.id} className="rp-card-link">
+                            <span className="rp-card-link-text" onClick={() => shellOpen(link.url)} title={link.url}>
+                              {link.title || link.url.replace(/^https?:\/\//, '').slice(0, 40)}
+                            </span>
+                            <button className="rp-card-link-del" onClick={() => deleteCardLink(link.id)}>×</button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Open on CC link */}
+                      <div className="rp-card-section rp-card-cc-link">
+                        <span onClick={() => shellOpen(`https://cc.vidnova.app/clients/${cardData.id}`)}>
+                          Відкрити на cc.vidnova.app →
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rp-empty">Оберіть чат для перегляду картки</div>
+              )
             ) : null}
           </div>
           </div>
@@ -5301,8 +5587,8 @@ function App() {
                 key={tab}
                 className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
                 data-tab={tab}
-                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch); if (tab === 'clients' && rpClients.length === 0 && !rpClientLoading) loadRpClients(1, '') }}
-                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : 'Аналізи'}
+                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch); if (tab === 'clients' && rpClients.length === 0 && !rpClientLoading) loadRpClients(1, ''); if (tab === 'card' && selectedClient && !cardData) loadClientCard(selectedClient) }}
+                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : tab === 'card' ? 'Картка клієнта' : 'Аналізи'}
                 draggable
                 onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
                 onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
@@ -5330,10 +5616,12 @@ function App() {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 ) : tab === 'clients' ? (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                ) : tab === 'card' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M15 8h4M15 12h4"/><path d="M3 21v0c0-2.21 2.69-4 6-4s6 1.79 6 4"/></svg>
                 ) : (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
                 )}
-                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : 'Аналізи'}</span>
+                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : tab === 'card' ? 'Картка' : 'Аналізи'}</span>
               </button>
             ))}
           </div>
