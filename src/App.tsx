@@ -1217,6 +1217,7 @@ function App() {
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>('')
+  const hasMessengerAccounts = accounts.length > 0
 
   // Contacts
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -4325,8 +4326,10 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                     </svg>
-                    <span className="active-account-name">Усі месенджери</span>
-                    <span className="active-account-phone">{contacts.length} контактів</span>
+                    <span className="active-account-name">{hasMessengerAccounts ? 'Усі месенджери' : 'Немає доступних акаунтів'}</span>
+                    <span className="active-account-phone">
+                      {hasMessengerAccounts ? `${contacts.length} контактів` : 'Зверніться до адміністратора'}
+                    </span>
                   </>
                 )}
               </div>
@@ -4391,10 +4394,14 @@ function App() {
               </button>
             </div>
           ) : (
-            <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
-              Новий чат
-            </button>
+            hasMessengerAccounts ? (
+              <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+                Новий чат
+              </button>
+            ) : (
+              <div className="sidebar-empty-hint">Для цього користувача не налаштовано жодного TG/WA акаунта</div>
+            )
           )}
           {/* Contact list / Gmail email list */}
           {selectedGmail ? (
@@ -4466,83 +4473,99 @@ function App() {
                   loadMoreContacts()
                 }
               }}>
-                {contacts.map(c => {
-                  const display = resolveContactDisplay(c)
-                  return (
-                  <div
-                    key={c.client_id}
-                    className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
-                    onClick={() => selectClient(c.client_id)}
-                  >
-                    <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
-                      {photoMap[c.client_id]
-                        ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
-                        : <UserIcon />}
-                      {c.tg_peer_id && peerPresence[c.tg_peer_id]?.status === 'online' && (
-                        <span className="online-dot" />
-                      )}
-                    </div>
-                    <div className="contact-body">
-                      <div className="contact-row">
-                        <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
-                          <ContactName name={display.name} isEmployee={c.is_employee} />
-                        </span>
-                        {isUnread(c) && <span className="unread-dot" />}
-                        <span className="contact-time">
-                          {c.last_message_date && formatContactDate(c.last_message_date)}
-                        </span>
-                      </div>
-                      <div className="contact-row">
-                        <span className="contact-preview">
-                          {draftsRef.current.has(c.client_id) ? (
-                            <><span className="preview-draft">Чернетка: </span>{draftsRef.current.get(c.client_id)!.text.slice(0, 50)}</>
-                          ) : (
-                            <>{c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}{c.last_message_text?.slice(0, 60) || 'Медіа'}</>
-                          )}
-                        </span>
-                      </div>
-                      <div className="contact-meta">
-                        <span className="contact-phone">{display.subtitle}</span>
-                        <span className="contact-icons">
-                          {c.has_telegram === true && <TelegramIcon size={12} color="#2AABEE" />}
-                          {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  )
-                })}
-                {loadingMoreContacts && (
-                  <div className="loading-more">Завантаження...</div>
-                )}
-                {/* Global message search results */}
-                {globalSearchResults.length > 0 && (
+                {hasMessengerAccounts ? (
                   <>
-                    <div className="search-section-header">Повідомлення ({globalSearchResults.length})</div>
-                    {globalSearchResults.map((r, i) => (
-                      <div key={`sr-${i}`} className="contact search-result" onClick={() => {
-                        if (r.client_id) { selectClient(r.client_id); setSearch(''); setGlobalSearchResults([]) }
-                      }}>
-                        <div className="avatar"><UserIcon /></div>
+                    {contacts.map(c => {
+                      const display = resolveContactDisplay(c)
+                      return (
+                      <div
+                        key={c.client_id}
+                        className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
+                        onClick={() => selectClient(c.client_id)}
+                      >
+                        <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
+                          {photoMap[c.client_id]
+                            ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
+                            : <UserIcon />}
+                          {c.tg_peer_id && peerPresence[c.tg_peer_id]?.status === 'online' && (
+                            <span className="online-dot" />
+                          )}
+                        </div>
                         <div className="contact-body">
                           <div className="contact-row">
-                            <span className="contact-name">{r.client_name || r.client_phone || 'Невідомий'}</span>
-                            <span className="contact-time">{r.message_date && formatContactDate(r.message_date)}</span>
+                            <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
+                              <ContactName name={display.name} isEmployee={c.is_employee} />
+                            </span>
+                            {isUnread(c) && <span className="unread-dot" />}
+                            <span className="contact-time">
+                              {c.last_message_date && formatContactDate(c.last_message_date)}
+                            </span>
                           </div>
                           <div className="contact-row">
-                            <span className="contact-preview search-preview">
-                              {r.direction === 'sent' && <span className="preview-you">Ви: </span>}
-                              {r.text?.slice(0, 80)}
+                            <span className="contact-preview">
+                              {draftsRef.current.has(c.client_id) ? (
+                                <><span className="preview-draft">Чернетка: </span>{draftsRef.current.get(c.client_id)!.text.slice(0, 50)}</>
+                              ) : (
+                                <>{c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}{c.last_message_text?.slice(0, 60) || 'Медіа'}</>
+                              )}
+                            </span>
+                          </div>
+                          <div className="contact-meta">
+                            <span className="contact-phone">{display.subtitle}</span>
+                            <span className="contact-icons">
+                              {c.has_telegram === true && <TelegramIcon size={12} color="#2AABEE" />}
+                              {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
                             </span>
                           </div>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
+                    {loadingMoreContacts && (
+                      <div className="loading-more">Завантаження...</div>
+                    )}
+                    {/* Global message search results */}
+                    {globalSearchResults.length > 0 && (
+                      <>
+                        <div className="search-section-header">Повідомлення ({globalSearchResults.length})</div>
+                        {globalSearchResults.map((r, i) => (
+                          <div key={`sr-${i}`} className="contact search-result" onClick={() => {
+                            if (r.client_id) { selectClient(r.client_id); setSearch(''); setGlobalSearchResults([]) }
+                          }}>
+                            <div className="avatar"><UserIcon /></div>
+                            <div className="contact-body">
+                              <div className="contact-row">
+                                <span className="contact-name">{r.client_name || r.client_phone || 'Невідомий'}</span>
+                                <span className="contact-time">{r.message_date && formatContactDate(r.message_date)}</span>
+                              </div>
+                              <div className="contact-row">
+                                <span className="contact-preview search-preview">
+                                  {r.direction === 'sent' && <span className="preview-you">Ви: </span>}
+                                  {r.text?.slice(0, 80)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </>
+                ) : (
+                  <div className="sidebar-empty-state">
+                    <div className="sidebar-empty-state-icon">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                    </div>
+                    <div className="sidebar-empty-state-title">Немає доступних акаунтів</div>
+                    <div className="sidebar-empty-state-text">
+                      У налаштуваннях користувача не видано жодного Telegram або WhatsApp акаунта.
+                    </div>
+                  </div>
                 )}
               </div>
               <div className="sidebar-footer">
-                {contacts.length} / {contactCount} контактів
+                {hasMessengerAccounts ? `${contacts.length} / ${contactCount} контактів` : 'Попросіть адміністратора надати доступ до акаунтів'}
               </div>
             </>
           )}
