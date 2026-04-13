@@ -446,6 +446,19 @@ interface WsReactionEvent {
   client_id?: string
   account_id?: string
   tg_message_id?: number
+  message?: {
+    client_name?: string
+    phone?: string
+    tg_name?: string
+    tg_username?: string
+    account_label?: string
+    text?: string
+    has_media?: boolean
+    media_type?: string
+    direction?: string
+    _media_update?: boolean
+    [key: string]: any
+  }
   reactions?: { emoji: string; count: number; chosen?: boolean }[]
   actor?: 'self' | 'peer'
   [key: string]: any
@@ -1063,6 +1076,21 @@ function resolveContactDisplay(contact?: {
     name: name || tgName || fullName || phone || 'Невідомий',
     subtitle,
   }
+}
+
+function resolveWsContactDisplay(message?: {
+  client_name?: string
+  phone?: string
+  tg_name?: string
+  tg_username?: string
+}, contact?: Contact) {
+  return resolveContactDisplay({
+    full_name: message?.client_name || contact?.full_name,
+    phone: message?.phone || contact?.phone,
+    tg_name: message?.tg_name || contact?.tg_name,
+    tg_username: message?.tg_username || contact?.tg_username,
+    linked_phones: contact?.linked_phones,
+  })
 }
 
 // ===== SVG Icons =====
@@ -3713,7 +3741,9 @@ function App() {
             if (msg.direction === 'received' && !isMediaUpdate) {
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
-                const sender = msg.client_name || msg.phone || 'Новий контакт'
+                const matchedContact = clientId ? contactsRef.current.find(c => c.client_id === clientId) : undefined
+                const senderDisplay = resolveWsContactDisplay(msg, matchedContact)
+                const sender = senderDisplay.name || 'Новий контакт'
                 const account = msg.account_label || ''
                 const body = msg.text?.slice(0, 120) || ''
                 // Windows notification (respects per-account popup toggle)
@@ -3722,6 +3752,20 @@ function App() {
                 }
                 // In-app toast
                 addToastRef.current(clientId || '', accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
+
+                // If the contact is not in the sidebar yet, keep enough local data
+                // so toast click can still open the chat immediately.
+                if (clientId && !matchedContact) {
+                  setNewChatClient(prev =>
+                    prev?.client_id === clientId
+                      ? prev
+                      : {
+                          client_id: clientId,
+                          phone: senderDisplay.subtitle || msg.phone || '',
+                          full_name: sender,
+                        }
+                  )
+                }
 
                 // Track per-account unread
                 if (accountId) {
