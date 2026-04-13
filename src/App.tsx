@@ -65,9 +65,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.13.16': [
+  '0.13.17': [
+    'Чернетки — текст зберігається при перемиканні чатів та відновлюється автоматично',
+    'Чернетки — "Чернетка:" відображається в списку контактів (червоний індикатор)',
+    'Закріплені повідомлення — банер зверху чату з текстом та кліком для прокрутки',
     'Стікери — зображення стікера (thumbnail) відображається великим без фону бабла',
-    'Стікери — прозорий бабл для стікерів з картинкою (як в Telegram)',
   ],
   '0.13.15': [
     'Альбоми — фото/відео з одного media_group відображаються як єдиний блок (grid 2×2)',
@@ -1259,6 +1261,8 @@ function App() {
   const [typingIndicators, setTypingIndicators] = useState<Record<string, number>>({})
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
+  // Drafts: save text per client when switching chats
+  const draftsRef = useRef<Map<string, { text: string; replyTo?: any }>>(new Map())
   // Chat search
   const [chatSearchOpen, setChatSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
@@ -1981,6 +1985,7 @@ function App() {
       clearAttachment()
       setEditingMsg(null)
       ;(window as any).__replyTo = null
+      if (selectedClient) draftsRef.current.delete(selectedClient)
       if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
       loadMessages(selectedClient)
       telemetry.trackChatWrite(selectedClient, selectedAccount, filesToSend.length > 0 ? 'media' : 'text')
@@ -3627,8 +3632,26 @@ function App() {
     return result
   }, [messages, clientNotes])
 
+  // Pinned message — find last pinned message in current chat
+  const pinnedMessage = useMemo(() => {
+    return messages.find(m => m.is_pinned) || null
+  }, [messages])
+
   // Select client handler
   const selectClient = useCallback((clientId: string) => {
+    // Save draft for current client before switching
+    if (selectedClient && messageText.trim()) {
+      draftsRef.current.set(selectedClient, { text: messageText, replyTo: (window as any).__replyTo || undefined })
+    } else if (selectedClient) {
+      draftsRef.current.delete(selectedClient)
+    }
+    // Restore draft for new client
+    const draft = draftsRef.current.get(clientId)
+    setMessageText(draft?.text || '')
+    if (draft?.replyTo) (window as any).__replyTo = draft.replyTo
+    else (window as any).__replyTo = null
+    setEditingMsg(null)
+
     setSelectedClient(clientId)
     setSelectedGmail(null)
     setGmailSelectedMsg(null)
@@ -3644,7 +3667,7 @@ function App() {
     const contact = contacts.find(c => c.client_id === clientId)
     if (!contact?.is_employee) loadClientCard(clientId)
     telemetry.trackChatView(clientId, selectedAccount)
-  }, [loadMessages, loadClientNotes, loadClientCard, selectedAccount])
+  }, [loadMessages, loadClientNotes, loadClientCard, selectedAccount, selectedClient, messageText])
 
   const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
     if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
@@ -4098,8 +4121,11 @@ function App() {
                       </div>
                       <div className="contact-row">
                         <span className="contact-preview">
-                          {c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}
-                          {c.last_message_text?.slice(0, 60) || 'Медіа'}
+                          {draftsRef.current.has(c.client_id) ? (
+                            <><span className="preview-draft">Чернетка: </span>{draftsRef.current.get(c.client_id)!.text.slice(0, 50)}</>
+                          ) : (
+                            <>{c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}{c.last_message_text?.slice(0, 60) || 'Медіа'}</>
+                          )}
                         </span>
                       </div>
                       <div className="contact-meta">
@@ -4434,6 +4460,17 @@ function App() {
                 </div>
               )}
 
+              {pinnedMessage && (
+                <div className="pinned-banner" onClick={() => {
+                  const el = document.querySelector(`[data-msg-id="${pinnedMessage.id}"]`)
+                  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('search-active'); setTimeout(() => el.classList.remove('search-active'), 2000) }
+                }}>
+                  <div className="pinned-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>
+                  </div>
+                  <div className="pinned-text">{pinnedMessage.text?.slice(0, 100) || (pinnedMessage.has_media ? `📎 ${pinnedMessage.media_type || 'Медіа'}` : 'Закріплене повідомлення')}</div>
+                </div>
+              )}
               <div className={`chat-messages${chatDropHighlight ? ' drop-highlight' : ''}`}
                 ref={chatContainerRef}
                 style={

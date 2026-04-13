@@ -662,6 +662,36 @@ body {
   color: var(--primary);
   font-weight: 500;
 }
+.preview-draft {
+  color: oklch(0.65 0.18 25);
+  font-weight: 500;
+}
+
+/* Pinned message banner */
+.pinned-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: color-mix(in oklch, var(--primary) 12%, var(--card));
+  border-left: 3px solid var(--primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 0.15s;
+}
+.pinned-banner:hover {
+  background: color-mix(in oklch, var(--primary) 20%, var(--card));
+}
+.pinned-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.pinned-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
 
 .contact-meta {
   display: flex;
