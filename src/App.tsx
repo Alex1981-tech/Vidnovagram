@@ -55,6 +55,28 @@ function saveSettings(s: AppSettings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
 }
 
+function formatPresence(p: { status: string; was_online: number | null } | undefined): { text: string; isOnline: boolean } {
+  if (!p) return { text: '', isOnline: false }
+  if (p.status === 'online') return { text: 'онлайн', isOnline: true }
+  if (p.status === 'recently') return { text: 'був(ла) нещодавно', isOnline: false }
+  if (p.status === 'last_week') return { text: 'був(ла) цього тижня', isOnline: false }
+  if (p.status === 'last_month') return { text: 'був(ла) цього місяця', isOnline: false }
+  if (p.status === 'offline' && p.was_online) {
+    const d = new Date(p.was_online * 1000)
+    const now = new Date()
+    const isToday = d.toDateString() === now.toDateString()
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const isYesterday = d.toDateString() === yesterday.toDateString()
+    const time = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
+    if (isToday) return { text: `був(ла) о ${time}`, isOnline: false }
+    if (isYesterday) return { text: `був(ла) вчора о ${time}`, isOnline: false }
+    const date = d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })
+    return { text: `був(ла) ${date} о ${time}`, isOnline: false }
+  }
+  return { text: '', isOnline: false }
+}
+
 interface Wallpaper {
   id: string
   full: string
@@ -65,6 +87,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.19': [
+    'Presence — зелена точка онлайн-статусу на аватарці контакта',
+    'Last seen — «був(ла) о HH:MM» під іменем в заголовку чату',
+    'Статус оновлюється в реальному часі через WebSocket',
+  ],
   '0.13.18': [
     'Закріпити/Відкріпити — нова дія в контекстному меню повідомлення',
     'Закріплення миттєво оновлює банер та стан в чаті',
@@ -1263,6 +1290,8 @@ function App() {
 
   // Typing indicators: { clientId: timestamp }
   const [typingIndicators, setTypingIndicators] = useState<Record<string, number>>({})
+  // Presence: { tg_peer_id: { status, was_online } }
+  const [peerPresence, setPeerPresence] = useState<Record<number, { status: string; was_online: number | null }>>({})
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
   // Drafts: save text per client when switching chats
@@ -3471,6 +3500,16 @@ function App() {
               }, 6000)
             }
           }
+
+          if (data.type === 'presence_update') {
+            const peerId = data.tg_peer_id
+            if (peerId) {
+              setPeerPresence(prev => ({
+                ...prev,
+                [peerId]: { status: data.status || 'unknown', was_online: data.was_online || null },
+              }))
+            }
+          }
         } catch { /* ignore */ }
       }
 
@@ -4134,6 +4173,9 @@ function App() {
                       {photoMap[c.client_id]
                         ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
                         : <UserIcon />}
+                      {c.tg_peer_id && peerPresence[c.tg_peer_id]?.status === 'online' && (
+                        <span className="online-dot" />
+                      )}
                     </div>
                     <div className="contact-body">
                       <div className="contact-row">
@@ -4359,6 +4401,9 @@ function App() {
                   {selectedClient && photoMap[selectedClient]
                     ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
+                  {chatContact?.tg_peer_id && peerPresence[chatContact.tg_peer_id]?.status === 'online' && (
+                    <span className="online-dot online-dot-header" />
+                  )}
                 </div>
                 <div className="chat-header-info" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
                   <div className="chat-header-name">
@@ -4367,9 +4412,19 @@ function App() {
                   <div className="chat-header-phone">
                     {selectedClient && typingIndicators[selectedClient] ? (
                       <span className="typing-indicator">набирає повідомлення<span className="typing-dots"><span>.</span><span>.</span><span>.</span></span></span>
-                    ) : (
-                      clientPhone || chatContact?.phone
-                    )}
+                    ) : (() => {
+                      const peerId = chatContact?.tg_peer_id
+                      const pr = peerId ? peerPresence[peerId] : undefined
+                      const { text: presText, isOnline } = formatPresence(pr)
+                      if (presText) {
+                        return (
+                          <span className={isOnline ? 'presence-online' : 'presence-offline'}>
+                            {presText}
+                          </span>
+                        )
+                      }
+                      return clientPhone || chatContact?.phone
+                    })()}
                   </div>
                 </div>
                 <div className="chat-header-right">

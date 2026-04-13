@@ -6189,6 +6189,36 @@ body {
   40% { opacity: 1; }
 }
 
+/* Presence / Online status */
+.presence-online {
+  color: #22c55e;
+  font-size: 12px;
+}
+.presence-offline {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.online-dot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 10px;
+  height: 10px;
+  background: #22c55e;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  z-index: 2;
+}
+.online-dot-header {
+  width: 12px;
+  height: 12px;
+  bottom: 0;
+  right: 0;
+}
+.avatar, .chat-header-avatar {
+  position: relative;
+}
+
 /* Reply / Edit bar above input */
 .reply-edit-bar {
   display: flex;
