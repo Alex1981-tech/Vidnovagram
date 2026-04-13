@@ -5088,6 +5088,22 @@ body {
   background: color-mix(in oklch, var(--primary) 5%, transparent);
 }
 
+/* ── Lab drag ghost (mouse-based DnD) ── */
+.lab-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 99999;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  opacity: .9;
+}
+
 /* ── Contacts Tab ── */
 .rp-clients {
   display: flex;

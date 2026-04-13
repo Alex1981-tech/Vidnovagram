@@ -1088,8 +1088,6 @@ function App() {
   const rpAudioRef = useRef<HTMLAudioElement | null>(null)
   const dragCatRef = useRef<string | null>(null)
   const dragTabRef = useRef<string | null>(null)
-  const dragLabPatientRef = useRef<LabPatient | null>(null)
-  const lastDraggedLabRef = useRef<LabPatient | null>(null) // backup: survives onDragEnd
   const [chatDropHighlight, setChatDropHighlight] = useState(false)
   const [labSendModal, setLabSendModal] = useState<LabPatient | null>(null)
   const [labSendSelected, setLabSendSelected] = useState<Set<string | number>>(new Set())
@@ -1317,22 +1315,11 @@ function App() {
   // Global drag/drop handler for templates and lab patients
   // WebView2 doesn't reliably fire onDrop on nested scrollable containers
   useEffect(() => {
-    let _dragOverLogCount = 0
     const handleDragOver = (e: DragEvent) => {
-      const hasClient = !!selectedClientRef.current
-      const hasLab = !!dragLabPatientRef.current || !!lastDraggedLabRef.current
-      const hasTpl = !!dragTplRef.current || !!lastDraggedTplRef.current
-      const hasFiles = !!(e.dataTransfer && e.dataTransfer.types.includes('Files'))
-      if (_dragOverLogCount++ < 3) console.log('dragOver:', { hasClient, hasLab, hasTpl, hasFiles, target: (e.target as HTMLElement)?.className?.slice(0,40) })
-      // Lab patients can be dropped even without a selected client (modal will open)
-      if (hasLab) {
-        e.preventDefault()
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-        if (hasClient) setChatDropHighlight(true)
-        return
-      }
-      if (!hasClient) return
-      if (hasTpl || hasFiles) {
+      if (!selectedClientRef.current) return
+      // Templates or external files (lab patients use mouse-based drag)
+      if (dragTplRef.current || lastDraggedTplRef.current ||
+          (e.dataTransfer && e.dataTransfer.types.includes('Files'))) {
         e.preventDefault()
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
         setChatDropHighlight(true)
@@ -1344,17 +1331,6 @@ function App() {
     }
     const handleDrop = (e: DragEvent) => {
       setChatDropHighlight(false)
-      // Lab patient drag — works even without selected client (modal opens independently)
-      const labPatient = dragLabPatientRef.current || lastDraggedLabRef.current
-      if (labPatient) {
-        e.preventDefault()
-        e.stopPropagation()
-        dragLabPatientRef.current = null
-        lastDraggedLabRef.current = null
-        setLabSendModal(labPatient)
-        setLabSendSelected(new Set(labPatient.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
-        return
-      }
       if (!selectedClientRef.current) return
       // Template drag — check refs + dataTransfer fallback
       let tpl = dragTplRef.current || lastDraggedTplRef.current
@@ -5083,18 +5059,49 @@ function App() {
                   {labPatients.map(p => (
                     <div key={p.key} className={`lab-patient${expandedLabPatient === p.key ? ' lab-patient-active' : ''}`}
                       ref={expandedLabPatient === p.key ? el => { if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100) } : undefined}
-                      draggable
-                      onDragStart={e => {
-                        dragLabPatientRef.current = p
-                        lastDraggedLabRef.current = p
-                        e.dataTransfer.effectAllowed = 'copy'
-                        e.dataTransfer.setData('text/plain', p.name || '')
-                        ;(e.currentTarget as HTMLElement).classList.add('dragging')
-                        console.log('Lab drag start:', p.name, 'selectedClient:', selectedClient)
-                      }}
-                      onDragEnd={e => {
-                        dragLabPatientRef.current = null
-                        ;(e.currentTarget as HTMLElement).classList.remove('dragging')
+                      onMouseDown={e => {
+                        if (e.button !== 0) return
+                        const startX = e.clientX, startY = e.clientY
+                        let dragging = false
+                        let ghost: HTMLDivElement | null = null
+                        const onMove = (me: MouseEvent) => {
+                          if (!dragging && Math.abs(me.clientX - startX) + Math.abs(me.clientY - startY) > 8) {
+                            dragging = true
+                            ghost = document.createElement('div')
+                            ghost.className = 'lab-drag-ghost'
+                            ghost.textContent = `📋 ${p.name || 'Аналізи'}`
+                            document.body.appendChild(ghost)
+                          }
+                          if (dragging && ghost) {
+                            ghost.style.left = me.clientX + 12 + 'px'
+                            ghost.style.top = me.clientY + 12 + 'px'
+                            const chatEl = document.querySelector('.chat-messages')
+                            if (chatEl) {
+                              const r = chatEl.getBoundingClientRect()
+                              const over = me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top && me.clientY <= r.bottom
+                              chatEl.classList.toggle('drop-highlight', over)
+                            }
+                          }
+                        }
+                        const onUp = (ue: MouseEvent) => {
+                          document.removeEventListener('mousemove', onMove)
+                          document.removeEventListener('mouseup', onUp)
+                          if (ghost) { ghost.remove(); ghost = null }
+                          const chatEl = document.querySelector('.chat-messages')
+                          if (chatEl) chatEl.classList.remove('drop-highlight')
+                          if (dragging) {
+                            const chatEl2 = document.querySelector('.chat-messages')
+                            if (chatEl2) {
+                              const r = chatEl2.getBoundingClientRect()
+                              if (ue.clientX >= r.left && ue.clientX <= r.right && ue.clientY >= r.top && ue.clientY <= r.bottom) {
+                                setLabSendModal(p)
+                                setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
+                              }
+                            }
+                          }
+                        }
+                        document.addEventListener('mousemove', onMove)
+                        document.addEventListener('mouseup', onUp)
                       }}
                     >
                       <div className="lab-patient-header" onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}>
@@ -5141,9 +5148,20 @@ function App() {
                                     const blob = mediaBlobMap[fullKey] || await loadMediaBlob(fullKey, r.media_file)
                                     if (blob) setLightboxSrc(blob)
                                   } else {
-                                    // PDF, documents, etc — save to disk and open
-                                    const filename = r.media_file.split('/').pop() || `${r.lab_result_type || 'lab'}.${r.media_file.split('.').pop() || 'file'}`
-                                    await downloadMedia(r.media_file, filename)
+                                    // PDF, documents, etc — download to temp dir and open
+                                    try {
+                                      const url = r.media_file.startsWith('http') ? r.media_file : `${API_BASE.replace('/api', '')}${r.media_file}`
+                                      const resp = await authFetch(url, auth!.token)
+                                      if (resp.ok) {
+                                        const blob = await resp.blob()
+                                        const filename = r.media_file.split('/').pop() || `${r.lab_result_type || 'lab'}.${r.media_file.split('.').pop() || 'file'}`
+                                        const tmp = await tempDir()
+                                        const filePath = await join(tmp, filename)
+                                        const buf = new Uint8Array(await blob.arrayBuffer())
+                                        await writeFile(filePath, buf)
+                                        await shellOpen(filePath)
+                                      }
+                                    } catch (err) { console.error('Lab file open error:', err) }
                                   }
                                 }}
                               >
@@ -6922,7 +6940,8 @@ function App() {
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
                     } else {
-                      if (t.accountId) setSelectedAccount(t.accountId)
+                      // Switch to the account that received the message
+                      if (t.accountId && t.accountId !== selectedAccount) setSelectedAccount(t.accountId)
                       selectClient(t.clientId)
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
