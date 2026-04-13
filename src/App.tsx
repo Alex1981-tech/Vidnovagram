@@ -1324,8 +1324,15 @@ function App() {
       const hasTpl = !!dragTplRef.current || !!lastDraggedTplRef.current
       const hasFiles = !!(e.dataTransfer && e.dataTransfer.types.includes('Files'))
       if (_dragOverLogCount++ < 3) console.log('dragOver:', { hasClient, hasLab, hasTpl, hasFiles, target: (e.target as HTMLElement)?.className?.slice(0,40) })
+      // Lab patients can be dropped even without a selected client (modal will open)
+      if (hasLab) {
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+        if (hasClient) setChatDropHighlight(true)
+        return
+      }
       if (!hasClient) return
-      if (hasTpl || hasLab || hasFiles) {
+      if (hasTpl || hasFiles) {
         e.preventDefault()
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
         setChatDropHighlight(true)
@@ -1337,8 +1344,7 @@ function App() {
     }
     const handleDrop = (e: DragEvent) => {
       setChatDropHighlight(false)
-      if (!selectedClientRef.current) return
-      // Lab patient drag — check ref + backup (onDragEnd may fire before drop in WebView2)
+      // Lab patient drag — works even without selected client (modal opens independently)
       const labPatient = dragLabPatientRef.current || lastDraggedLabRef.current
       if (labPatient) {
         e.preventDefault()
@@ -1349,6 +1355,7 @@ function App() {
         setLabSendSelected(new Set(labPatient.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
         return
       }
+      if (!selectedClientRef.current) return
       // Template drag — check refs + dataTransfer fallback
       let tpl = dragTplRef.current || lastDraggedTplRef.current
       if (!tpl && e.dataTransfer) {
