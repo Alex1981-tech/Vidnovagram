@@ -4401,7 +4401,7 @@ function App() {
                   {selectedClient && photoMap[selectedClient]
                     ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
-                  {chatContact?.tg_peer_id && peerPresence[chatContact.tg_peer_id]?.status === 'online' && (
+                  {(chatContact as any)?.tg_peer_id && peerPresence[(chatContact as any).tg_peer_id]?.status === 'online' && (
                     <span className="online-dot online-dot-header" />
                   )}
                 </div>
@@ -4413,7 +4413,7 @@ function App() {
                     {selectedClient && typingIndicators[selectedClient] ? (
                       <span className="typing-indicator">набирає повідомлення<span className="typing-dots"><span>.</span><span>.</span><span>.</span></span></span>
                     ) : (() => {
-                      const peerId = chatContact?.tg_peer_id
+                      const peerId = (chatContact as any)?.tg_peer_id
                       const pr = peerId ? peerPresence[peerId] : undefined
                       const { text: presText, isOnline } = formatPresence(pr)
                       if (presText) {
