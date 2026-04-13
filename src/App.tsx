@@ -1089,6 +1089,7 @@ function App() {
   const dragCatRef = useRef<string | null>(null)
   const dragTabRef = useRef<string | null>(null)
   const dragLabPatientRef = useRef<LabPatient | null>(null)
+  const lastDraggedLabRef = useRef<LabPatient | null>(null) // backup: survives onDragEnd
   const [chatDropHighlight, setChatDropHighlight] = useState(false)
   const [labSendModal, setLabSendModal] = useState<LabPatient | null>(null)
   const [labSendSelected, setLabSendSelected] = useState<Set<string | number>>(new Set())
@@ -1248,6 +1249,7 @@ function App() {
   const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
   const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
   const [gmailEmails, setGmailEmails] = useState<GmailEmail[]>([])
+  const pendingGmailMsgRef = useRef<string | null>(null) // select after emails load
   const [gmailTotal, setGmailTotal] = useState(0)
   const [gmailPage, setGmailPage] = useState(1)
   const [gmailSearch, setGmailSearch] = useState('')
@@ -1318,7 +1320,7 @@ function App() {
     let _dragOverLogCount = 0
     const handleDragOver = (e: DragEvent) => {
       const hasClient = !!selectedClientRef.current
-      const hasLab = !!dragLabPatientRef.current
+      const hasLab = !!dragLabPatientRef.current || !!lastDraggedLabRef.current
       const hasTpl = !!dragTplRef.current || !!lastDraggedTplRef.current
       const hasFiles = !!(e.dataTransfer && e.dataTransfer.types.includes('Files'))
       if (_dragOverLogCount++ < 3) console.log('dragOver:', { hasClient, hasLab, hasTpl, hasFiles, target: (e.target as HTMLElement)?.className?.slice(0,40) })
@@ -1336,14 +1338,15 @@ function App() {
     const handleDrop = (e: DragEvent) => {
       setChatDropHighlight(false)
       if (!selectedClientRef.current) return
-      // Lab patient drag
-      if (dragLabPatientRef.current) {
+      // Lab patient drag — check ref + backup (onDragEnd may fire before drop in WebView2)
+      const labPatient = dragLabPatientRef.current || lastDraggedLabRef.current
+      if (labPatient) {
         e.preventDefault()
         e.stopPropagation()
-        const p = dragLabPatientRef.current
         dragLabPatientRef.current = null
-        setLabSendModal(p)
-        setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
+        lastDraggedLabRef.current = null
+        setLabSendModal(labPatient)
+        setLabSendSelected(new Set(labPatient.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
         return
       }
       // Template drag — check refs + dataTransfer fallback
@@ -3636,6 +3639,15 @@ function App() {
     finally { setGmailLoading(false) }
   }, [auth?.token, selectedGmail])
 
+  // Auto-select pending Gmail message after emails load (from toast click)
+  useEffect(() => {
+    if (pendingGmailMsgRef.current && gmailEmails.length > 0) {
+      const email = gmailEmails.find(e => e.id === pendingGmailMsgRef.current)
+      if (email) setGmailSelectedMsg(email)
+      pendingGmailMsgRef.current = null
+    }
+  }, [gmailEmails])
+
   const sendGmailEmail = useCallback(async () => {
     if (!auth?.token || !selectedGmail || !composeTo.trim()) return
     setComposeSending(true)
@@ -5067,6 +5079,7 @@ function App() {
                       draggable
                       onDragStart={e => {
                         dragLabPatientRef.current = p
+                        lastDraggedLabRef.current = p
                         e.dataTransfer.effectAllowed = 'copy'
                         e.dataTransfer.setData('text/plain', p.name || '')
                         ;(e.currentTarget as HTMLElement).classList.add('dragging')
@@ -5117,13 +5130,13 @@ function App() {
                                 className="lab-result-item"
                                 onClick={async () => {
                                   if (!r.media_file) return
-                                  if (isPdf) {
-                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
-                                  } else if (isImg) {
+                                  if (isImg) {
                                     const blob = mediaBlobMap[fullKey] || await loadMediaBlob(fullKey, r.media_file)
                                     if (blob) setLightboxSrc(blob)
                                   } else {
-                                    shellOpen(`${API_BASE.replace('/api', '')}${r.media_file}`)
+                                    // PDF, documents, etc — save to disk and open
+                                    const filename = r.media_file.split('/').pop() || `${r.lab_result_type || 'lab'}.${r.media_file.split('.').pop() || 'file'}`
+                                    await downloadMedia(r.media_file, filename)
                                   }
                                 }}
                               >
@@ -6890,9 +6903,15 @@ function App() {
                       setExpandedToastGroup(gk)
                     } else if (isGmail) {
                       // Gmail toast click → open Gmail account and select email
-                      handleGmailAccountClick(t.accountId)
-                      const email = gmailEmails.find(e => e.id === t.clientId)
-                      if (email) setGmailSelectedMsg(email)
+                      if (selectedGmail === t.accountId) {
+                        // Already on this account — just find the email
+                        const email = gmailEmails.find(e => e.id === t.clientId)
+                        if (email) setGmailSelectedMsg(email)
+                        else { pendingGmailMsgRef.current = t.clientId; loadGmailEmails(t.accountId, 1, '', '') }
+                      } else {
+                        pendingGmailMsgRef.current = t.clientId
+                        handleGmailAccountClick(t.accountId)
+                      }
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
                     } else {
