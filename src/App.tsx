@@ -8,6 +8,7 @@ import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
+import { AudioEngine, voipCall, voipAnswer, voipHangup, voipUploadRecording, type VoIPCall } from './voip'
 import lottie from 'lottie-web'
 import pako from 'pako'
 import './App.css'
@@ -1187,6 +1188,24 @@ const XIcon = () => (
     <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
   </svg>
 )
+const PhoneIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+  </svg>
+)
+const PhoneOffIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67"/>
+    <path d="M14.118 7.813a2 2 0 0 1-.45 2.11L12.4 11.2"/>
+    <path d="M2.3 2.3a2 2 0 0 1 1.81-1.3h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81"/>
+    <line x1="2" x2="22" y1="2" y2="22"/>
+  </svg>
+)
+const MicOffIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>
+  </svg>
+)
 // Notification helper
 async function showNotification(title: string, body: string) {
   try {
@@ -1399,6 +1418,16 @@ function App() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const notifAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  // VoIP state
+  const [incomingCall, setIncomingCall] = useState<(VoIPCall & { account_label?: string }) | null>(null)
+  const [activeCall, setActiveCall] = useState<VoIPCall | null>(null)
+  const [callDuration, setCallDuration] = useState(0)
+  const [callMuted, setCallMuted] = useState(false)
+  const [callMinimized, setCallMinimized] = useState(false)
+  const audioEngineRef = useRef<AudioEngine | null>(null)
+  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null)
   const _linkPreviewCache = useRef<Map<string, LinkPreview | null>>(new Map())
   linkPreviewCacheRef = _linkPreviewCache
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -3877,6 +3906,63 @@ function App() {
               }))
             }
           }
+
+          // --- VoIP events ---
+          if (data.type === 'voip_incoming') {
+            const call = data.call as VoIPCall
+            setIncomingCall({ ...call, account_label: data.account_label || '' })
+            // Play ringtone
+            try {
+              if (!ringtoneRef.current) {
+                ringtoneRef.current = new Audio('/sounds/ringtone.mp3')
+                ringtoneRef.current.loop = true
+              }
+              ringtoneRef.current.play().catch(() => {})
+            } catch {}
+            // Auto-dismiss after 30s
+            setTimeout(() => {
+              setIncomingCall(prev => prev?.id === call.id ? null : prev)
+              ringtoneRef.current?.pause()
+            }, 30000)
+          }
+
+          if (data.type === 'voip_state_change') {
+            const call = data.call as VoIPCall
+            setActiveCall(prev => prev?.id === call.id ? { ...prev, ...call } : prev)
+            if (call.state === 'connected' && !audioEngineRef.current) {
+              // Start audio engine when call connects
+              const engine = new AudioEngine()
+              audioEngineRef.current = engine
+              engine.start(call.id, auth?.token || '').catch(e => console.error('[VoIP] Audio start failed:', e))
+              // Start duration timer
+              setCallDuration(0)
+              callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
+            }
+          }
+
+          if (data.type === 'voip_ended') {
+            const call = data.call as VoIPCall
+            // Stop audio engine + upload recording
+            if (audioEngineRef.current) {
+              const recording = audioEngineRef.current.stop()
+              audioEngineRef.current = null
+              if (recording && auth?.token) {
+                const af = (u: string, o?: RequestInit) => authFetch(u, auth!.token, o)
+                voipUploadRecording(af, call.id, recording, callDuration).catch(() => {})
+              }
+            }
+            // Clear timer
+            if (callTimerRef.current) {
+              clearInterval(callTimerRef.current)
+              callTimerRef.current = null
+            }
+            setActiveCall(null)
+            setIncomingCall(null)
+            setCallDuration(0)
+            setCallMuted(false)
+            setCallMinimized(false)
+            ringtoneRef.current?.pause()
+          }
         } catch { /* ignore */ }
       }
 
@@ -4300,12 +4386,159 @@ function App() {
     setAccountUnreads(prev => { const n = { ...prev }; delete n[accountId]; return n })
   }, [])
 
+  // VoIP handlers
+  const makeVoipAuthFetch = useCallback(() => {
+    return (url: string, opts?: RequestInit) => authFetch(url, auth?.token || '', opts)
+  }, [auth?.token])
+
+  const handleVoipCall = useCallback(async (accountId: string, peerId: number) => {
+    try {
+      const af = makeVoipAuthFetch()
+      const call = await voipCall(af, accountId, peerId)
+      setActiveCall(call)
+    } catch (e: any) {
+      console.error('[VoIP] Call failed:', e.message)
+    }
+  }, [makeVoipAuthFetch])
+
+  const handleVoipAnswer = useCallback(async () => {
+    if (!incomingCall) return
+    try {
+      ringtoneRef.current?.pause()
+      const af = makeVoipAuthFetch()
+      const call = await voipAnswer(af, incomingCall.id)
+      setActiveCall(call)
+      setIncomingCall(null)
+    } catch (e: any) {
+      console.error('[VoIP] Answer failed:', e.message)
+    }
+  }, [incomingCall, makeVoipAuthFetch])
+
+  const handleVoipHangup = useCallback(async () => {
+    const call = activeCall || incomingCall
+    if (!call) return
+    try {
+      ringtoneRef.current?.pause()
+      const af = makeVoipAuthFetch()
+      await voipHangup(af, call.id)
+    } catch (e: any) {
+      console.error('[VoIP] Hangup failed:', e.message)
+    }
+    // Stop engine
+    if (audioEngineRef.current) {
+      const recording = audioEngineRef.current.stop()
+      audioEngineRef.current = null
+      if (recording && call) {
+        const af = makeVoipAuthFetch()
+        voipUploadRecording(af, call.id, recording, callDuration).catch(() => {})
+      }
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current)
+      callTimerRef.current = null
+    }
+    setActiveCall(null)
+    setIncomingCall(null)
+    setCallDuration(0)
+    setCallMuted(false)
+    setCallMinimized(false)
+  }, [activeCall, incomingCall, callDuration, makeVoipAuthFetch])
+
+  const handleVoipDecline = useCallback(async () => {
+    if (!incomingCall) return
+    try {
+      ringtoneRef.current?.pause()
+      const af = makeVoipAuthFetch()
+      await voipHangup(af, incomingCall.id)
+    } catch (e: any) {
+      console.error('[VoIP] Decline failed:', e.message)
+    }
+    setIncomingCall(null)
+  }, [incomingCall, makeVoipAuthFetch])
+
+  const handleVoipToggleMute = useCallback(() => {
+    setCallMuted(m => {
+      const next = !m
+      audioEngineRef.current?.setMuted(next)
+      return next
+    })
+  }, [])
+
+  const formatCallDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
   if (!auth?.authorized) {
     return <LoginScreen onLogin={login} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
   }
 
   return (
     <div className="app">
+      {/* === VoIP Incoming Call Overlay === */}
+      {incomingCall && !activeCall && (
+        <div className="voip-incoming-overlay">
+          <div className="voip-incoming-card">
+            <div className="voip-incoming-icon">📞</div>
+            <div className="voip-incoming-info">
+              <div className="voip-incoming-name">{incomingCall.peer_name || incomingCall.peer_phone || 'Невідомий'}</div>
+              {incomingCall.peer_phone && <div className="voip-incoming-phone">{incomingCall.peer_phone}</div>}
+              <div className="voip-incoming-account">{incomingCall.account_label || ''}</div>
+            </div>
+            <div className="voip-incoming-actions">
+              <button className="voip-btn voip-btn-accept" onClick={handleVoipAnswer} title="Прийняти">
+                <PhoneIcon />
+              </button>
+              <button className="voip-btn voip-btn-decline" onClick={handleVoipDecline} title="Відхилити">
+                <PhoneOffIcon />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === VoIP Active Call Overlay === */}
+      {activeCall && !callMinimized && (
+        <div className="voip-active-overlay">
+          <div className="voip-active-card">
+            <div className="voip-active-status">
+              {activeCall.state === 'connected' ? 'Розмова' : activeCall.state === 'ringing' ? 'Дзвонить...' : activeCall.state === 'connecting' ? "З'єднання..." : activeCall.state}
+            </div>
+            <div className="voip-active-name">{activeCall.peer_name || activeCall.peer_phone || 'Абонент'}</div>
+            {activeCall.peer_phone && <div className="voip-active-phone">{activeCall.peer_phone}</div>}
+            <div className="voip-active-timer">{formatCallDuration(callDuration)}</div>
+            <div className="voip-active-actions">
+              <button
+                className={`voip-btn voip-btn-mute ${callMuted ? 'voip-btn-muted' : ''}`}
+                onClick={handleVoipToggleMute}
+                title={callMuted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
+              >
+                {callMuted ? <MicOffIcon /> : <MicIcon />}
+              </button>
+              <button className="voip-btn voip-btn-hangup" onClick={handleVoipHangup} title="Завершити">
+                <PhoneOffIcon />
+              </button>
+              <button className="voip-btn voip-btn-minimize" onClick={() => setCallMinimized(true)} title="Мінімізувати">
+                ▼
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === VoIP Minimized Call Pill === */}
+      {activeCall && callMinimized && (
+        <div className="voip-pill" onClick={() => setCallMinimized(false)}>
+          <span className="voip-pill-dot" />
+          <span className="voip-pill-name">{activeCall.peer_name || activeCall.peer_phone || 'Дзвінок'}</span>
+          <span className="voip-pill-timer">{formatCallDuration(callDuration)}</span>
+          <button className="voip-pill-hangup" onClick={e => { e.stopPropagation(); handleVoipHangup() }}>
+            <PhoneOffIcon />
+          </button>
+        </div>
+      )}
+
       {/* Compact Top Bar */}
       <div className="top-bar">
         <div className="top-bar-left">
@@ -4917,6 +5150,15 @@ function App() {
                   </div>
                 </div>
                 <div className="chat-header-right">
+                  {(chatContact as any)?.source === 'telegram' && (chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (
+                    <button
+                      className="voip-call-btn"
+                      onClick={() => handleVoipCall(selectedAccount, (chatContact as any).tg_peer_id)}
+                      title="Голосовий дзвінок"
+                    >
+                      <PhoneIcon />
+                    </button>
+                  )}
                   <button className="chat-search-btn" onClick={() => setChatSearchOpen(o => !o)} title="Пошук у чаті">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   </button>
