@@ -348,6 +348,8 @@ interface Contact {
   client_id: string
   phone: string
   full_name: string
+  tg_name?: string
+  tg_username?: string
   message_count: number
   last_message_date: string
   last_message_text: string
@@ -356,7 +358,7 @@ interface Contact {
   has_whatsapp?: boolean
   is_employee?: boolean
   tg_peer_id?: number
-  linked_phones?: { id: string; phone: string; full_name: string }[]
+  linked_phones?: { id: string; phone: string; full_name: string; tg_name?: string; tg_username?: string }[]
 }
 
 interface ChatMessage {
@@ -1000,6 +1002,67 @@ function formatDateSeparator(dateStr: string): string {
 function ContactName({ name, isEmployee }: { name: string; isEmployee?: boolean }) {
   if (!isEmployee || !name.trim()) return <>{name}</>
   return <span className="employee-name">{name}</span>
+}
+
+function isPlaceholderPhone(phone?: string) {
+  const value = (phone || '').trim().toLowerCase()
+  return value.startsWith('tg_') || value.startsWith('wa_')
+}
+
+function isPlaceholderName(name?: string) {
+  const value = (name || '').trim()
+  return /^TG-\d+$/i.test(value) || /^WA-\d+$/i.test(value)
+}
+
+function resolveLinkedDisplay(linked?: { phone: string; full_name?: string; tg_name?: string; tg_username?: string }[]) {
+  if (!linked?.length) return null
+  const preferred =
+    linked.find(lp => (lp.tg_name || '').trim())
+    || linked.find(lp => (lp.full_name || '').trim())
+    || linked.find(lp => (lp.tg_username || '').trim())
+    || linked.find(lp => (lp.phone || '').trim())
+    || null
+  if (!preferred) return null
+  const username = (preferred.tg_username || '').trim().replace(/^@+/, '')
+  const tgName = (preferred.tg_name || '').trim()
+  const fullName = (preferred.full_name || '').trim()
+  const phone = (preferred.phone || '').trim()
+  return {
+    name: tgName || fullName || (username ? `@${username}` : phone),
+    subtitle: username ? `@${username}` : (phone || ''),
+  }
+}
+
+function resolveContactDisplay(contact?: {
+  full_name?: string
+  phone?: string
+  tg_name?: string
+  tg_username?: string
+  linked_phones?: { phone: string; full_name?: string; tg_name?: string; tg_username?: string }[]
+}) {
+  const fullName = (contact?.full_name || '').trim()
+  const phone = (contact?.phone || '').trim()
+  const tgName = (contact?.tg_name || '').trim()
+  const username = (contact?.tg_username || '').trim().replace(/^@+/, '')
+  const linked = resolveLinkedDisplay(contact?.linked_phones)
+  const placeholder = isPlaceholderPhone(phone) || isPlaceholderName(fullName) || isPlaceholderName(tgName)
+
+  if (placeholder && linked) {
+    return {
+      name: linked.name,
+      subtitle: linked.subtitle && linked.subtitle !== linked.name ? linked.subtitle : '',
+    }
+  }
+
+  const name = tgName || fullName || (username ? `@${username}` : (!isPlaceholderPhone(phone) ? phone : ''))
+  let subtitle = ''
+  if (username) subtitle = `@${username}`
+  else if (!isPlaceholderPhone(phone) && phone && phone !== name) subtitle = phone
+
+  return {
+    name: name || tgName || fullName || phone || 'Невідомий',
+    subtitle,
+  }
 }
 
 // ===== SVG Icons =====
@@ -3832,6 +3895,13 @@ function App() {
     account_label: '',
     account_phone: '',
   } : null)
+  const chatDisplay = resolveContactDisplay(chatContact ? {
+    full_name: clientName && !isPlaceholderName(clientName) ? clientName : chatContact.full_name,
+    phone: clientPhone && !isPlaceholderPhone(clientPhone) ? clientPhone : chatContact.phone,
+    tg_name: (chatContact as any).tg_name,
+    tg_username: (chatContact as any).tg_username,
+    linked_phones: (chatContact as any)?.linked_phones,
+  } : undefined)
   // Clear newChatClient when contact appears in the real list
   useEffect(() => {
     if (newChatClient && contacts.some(c => c.client_id === newChatClient.client_id)) {
@@ -4396,7 +4466,9 @@ function App() {
                   loadMoreContacts()
                 }
               }}>
-                {contacts.map(c => (
+                {contacts.map(c => {
+                  const display = resolveContactDisplay(c)
+                  return (
                   <div
                     key={c.client_id}
                     className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
@@ -4413,7 +4485,7 @@ function App() {
                     <div className="contact-body">
                       <div className="contact-row">
                         <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
-                          <ContactName name={c.full_name || c.phone} isEmployee={c.is_employee} />
+                          <ContactName name={display.name} isEmployee={c.is_employee} />
                         </span>
                         {isUnread(c) && <span className="unread-dot" />}
                         <span className="contact-time">
@@ -4430,7 +4502,7 @@ function App() {
                         </span>
                       </div>
                       <div className="contact-meta">
-                        <span className="contact-phone">{c.phone}</span>
+                        <span className="contact-phone">{display.subtitle}</span>
                         <span className="contact-icons">
                           {c.has_telegram === true && <TelegramIcon size={12} color="#2AABEE" />}
                           {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
@@ -4438,7 +4510,8 @@ function App() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
                 {loadingMoreContacts && (
                   <div className="loading-more">Завантаження...</div>
                 )}
@@ -4663,9 +4736,9 @@ function App() {
                     <span className="online-dot online-dot-header" />
                   )}
                 </div>
-                <div className="chat-header-info" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
+                  <div className="chat-header-info" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
                   <div className="chat-header-name">
-                    {clientName || chatContact?.full_name || chatContact?.phone}
+                    {chatDisplay.name}
                   </div>
                   <div className="chat-header-phone">
                     {selectedClient && typingIndicators[selectedClient] ? (
@@ -4681,7 +4754,7 @@ function App() {
                           </span>
                         )
                       }
-                      return clientPhone || chatContact?.phone
+                      return chatDisplay.subtitle
                     })()}
                   </div>
                 </div>
@@ -5439,7 +5512,7 @@ function App() {
                   </button>
                 </div>
               )}
-              {auth.isAdmin && !forwardMode && (
+              {!forwardMode && (
                 <div className="chat-input">
                   <input type="file" ref={fileInputRef} hidden multiple
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
