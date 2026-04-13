@@ -1306,6 +1306,10 @@ function App() {
   const [labLoading, setLabLoading] = useState(false)
   const [labPage, setLabPage] = useState(1)
   const [labTotal, setLabTotal] = useState(0)
+  const [labHasMore, setLabHasMore] = useState(false)
+  const [labLoadingMore, setLabLoadingMore] = useState(false)
+  const labBottomSentinelRef = useRef<HTMLDivElement>(null)
+  const labPatientsRef = useRef<LabPatient[]>([])
   const [expandedLabPatient, setExpandedLabPatient] = useState<string | null>(null)
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([])
   const [templateCategories, setTemplateCategories] = useState<TemplateCategory[]>([])
@@ -1465,6 +1469,7 @@ function App() {
   const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
   const [gmailEmails, setGmailEmails] = useState<GmailEmail[]>([])
   const pendingGmailMsgRef = useRef<string | null>(null) // select after emails load
+  const pendingToastChatRef = useRef<{ clientId: string; accountId: string; sender: string } | null>(null)
   const [gmailTotal, setGmailTotal] = useState(0)
   const [gmailPage, setGmailPage] = useState(1)
   const [gmailSearch, setGmailSearch] = useState('')
@@ -1527,6 +1532,7 @@ function App() {
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
   useEffect(() => { contactsRef.current = contacts }, [contacts])
   useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { labPatientsRef.current = labPatients }, [labPatients])
   useEffect(() => { templateCategoriesRef.current = templateCategories }, [templateCategories])
 
   // Global drag/drop handler for templates and lab patients
@@ -2861,10 +2867,10 @@ function App() {
     } catch { /* ignore */ }
   }, [auth?.token])
 
-  // Load lab results grouped by patient
+  // Load lab results grouped by patient (page=1 replaces, page>1 appends)
   const loadLabResults = useCallback(async (page = 1, search = '') => {
     if (!auth?.token) return
-    setLabLoading(true)
+    if (page === 1) setLabLoading(true); else setLabLoadingMore(true)
     try {
       const params = new URLSearchParams({ page: String(page) })
       if (search) params.set('search', search)
@@ -2872,9 +2878,17 @@ function App() {
       if (resp.ok) {
         const data = await resp.json()
         const results: LabResult[] = data.results || []
-        setLabTotal(data.total || results.length)
-        // Group by patient: patient_client_id > patient_name > client_id
+        const total = data.total || results.length
+        setLabTotal(total)
+        setLabPage(page)
+        const perPage = 50
+        setLabHasMore(page * perPage < total)
+        // Group new results by patient
         const map = new Map<string, LabPatient>()
+        // If appending, start with existing patients
+        if (page > 1) {
+          for (const p of labPatientsRef.current) map.set(p.key, { ...p, results: [...p.results] })
+        }
         for (const r of results) {
           const key = r.patient_client_id || (r.patient_name ? `n:${r.patient_name.toLowerCase()}` : r.client_id || `u:${r.id}`)
           if (!map.has(key)) {
@@ -2890,14 +2904,12 @@ function App() {
           map.get(key)!.results.push(r)
         }
         setLabPatients(Array.from(map.values()))
-        setLabPage(page)
         // Fetch photos for patients that have client_id
         const clientIds = [...new Set(results.map(r => r.patient_client_id).filter(Boolean))]
         if (clientIds.length > 0) {
           const photoResp = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${clientIds.join(',')}`, auth.token)
           if (photoResp.ok) {
             const pm: Record<string, string> = await photoResp.json()
-            // Store media path (not full URL) — will be loaded via loadMediaBlob with auth
             setLabPatients(prev => prev.map(p => {
               const cid = p.results[0]?.patient_client_id || ''
               return pm[cid] ? { ...p, photo: pm[cid] } : p
@@ -2906,8 +2918,24 @@ function App() {
         }
       }
     } catch { /* ignore */ }
-    setLabLoading(false)
+    if (page === 1) setLabLoading(false); else setLabLoadingMore(false)
   }, [auth?.token])
+
+  // Auto-load more lab results when scrolling to bottom
+  useEffect(() => {
+    const sentinel = labBottomSentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && labHasMore && !labLoading && !labLoadingMore) {
+          loadLabResults(labPage + 1, labSearch)
+        }
+      },
+      { rootMargin: '200px', threshold: 0 }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [labHasMore, labLoading, labLoadingMore, labPage, labSearch, loadLabResults])
 
   // Add client note
   const addClientNote = useCallback(async () => {
@@ -4058,6 +4086,25 @@ function App() {
     selectClient(clientId)
   }, [selectClient, selectedAccount, accounts])
 
+  const openToastChat = useCallback((clientId: string, accountId: string, sender: string) => {
+    if (!clientId) return
+    setSelectedGmail(null)
+    setGmailSelectedMsg(null)
+
+    if (accountId && accountId !== selectedAccount) {
+      pendingToastChatRef.current = { clientId, accountId, sender }
+      setSelectedAccount(accountId)
+      return
+    }
+
+    if (sender && !contacts.some(c => c.client_id === clientId)) {
+      setNewChatClient(prev =>
+        prev?.client_id === clientId ? prev : { client_id: clientId, phone: '', full_name: sender }
+      )
+    }
+    selectClient(clientId)
+  }, [selectedAccount, contacts, selectClient])
+
   const addContactToAccount = useCallback(async () => {
     if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
     setAddToAcctAdding(true)
@@ -4118,6 +4165,24 @@ function App() {
       pendingGmailMsgRef.current = null
     }
   }, [gmailEmails])
+
+  // Open pending messenger chat after account switch triggered from toast click
+  useEffect(() => {
+    const pending = pendingToastChatRef.current
+    if (!pending) return
+    if (pending.accountId && pending.accountId !== selectedAccount) return
+
+    if (pending.sender && !contacts.some(c => c.client_id === pending.clientId)) {
+      setNewChatClient(prev =>
+        prev?.client_id === pending.clientId
+          ? prev
+          : { client_id: pending.clientId, phone: '', full_name: pending.sender }
+      )
+    }
+
+    pendingToastChatRef.current = null
+    selectClient(pending.clientId)
+  }, [selectedAccount, contacts, selectClient])
 
   const sendGmailEmail = useCallback(async () => {
     if (!auth?.token || !selectedGmail || !composeTo.trim()) return
@@ -5943,13 +6008,13 @@ function App() {
                     </div>
                   ))}
                 </div>
-                {labTotal > 50 && (
-                  <div className="lab-pagination">
-                    <button disabled={labPage <= 1} onClick={() => loadLabResults(labPage - 1, labSearch)}>←</button>
-                    <span>{labPage}</span>
-                    <button disabled={labPatients.length < 50} onClick={() => loadLabResults(labPage + 1, labSearch)}>→</button>
-                  </div>
-                )}
+                <div ref={labBottomSentinelRef} style={{ minHeight: 1 }}>
+                  {labLoadingMore && (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+                      <div className="spinner-sm" />
+                    </div>
+                  )}
+                </div>
               </div>
             ) : rightTab === 'quick' ? (
               <div className="rp-quick">
@@ -7725,9 +7790,7 @@ function App() {
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
                     } else {
-                      // Switch to the account that received the message
-                      if (t.accountId && t.accountId !== selectedAccount) setSelectedAccount(t.accountId)
-                      selectClient(t.clientId)
+                      openToastChat(t.clientId, t.accountId, t.sender)
                       setToasts(prev => prev.filter(x => x.id !== t.id))
                       setExpandedToastGroup(null)
                     }
