@@ -1305,7 +1305,6 @@ function App() {
   const [labSearch, setLabSearch] = useState('')
   const [labLoading, setLabLoading] = useState(false)
   const [labPage, setLabPage] = useState(1)
-  const [labTotal, setLabTotal] = useState(0)
   const [labHasMore, setLabHasMore] = useState(false)
   const [labLoadingMore, setLabLoadingMore] = useState(false)
   const labBottomSentinelRef = useRef<HTMLDivElement>(null)
@@ -2879,7 +2878,6 @@ function App() {
         const data = await resp.json()
         const results: LabResult[] = data.results || []
         const total = data.total || results.length
-        setLabTotal(total)
         setLabPage(page)
         const perPage = 50
         setLabHasMore(page * perPage < total)
