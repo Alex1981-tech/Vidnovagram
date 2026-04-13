@@ -1372,6 +1372,7 @@ function App() {
   linkPreviewCacheRef = _linkPreviewCache
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const chatTopSentinelRef = useRef<HTMLDivElement>(null)
   const [showScrollDown, setShowScrollDown] = useState(false)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
@@ -2052,16 +2053,27 @@ function App() {
     if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages || !msgCursor) return
     setLoadingOlder(true)
     try {
-      const params = new URLSearchParams({ per_page: '200', before: msgCursor })
+      const params = new URLSearchParams({ per_page: '100', before: msgCursor })
       if (selectedAccount) params.set('account', selectedAccount)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/messages/?${params}`, auth.token)
       if (resp.ok) {
         const data = await resp.json()
         const older = data.results || []
         if (older.length > 0) {
+          // Preserve scroll position: remember distance from bottom before prepend
+          const el = chatContainerRef.current
+          const prevScrollHeight = el ? el.scrollHeight : 0
+          const prevScrollTop = el ? el.scrollTop : 0
           setMessages(prev => [...older, ...prev])
           setMsgCursor(data.next_cursor ?? null)
           setHasOlderMessages(!!data.next_cursor || !!data.has_more)
+          // After React renders prepended messages, restore scroll so user stays in place
+          requestAnimationFrame(() => {
+            if (el) {
+              const newScrollHeight = el.scrollHeight
+              el.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight)
+            }
+          })
         } else {
           setHasOlderMessages(false)
           setMsgCursor(null)
@@ -2070,6 +2082,22 @@ function App() {
     } catch (e) { console.error('Older messages:', e) }
     setLoadingOlder(false)
   }, [auth?.token, selectedClient, selectedAccount, msgCursor, loadingOlder, hasOlderMessages])
+
+  // Auto-load older messages when scrolling to top (IntersectionObserver)
+  useEffect(() => {
+    const sentinel = chatTopSentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasOlderMessages && !loadingOlder && msgCursor) {
+          loadOlderMessages()
+        }
+      },
+      { root: chatContainerRef.current, rootMargin: '200px 0px 0px 0px', threshold: 0 }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasOlderMessages, loadingOlder, msgCursor, loadOlderMessages])
 
   // Send message (text, file, voice/video note)
   // Helper: build FormData for one send request
@@ -4928,13 +4956,13 @@ function App() {
                 }}
                 onDragLeave={() => setChatDropHighlight(false)}
               >
-                {hasOlderMessages && (
-                  <div className="load-older-wrap">
-                    <button className="load-older-btn" onClick={loadOlderMessages} disabled={loadingOlder}>
-                      {loadingOlder ? <div className="spinner-sm" /> : '↑ Завантажити старіші'}
-                    </button>
-                  </div>
-                )}
+                <div ref={chatTopSentinelRef} className="load-older-wrap" style={{ minHeight: 1 }}>
+                  {loadingOlder && (
+                    <div className="load-older-btn" style={{ pointerEvents: 'none' }}>
+                      <div className="spinner-sm" />
+                    </div>
+                  )}
+                </div>
                 {groupedMessages.map((item, i) => {
                   if ('type' in item && item.type === 'date') {
                     return (
