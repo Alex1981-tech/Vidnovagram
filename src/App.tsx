@@ -89,6 +89,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.15.0': [
+    'Сервісні повідомлення — відображення подій групи (додав/видалив учасника, зміна назви/фото тощо)',
+    'Групи/супергрупи — підтримка групових чатів з іменем відправника над повідомленням',
+  ],
   '0.14.0': [
     'Альбоми — відправка кількох файлів як згрупований медіа (Telegram album)',
     'Глобальний пошук — пошук по повідомленнях у всіх чатах (backend fulltext)',
@@ -403,6 +407,13 @@ interface ChatMessage {
   contact_last_name?: string
   contact_phone?: string
   is_pinned?: boolean
+  // Group / service message fields
+  chat_type?: 'private' | 'group' | 'supergroup' | 'channel'
+  sender_id?: number | null
+  sender_name?: string
+  is_service?: boolean
+  service_type?: string
+  service_data?: Record<string, any>
   // Black box: edit / delete / reactions
   is_deleted?: boolean
   deleted_at?: string
@@ -4932,6 +4943,36 @@ function App() {
                       </div>
                     )
                   }
+                  {/* Service messages — centered text, no bubble */}
+                  if (m.is_service) {
+                    const svcText = (() => {
+                      const sd = m.service_data || {}
+                      const names = (sd.user_names || []).join(', ')
+                      switch (m.service_type) {
+                        case 'chat_add_user': return `${m.sender_name || 'Хтось'} додав ${names || 'учасника'}`
+                        case 'chat_delete_user': return `${m.sender_name || 'Хтось'} видалив ${names || 'учасника'}`
+                        case 'chat_joined_by_link': return `${m.sender_name || 'Хтось'} приєднався за посиланням`
+                        case 'chat_joined_by_request': return `${m.sender_name || 'Хтось'} приєднався за запитом`
+                        case 'chat_edit_title': return `${m.sender_name || 'Хтось'} змінив назву на «${sd.title || ''}»`
+                        case 'chat_edit_photo': return `${m.sender_name || 'Хтось'} змінив фото групи`
+                        case 'chat_delete_photo': return `${m.sender_name || 'Хтось'} видалив фото групи`
+                        case 'chat_create': return `${m.sender_name || 'Хтось'} створив групу`
+                        case 'channel_create': return `Канал створено`
+                        case 'pin_message': return `${m.sender_name || 'Хтось'} закріпив повідомлення`
+                        case 'phone_call': return `📞 Дзвінок`
+                        case 'group_call': return `📞 Груповий дзвінок`
+                        case 'set_ttl': return `Встановлено автовидалення повідомлень`
+                        case 'topic_create': return `Тему створено: ${sd.title || ''}`
+                        case 'topic_edit': return `Тему змінено`
+                        default: return m.service_type || 'Сервісне повідомлення'
+                      }
+                    })()
+                    return (
+                      <div key={m.id} className="msg-service">
+                        <span className="msg-service-text">{svcText}</span>
+                      </div>
+                    )
+                  }
                   return (
                     <div key={m.id} data-msg-id={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}${chatSearchResults.includes(m.id as number) ? ' search-highlight' : ''}${chatSearchResults[chatSearchIdx] === m.id ? ' search-active' : ''}`}
                       onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
@@ -4951,6 +4992,10 @@ function App() {
                         </div>
                       )}
                       <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}`}>
+                        {/* Group sender name */}
+                        {m.chat_type && m.chat_type !== 'private' && m.direction === 'received' && m.sender_name && (
+                          <div className="msg-group-sender">{m.sender_name}</div>
+                        )}
                         {/* Forwarded header */}
                         {m.fwd_from_name && (
                           <div className="msg-forward-header">
@@ -5584,52 +5629,60 @@ function App() {
                   {labPatients.map(p => (
                     <div key={p.key} className={`lab-patient${expandedLabPatient === p.key ? ' lab-patient-active' : ''}`}
                       ref={expandedLabPatient === p.key ? el => { if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100) } : undefined}
-                      onMouseDown={e => {
-                        if (e.button !== 0) return
-                        const startX = e.clientX, startY = e.clientY
-                        let dragging = false
-                        let ghost: HTMLDivElement | null = null
-                        const onMove = (me: MouseEvent) => {
-                          if (!dragging && Math.abs(me.clientX - startX) + Math.abs(me.clientY - startY) > 8) {
-                            dragging = true
-                            ghost = document.createElement('div')
-                            ghost.className = 'lab-drag-ghost'
-                            ghost.textContent = `📋 ${p.name || 'Аналізи'}`
-                            document.body.appendChild(ghost)
-                          }
-                          if (dragging && ghost) {
-                            ghost.style.left = me.clientX + 12 + 'px'
-                            ghost.style.top = me.clientY + 12 + 'px'
-                            const chatEl = document.querySelector('.chat-messages')
-                            if (chatEl) {
-                              const r = chatEl.getBoundingClientRect()
-                              const over = me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top && me.clientY <= r.bottom
-                              chatEl.classList.toggle('drop-highlight', over)
+                    >
+                      <div
+                        className="lab-patient-header"
+                        onMouseDown={e => {
+                          if (e.button !== 0) return
+                          const startX = e.clientX, startY = e.clientY
+                          let dragging = false
+                          let ghost: HTMLDivElement | null = null
+                          const onMove = (me: MouseEvent) => {
+                            if (!dragging && Math.abs(me.clientX - startX) + Math.abs(me.clientY - startY) > 8) {
+                              dragging = true
+                              document.body.classList.add('lab-dragging')
+                              ghost = document.createElement('div')
+                              ghost.className = 'lab-drag-ghost'
+                              ghost.textContent = `📋 ${p.name || 'Аналізи'}`
+                              document.body.appendChild(ghost)
                             }
-                          }
-                        }
-                        const onUp = (ue: MouseEvent) => {
-                          document.removeEventListener('mousemove', onMove)
-                          document.removeEventListener('mouseup', onUp)
-                          if (ghost) { ghost.remove(); ghost = null }
-                          const chatEl = document.querySelector('.chat-messages')
-                          if (chatEl) chatEl.classList.remove('drop-highlight')
-                          if (dragging) {
-                            const chatEl2 = document.querySelector('.chat-messages')
-                            if (chatEl2) {
-                              const r = chatEl2.getBoundingClientRect()
-                              if (ue.clientX >= r.left && ue.clientX <= r.right && ue.clientY >= r.top && ue.clientY <= r.bottom) {
-                                setLabSendModal(p)
-                                setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
+                            if (dragging) {
+                              me.preventDefault()
+                            }
+                            if (dragging && ghost) {
+                              ghost.style.left = me.clientX + 12 + 'px'
+                              ghost.style.top = me.clientY + 12 + 'px'
+                              const chatEl = document.querySelector('.chat-messages')
+                              if (chatEl) {
+                                const r = chatEl.getBoundingClientRect()
+                                const over = me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top && me.clientY <= r.bottom
+                                chatEl.classList.toggle('drop-highlight', over)
                               }
                             }
                           }
-                        }
-                        document.addEventListener('mousemove', onMove)
-                        document.addEventListener('mouseup', onUp)
-                      }}
-                    >
-                      <div className="lab-patient-header" onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}>
+                          const onUp = (ue: MouseEvent) => {
+                            document.removeEventListener('mousemove', onMove)
+                            document.removeEventListener('mouseup', onUp)
+                            document.body.classList.remove('lab-dragging')
+                            if (ghost) { ghost.remove(); ghost = null }
+                            const chatEl = document.querySelector('.chat-messages')
+                            if (chatEl) chatEl.classList.remove('drop-highlight')
+                            if (dragging) {
+                              const chatEl2 = document.querySelector('.chat-messages')
+                              if (chatEl2) {
+                                const r = chatEl2.getBoundingClientRect()
+                                if (ue.clientX >= r.left && ue.clientX <= r.right && ue.clientY >= r.top && ue.clientY <= r.bottom) {
+                                  setLabSendModal(p)
+                                  setLabSendSelected(new Set(p.results.filter((r: any) => r.media_file).map((r: any) => r.id)))
+                                }
+                              }
+                            }
+                          }
+                          document.addEventListener('mousemove', onMove)
+                          document.addEventListener('mouseup', onUp)
+                        }}
+                        onClick={() => setExpandedLabPatient(prev => prev === p.key ? null : p.key)}
+                      >
                         <div className="lab-patient-avatar">
                           {(() => {
                             if (!p.photo) return <span>{(p.name || '?')[0].toUpperCase()}</span>
@@ -6632,7 +6685,7 @@ function App() {
               </div>
             </div>
             <div className="lab-send-select-all">
-              <label>
+              <label onMouseDown={e => e.stopPropagation()}>
                 <input type="checkbox"
                   checked={labSendSelected.size === labSendModal.results.filter(r => r.media_file).length && labSendSelected.size > 0}
                   onChange={e => {
@@ -6658,13 +6711,33 @@ function App() {
                 const thumbKey = `labsend_thumb_${r.id}`
                 if (r.thumbnail && !mediaBlobMap[thumbKey] && !mediaLoading[thumbKey]) loadMediaBlob(thumbKey, r.thumbnail)
                 return (
-                  <label key={r.id} className={`lab-send-item${!hasFile ? ' disabled' : ''}${isChecked ? ' selected' : ''}`}>
-                    <input type="checkbox" checked={isChecked} disabled={!hasFile}
-                      onChange={() => setLabSendSelected(prev => {
+                  <div
+                    key={r.id}
+                    className={`lab-send-item${!hasFile ? ' disabled' : ''}${isChecked ? ' selected' : ''}`}
+                    onClick={() => {
+                      if (!hasFile) return
+                      setLabSendSelected(prev => {
                         const next = new Set(prev)
-                        if (next.has(r.id)) next.delete(r.id); else next.add(r.id)
+                        if (next.has(r.id)) next.delete(r.id)
+                        else next.add(r.id)
                         return next
-                      })}
+                      })
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      disabled={!hasFile}
+                      onClick={e => e.stopPropagation()}
+                      onChange={() => {
+                        if (!hasFile) return
+                        setLabSendSelected(prev => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
                     />
                     <div className="lab-send-item-thumb">
                       {mediaBlobMap[thumbKey] ? <img src={mediaBlobMap[thumbKey]} alt="" /> : (
@@ -6676,7 +6749,7 @@ function App() {
                       <span className="lab-send-item-date">{new Date(r.message_date).toLocaleDateString('uk-UA')}</span>
                     </div>
                     <span className="lab-result-badge">{r.source === 'telegram' ? 'TG' : '✉️'}</span>
-                  </label>
+                  </div>
                 )
               })}
             </div>

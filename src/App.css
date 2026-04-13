@@ -951,6 +951,30 @@ body {
   white-space: nowrap;
 }
 /* Forward header */
+/* Service messages — centered, no bubble */
+.msg-service {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+.msg-service-text {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+  padding: 3px 12px;
+  border-radius: 12px;
+  text-align: center;
+  max-width: 80%;
+}
+
+/* Group sender name above message */
+.msg-group-sender {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
 .msg-forward-header {
   display: flex;
   align-items: center;
@@ -2919,6 +2943,8 @@ body {
   padding: 8px 10px;
   cursor: pointer;
   transition: background 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .lab-patient-header:hover { background: var(--accent); }
 .lab-patient-avatar {
@@ -5804,6 +5830,8 @@ body {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .lab-send-list {
   flex: 1;
@@ -5819,6 +5847,8 @@ body {
   cursor: pointer;
   transition: background 0.1s;
   font-size: 0.8125rem;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .lab-send-item:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
 .lab-send-item.selected { background: color-mix(in oklch, var(--primary) 8%, transparent); }
@@ -5852,6 +5882,11 @@ body {
 }
 .lab-send-item-type {
   font-weight: 500;
+}
+.lab-dragging,
+.lab-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 .lab-send-item-date {
   font-size: 0.6875rem;
