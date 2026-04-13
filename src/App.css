@@ -971,6 +971,13 @@ body {
   font-size: 1.1rem;
   font-weight: 600;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.msg-contact-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 .msg-contact-info {
   min-width: 0;
@@ -1109,8 +1116,12 @@ body {
   border-radius: 10px;
   margin-bottom: 4px;
   min-width: 180px;
-  cursor: default;
+  cursor: pointer;
   border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
+  transition: background 0.15s;
+}
+.msg-contact-card:hover {
+  background: color-mix(in oklch, var(--primary) 18%, transparent);
 }
 .msg-contact-avatar {
   width: 40px;
@@ -1124,6 +1135,7 @@ body {
   font-weight: 600;
   font-size: 1rem;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .msg-contact-info {
   display: flex;
@@ -4260,6 +4272,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 140px;
+}
+.toast-time {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 .toast-close {
   flex-shrink: 0;

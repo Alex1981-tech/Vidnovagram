@@ -1141,6 +1141,7 @@ function App() {
   // Generic media blobs (voice, video, documents, full-size images)
   const [mediaBlobMap, setMediaBlobMap] = useState<Record<string, string>>({})
   const [mediaLoading, setMediaLoading] = useState<Record<string, boolean>>({})
+  const mediaLoadingRef = useRef<Set<string>>(new Set())
 
   // Sound
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -2877,7 +2878,8 @@ function App() {
   const loadMediaBlob = useCallback(async (key: string, mediaPath: string): Promise<string | null> => {
     if (!auth?.token) return null
     if (mediaBlobMap[key]) return mediaBlobMap[key]
-    if (mediaLoading[key]) return null
+    // Use ref-based dedup to avoid stale closure race conditions
+    if (mediaLoadingRef.current.has(key)) return null
 
     const isThumb = key.startsWith('thumb_')
 
@@ -2890,6 +2892,7 @@ function App() {
       }
     }
 
+    mediaLoadingRef.current.add(key)
     setMediaLoading(prev => ({ ...prev, [key]: true }))
     try {
       const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
@@ -2905,13 +2908,15 @@ function App() {
         if (isThumb) putCache(THUMB_STORE, mediaPath, blob)
         const blobUrl = URL.createObjectURL(blob)
         setMediaBlobMap(prev => ({ ...prev, [key]: blobUrl }))
+        mediaLoadingRef.current.delete(key)
         setMediaLoading(prev => ({ ...prev, [key]: false }))
         return blobUrl
       }
     } catch { /* ignore */ }
+    mediaLoadingRef.current.delete(key)
     setMediaLoading(prev => ({ ...prev, [key]: false }))
     return null
-  }, [auth?.token, mediaBlobMap, mediaLoading])
+  }, [auth?.token, mediaBlobMap])
 
   // Download a media file (open save dialog)
   const downloadMedia = useCallback(async (mediaPath: string, filename: string) => {
@@ -4633,26 +4638,6 @@ function App() {
                           </div>
                         )}
                         {/* Contact (vCard) — inline card with name & phone */}
-                        {m.media_type === 'contact' && (() => {
-                          // Parse contact info from text: "👤 Name\n📞 Phone" or just text
-                          const lines = (m.text || '').split('\n')
-                          let cName = '', cPhone = ''
-                          for (const l of lines) {
-                            const lt = l.trim()
-                            if (lt.startsWith('👤')) cName = lt.slice(2).trim()
-                            else if (lt.startsWith('📞')) cPhone = lt.slice(2).trim()
-                          }
-                          if (!cName && !cPhone) { cName = m.text || 'Контакт' }
-                          return (
-                            <div className="msg-contact-card">
-                              <div className="msg-contact-avatar">{(cName || cPhone || '?')[0].toUpperCase()}</div>
-                              <div className="msg-contact-info">
-                                {cName && <span className="msg-contact-name">{cName}</span>}
-                                {cPhone && <span className="msg-contact-phone">{cPhone}</span>}
-                              </div>
-                            </div>
-                          )
-                        })()}
                         {/* Media pending download — show loading indicator */}
                         {m.has_media && m.media_status === 'pending' && !m.media_file && (
                           <div className="msg-media-pending">
@@ -4667,21 +4652,31 @@ function App() {
                           </div>
                         )}
                         {/* Contact card */}
-                        {m.media_type === 'contact' && m.text && m.text.startsWith('👤') && (() => {
-                          const lines = m.text.split('\n')
-                          const name = lines[0]?.replace('👤 ', '') || ''
-                          const phone = lines[1]?.replace('📞 ', '').replace(/\D/g, '') || ''
+                        {m.media_type === 'contact' && (() => {
+                          const lines = (m.text || '').split('\n')
+                          let name = '', phone = ''
+                          for (const l of lines) {
+                            const lt = l.trim()
+                            if (lt.startsWith('👤')) name = lt.slice(2).trim()
+                            else if (lt.startsWith('📞')) phone = lt.slice(2).trim().replace(/\D/g, '')
+                          }
+                          if (!name && !phone) name = m.text || 'Контакт'
                           const normPhone = phone.startsWith('380') ? '0' + phone.slice(3) : phone
+                          // Find avatar from contacts photoMap
+                          const matchedContact = normPhone ? contacts.find(c => c.phone === normPhone || c.phone === phone) : null
+                          const avatarUrl = matchedContact ? photoMap[matchedContact.client_id] : null
                           return (
                             <div className="msg-contact-card" onClick={() => {
                               if (normPhone) {
-                                setAddToAcctModal({ phone: normPhone, name, clientId: '' })
+                                setAddToAcctModal({ phone: normPhone, name, clientId: matchedContact?.client_id || '' })
                                 checkPhoneMessengers(normPhone)
                               }
                             }}>
-                              <div className="msg-contact-avatar">{name.charAt(0) || '?'}</div>
+                              <div className="msg-contact-avatar">
+                                {avatarUrl ? <img src={avatarUrl} alt="" /> : (name || phone || '?')[0].toUpperCase()}
+                              </div>
                               <div className="msg-contact-info">
-                                <div className="msg-contact-name">{name}</div>
+                                {name && <div className="msg-contact-name">{name}</div>}
                                 {phone && <div className="msg-contact-phone">{phone.startsWith('380') ? '+' + phone : phone}</div>}
                               </div>
                             </div>
@@ -4713,7 +4708,7 @@ function App() {
                           )
                         })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && !(m.media_type === 'contact' && m.text.startsWith('👤')) && !(m.media_type === 'poll' && m.text.startsWith('📊')) && !(m.media_type === 'geo' && m.text.includes('📍')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && m.text.startsWith('📊')) && !(m.media_type === 'geo' && m.text.includes('📍')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Deleted label under message */}
                         {m.is_deleted && (
@@ -6915,6 +6910,7 @@ function App() {
                     <div className="toast-header">
                       <span className="toast-sender">{t.sender}</span>
                       {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
+                      <span className="toast-time">{new Date(t.time).toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div className="toast-body">
                       {t.hasMedia && !t.text && <span className="toast-media">
