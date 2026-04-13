@@ -89,6 +89,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.15.1': [
+    'Виправлено відкриття документів — PDF, Word, Excel зберігаються з правильним іменем та розширенням',
+    'Ім\'я файлу тепер береться з content-disposition, а якщо немає — відновлюється з URL',
+    'Зображення відкриваються у вбудованому переглядачі, інші документи — системним додатком',
+  ],
   '0.15.0': [
     'Сервісні повідомлення — відображення подій групи (додав/видалив учасника, зміна назви/фото тощо)',
     'Групи/супергрупи — підтримка групових чатів з іменем відправника над повідомленням',
@@ -3086,6 +3091,67 @@ function App() {
     return null
   }, [auth?.token, mediaBlobMap])
 
+  const inferExtensionFromContentType = useCallback((contentType: string) => {
+    const ct = (contentType || '').toLowerCase().split(';')[0].trim()
+    const map: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'text/plain': 'txt',
+      'text/csv': 'csv',
+      'application/zip': 'zip',
+      'application/x-rar-compressed': 'rar',
+    }
+    return map[ct] || ''
+  }, [])
+
+  const getFilenameFromResponse = useCallback((mediaPath: string, resp: Response, fallbackBase = 'file') => {
+    const cd = resp.headers.get('content-disposition') || ''
+    const quoted = cd.match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i)
+    const rawName = decodeURIComponent((quoted?.[1] || quoted?.[2] || '').trim())
+    const pathName = (() => {
+      try {
+        const noQuery = mediaPath.split('?')[0]
+        const last = noQuery.split('/').pop() || ''
+        return decodeURIComponent(last)
+      } catch {
+        return mediaPath.split('?')[0].split('/').pop() || ''
+      }
+    })()
+    const preferred = rawName || pathName || fallbackBase
+    const clean = preferred.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').trim() || fallbackBase
+    if (/\.[a-z0-9]{1,8}$/i.test(clean)) return clean
+    const inferredExt = inferExtensionFromContentType(resp.headers.get('content-type') || '')
+    return inferredExt ? `${clean}.${inferredExt}` : clean
+  }, [inferExtensionFromContentType])
+
+  const openFetchedFile = useCallback(async (mediaPath: string, fallbackBase = 'file') => {
+    if (!auth?.token) return
+    const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
+    const resp = await authFetch(url, auth.token)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const contentType = resp.headers.get('content-type') || blob.type || ''
+    if (contentType.startsWith('image/')) {
+      setLightboxSrc(URL.createObjectURL(blob))
+      return
+    }
+    const filename = getFilenameFromResponse(mediaPath, resp, fallbackBase)
+    const tmp = await tempDir()
+    const filePath = await join(tmp, filename)
+    const buf = new Uint8Array(await blob.arrayBuffer())
+    await writeFile(filePath, buf)
+    await shellOpen(filePath)
+  }, [auth?.token, getFilenameFromResponse])
+
   // Download a media file (open save dialog)
   const downloadMedia = useCallback(async (mediaPath: string, filename: string) => {
     if (!auth?.token) return
@@ -3096,9 +3162,10 @@ function App() {
       const resp = await authFetch(url, auth.token)
       if (resp.ok) {
         const blob = await resp.blob()
-        const ext = filename.includes('.') ? filename.split('.').pop() || '' : ''
+        const safeName = filename.split('?')[0]
+        const ext = safeName.includes('.') ? safeName.split('.').pop() || '' : inferExtensionFromContentType(resp.headers.get('content-type') || '')
         const filePath = await save({
-          defaultPath: filename,
+          defaultPath: safeName || 'file',
           filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : [],
         })
         if (filePath) {
@@ -3109,19 +3176,14 @@ function App() {
       }
     } catch { /* ignore */ }
     setMediaLoading(prev => ({ ...prev, [docKey]: false }))
-  }, [auth?.token])
+  }, [auth?.token, inferExtensionFromContentType])
 
   // Open media in default app (PDF → browser, images → lightbox)
   const openMedia = useCallback(async (mediaPath: string, mediaType: string, messageId: number | string) => {
     if (!auth?.token) return
-    const isPdf = mediaPath.toLowerCase().endsWith('.pdf')
     const isImage = mediaType === 'photo' || /\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(mediaPath)
 
-    if (isPdf) {
-      // Open PDF URL in default browser
-      const url = mediaPath.startsWith('http') ? mediaPath : `${API_BASE.replace('/api', '')}${mediaPath}`
-      await shellOpen(url)
-    } else if (isImage) {
+    if (isImage) {
       // Open in lightbox
       const blobKey = `full_${messageId}`
       const existing = mediaBlobMap[blobKey]
@@ -3132,10 +3194,9 @@ function App() {
         if (blob) setLightboxSrc(blob)
       }
     } else {
-      // Other files — save and open
-      await downloadMedia(mediaPath, mediaPath.split('/').pop() || 'file')
+      await openFetchedFile(mediaPath, mediaPath.split('?')[0].split('/').pop() || 'file')
     }
-  }, [auth?.token, mediaBlobMap, loadMediaBlob, downloadMedia])
+  }, [auth?.token, mediaBlobMap, loadMediaBlob, openFetchedFile])
 
   const ctxMenuOpen = useCallback(() => {
     if (!ctxMenu?.mediaPath) return
@@ -5726,19 +5787,11 @@ function App() {
                                     const blob = mediaBlobMap[fullKey] || await loadMediaBlob(fullKey, r.media_file)
                                     if (blob) setLightboxSrc(blob)
                                   } else {
-                                    // PDF, documents, etc — download to temp dir and open
                                     try {
-                                      const url = r.media_file.startsWith('http') ? r.media_file : `${API_BASE.replace('/api', '')}${r.media_file}`
-                                      const resp = await authFetch(url, auth!.token)
-                                      if (resp.ok) {
-                                        const blob = await resp.blob()
-                                        const filename = r.media_file.split('/').pop() || `${r.lab_result_type || 'lab'}.${r.media_file.split('.').pop() || 'file'}`
-                                        const tmp = await tempDir()
-                                        const filePath = await join(tmp, filename)
-                                        const buf = new Uint8Array(await blob.arrayBuffer())
-                                        await writeFile(filePath, buf)
-                                        await shellOpen(filePath)
-                                      }
+                                      await openFetchedFile(
+                                        r.media_file,
+                                        `${r.lab_result_type || 'lab'}_${new Date(r.message_date).toISOString().slice(0, 10)}`
+                                      )
                                     } catch (err) { console.error('Lab file open error:', err) }
                                   }
                                 }}
