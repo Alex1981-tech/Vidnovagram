@@ -65,6 +65,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.16': [
+    'Стікери — зображення стікера (thumbnail) відображається великим без фону бабла',
+    'Стікери — прозорий бабл для стікерів з картинкою (як в Telegram)',
+  ],
   '0.13.15': [
     'Альбоми — фото/відео з одного media_group відображаються як єдиний блок (grid 2×2)',
     'Альбоми — відео-бейдж (play іконка) на відео в альбомі',
@@ -4642,7 +4646,7 @@ function App() {
                           {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
                         </div>
                       )}
-                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}`}>
+                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}`}>
                         {/* Forwarded header */}
                         {m.fwd_from_name && (
                           <div className="msg-forward-header">
@@ -4660,8 +4664,8 @@ function App() {
                             </div>
                           </div>
                         )}
-                        {/* Photo with thumbnail → click to view full */}
-                        {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && (
+                        {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
+                        {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
                           <AuthMedia
                             mediaKey={`thumb_${m.id}`}
                             mediaPath={m.thumbnail}
@@ -4783,11 +4787,30 @@ function App() {
                           </div>
                         )}
                         {/* Sticker — show emoji or media */}
-                        {m.media_type === 'sticker' && (m.sticker_emoji || (!m.media_file && !m.thumbnail)) && (
-                          <div className="msg-sticker" title={m.sticker_set_name || 'Стікер'}>
-                            {m.sticker_emoji ? <span className="msg-sticker-emoji">{m.sticker_emoji}</span> : '🏷️ Стікер'}
-                          </div>
-                        )}
+                        {m.media_type === 'sticker' && (() => {
+                          // Sticker with image (static/video) — render large without bubble
+                          if (m.thumbnail || m.media_file) {
+                            return (
+                              <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
+                                <AuthMedia
+                                  mediaKey={`sticker_${m.id}`}
+                                  mediaPath={m.thumbnail || m.media_file}
+                                  type="image"
+                                  className="sticker-image"
+                                  token={auth?.token || ''}
+                                  blobMap={mediaBlobMap}
+                                  loadBlob={loadMediaBlob}
+                                />
+                              </div>
+                            )
+                          }
+                          // Sticker without image — show emoji or placeholder
+                          return (
+                            <div className="msg-sticker" title={m.sticker_set_name || 'Стікер'}>
+                              {m.sticker_emoji ? <span className="msg-sticker-emoji">{m.sticker_emoji}</span> : '🏷️ Стікер'}
+                            </div>
+                          )
+                        })()}
                         {/* Unknown media without specific handler */}
                         {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll', 'sticker'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
                           <div className="msg-media-placeholder">

@@ -1138,6 +1138,31 @@ body {
   pointer-events: none;
 }
 
+/* Sticker rendering */
+.msg-sticker {
+  padding: 8px;
+  text-align: center;
+}
+.msg-sticker-emoji {
+  font-size: 5rem;
+  line-height: 1;
+}
+.msg-sticker-img {
+  max-width: 200px;
+}
+.sticker-image {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  display: block;
+}
+.msg-bubble-sticker {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
 .msg-media-placeholder {
   padding: 8px 12px;
   background: color-mix(in oklch, var(--muted) 50%, transparent);
