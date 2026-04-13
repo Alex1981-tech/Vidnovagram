@@ -65,6 +65,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.14': [
+    'Контакти, опитування, геолокації — рендеринг через структуровані API-поля (замість парсингу тексту)',
+    'Стікери — відображення емодзі та назви набору з API',
+    'Опитування — відображення кількості голосів та статусу «Закрито»',
+  ],
   '0.13.9': [
     'Картка клієнта — нова вкладка в правій панелі (теги, соцмережі, email, місто, джерело, коментар, посилання)',
   ],
@@ -326,6 +331,25 @@ interface ChatMessage {
   reply_to_text?: string
   reply_to_sender?: string
   fwd_from_name?: string
+  // Extended message types (Етап 2)
+  media_group_id?: number | null
+  sticker_emoji?: string
+  sticker_set_name?: string
+  is_animated_sticker?: boolean
+  is_video_sticker?: boolean
+  poll_question?: string
+  poll_options?: { text: string; voters?: number }[]
+  poll_total_voters?: number
+  poll_is_closed?: boolean
+  poll_is_multiple?: boolean
+  location_lat?: number | null
+  location_lng?: number | null
+  location_title?: string
+  location_address?: string
+  contact_first_name?: string
+  contact_last_name?: string
+  contact_phone?: string
+  is_pinned?: boolean
   // Black box: edit / delete / reactions
   is_deleted?: boolean
   deleted_at?: string
@@ -735,7 +759,7 @@ function extractFirstUrl(text: string): string | null {
   return m ? m[0] : null
 }
 
-function PollCard({ question, options, messageId }: { question: string; options: string[]; messageId: number | string }) {
+function PollCard({ question, options, messageId, totalVoters, isClosed }: { question: string; options: string[]; messageId: number | string; totalVoters?: number; isClosed?: boolean }) {
   const [checked, setChecked] = useState<Set<number>>(() => {
     try {
       const saved = localStorage.getItem(`poll_${messageId}`)
@@ -766,7 +790,11 @@ function PollCard({ question, options, messageId }: { question: string; options:
           )
         })}
       </div>
-      <div className="msg-poll-footer">{doneCount} з {options.length} виконано</div>
+      <div className="msg-poll-footer">
+        {doneCount} з {options.length} виконано
+        {(totalVoters ?? 0) > 0 && <span className="msg-poll-voters"> · {totalVoters} голосів</span>}
+        {isClosed && <span className="msg-poll-closed"> · Закрито</span>}
+      </div>
     </div>
   )
 }
@@ -4640,20 +4668,32 @@ function App() {
                             <span>{m.media_type === 'photo' ? 'Фото' : m.media_type === 'video' ? 'Відео' : m.media_type === 'document' ? 'Файл' : m.media_type === 'voice' ? 'Голосове' : 'Медіа'} завантажується...</span>
                           </div>
                         )}
-                        {/* Sticker / unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
+                        {/* Sticker — show emoji or media */}
+                        {m.media_type === 'sticker' && (m.sticker_emoji || (!m.media_file && !m.thumbnail)) && (
+                          <div className="msg-sticker" title={m.sticker_set_name || 'Стікер'}>
+                            {m.sticker_emoji ? <span className="msg-sticker-emoji">{m.sticker_emoji}</span> : '🏷️ Стікер'}
+                          </div>
+                        )}
+                        {/* Unknown media without specific handler */}
+                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll', 'sticker'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
                           <div className="msg-media-placeholder">
-                            {m.media_type === 'sticker' ? '🏷️ Стікер' : `📎 ${m.media_type}`}
+                            {`📎 ${m.media_type}`}
                           </div>
                         )}
                         {/* Contact card */}
                         {m.media_type === 'contact' && (() => {
-                          const lines = (m.text || '').split('\n')
+                          // Use dedicated API fields, fallback to text parsing
                           let name = '', phone = ''
-                          for (const l of lines) {
-                            const lt = l.trim()
-                            if (lt.startsWith('👤')) name = lt.slice(2).trim()
-                            else if (lt.startsWith('📞')) phone = lt.slice(2).trim().replace(/\D/g, '')
+                          if (m.contact_first_name || m.contact_last_name || m.contact_phone) {
+                            name = [m.contact_first_name, m.contact_last_name].filter(Boolean).join(' ')
+                            phone = (m.contact_phone || '').replace(/\D/g, '')
+                          } else {
+                            const lines = (m.text || '').split('\n')
+                            for (const l of lines) {
+                              const lt = l.trim()
+                              if (lt.startsWith('👤')) name = lt.slice(2).trim()
+                              else if (lt.startsWith('📞')) phone = lt.slice(2).trim().replace(/\D/g, '')
+                            }
                           }
                           if (!name && !phone) name = m.text || 'Контакт'
                           const normPhone = phone.startsWith('380') ? '0' + phone.slice(3) : phone
@@ -4678,19 +4718,37 @@ function App() {
                           )
                         })()}
                         {/* Poll/checklist card */}
-                        {m.media_type === 'poll' && m.text && m.text.startsWith('📊') && (() => {
-                          const lines = m.text.split('\n')
-                          const question = lines[0]?.replace('📊 ', '') || 'Опитування'
-                          const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
-                          return <PollCard question={question} options={options} messageId={m.id} />
+                        {m.media_type === 'poll' && (() => {
+                          // Use dedicated API fields, fallback to text parsing
+                          if (m.poll_question) {
+                            const opts = (m.poll_options || []).map(o => typeof o === 'string' ? o : o.text)
+                            return <PollCard question={m.poll_question} options={opts.map(o => `☐ ${o}`)} messageId={m.id} totalVoters={m.poll_total_voters} isClosed={m.poll_is_closed} />
+                          }
+                          if (m.text && m.text.startsWith('📊')) {
+                            const lines = m.text.split('\n')
+                            const question = lines[0]?.replace('📊 ', '') || 'Опитування'
+                            const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
+                            return <PollCard question={question} options={options} messageId={m.id} />
+                          }
+                          return null
                         })()}
                         {/* Geo location card */}
-                        {m.media_type === 'geo' && m.text && m.text.includes('📍') && (() => {
-                          const lines = (m.text || '').split('\n')
-                          const title = lines[0]?.replace('📍 ', '') || 'Геолокація'
-                          const mapUrl = lines.find(l => l.startsWith('https://maps.google.com'))
-                          const address = lines.length > 2 ? lines.slice(1, -1).join(', ') : ''
-                          const isLive = title.startsWith('Маячок')
+                        {m.media_type === 'geo' && (() => {
+                          // Use dedicated API fields, fallback to text parsing
+                          let title = '', address = '', mapUrl = '', isLive = false
+                          if (m.location_lat != null && m.location_lng != null) {
+                            title = m.location_title || 'Геолокація'
+                            address = m.location_address || ''
+                            mapUrl = `https://maps.google.com/maps?q=${m.location_lat},${m.location_lng}`
+                          } else if (m.text && m.text.includes('📍')) {
+                            const lines = (m.text || '').split('\n')
+                            title = lines[0]?.replace('📍 ', '') || 'Геолокація'
+                            mapUrl = lines.find(l => l.startsWith('https://maps.google.com')) || ''
+                            address = lines.length > 2 ? lines.slice(1, -1).join(', ') : ''
+                            isLive = title.startsWith('Маячок')
+                          } else {
+                            return null
+                          }
                           return (
                             <div className="msg-geo-card" onClick={() => mapUrl && shellOpen(mapUrl)}>
                               <div className="msg-geo-icon">{isLive ? '📡' : '📍'}</div>
@@ -4703,7 +4761,7 @@ function App() {
                           )
                         })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && m.text.startsWith('📊')) && !(m.media_type === 'geo' && m.text.includes('📍')) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Deleted label under message */}
                         {m.is_deleted && (
