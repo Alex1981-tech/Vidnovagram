@@ -8,6 +8,8 @@ import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
+import lottie from 'lottie-web'
+import pako from 'pako'
 import './App.css'
 
 const API_BASE = 'https://cc.vidnova.app/api'
@@ -87,6 +89,15 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.14.0': [
+    'Альбоми — відправка кількох файлів як згрупований медіа (Telegram album)',
+    'Глобальний пошук — пошук по повідомленнях у всіх чатах (backend fulltext)',
+    'Чернетки — збереження між сесіями (localStorage)',
+    'Анімовані стікери — підтримка TGS/Lottie з анімацією',
+    'Мультивибір — кнопки «Копіювати» та «Видалити» поруч з «Переслати»',
+    'Виділити — нова дія в контекстному меню для мультивибору повідомлень',
+    'Збереження позиції прокрутки — при перемиканні чатів та поверненні',
+  ],
   '0.13.19': [
     'Presence — зелена точка онлайн-статусу на аватарці контакта',
     'Last seen — «був(ла) о HH:MM» під іменем в заголовку чату',
@@ -634,6 +645,41 @@ async function oggToWav(blob: Blob): Promise<Blob> {
 }
 
 /** Authenticated media loader — triggers blob fetch on mount */
+// Animated sticker (TGS = gzipped Lottie JSON)
+function LottieSticker({ blobUrl, size = 200 }: { blobUrl: string; size?: number }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const animRef = useRef<any>(null)
+  useEffect(() => {
+    if (!blobUrl || !containerRef.current) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const resp = await fetch(blobUrl)
+        const buf = new Uint8Array(await resp.arrayBuffer())
+        // TGS files are gzipped — decompress
+        let json: any
+        try {
+          const decompressed = pako.inflate(buf, { to: 'string' })
+          json = JSON.parse(decompressed)
+        } catch {
+          // Maybe it's already JSON (not gzipped)
+          json = JSON.parse(new TextDecoder().decode(buf))
+        }
+        if (cancelled || !containerRef.current) return
+        animRef.current = lottie.loadAnimation({
+          container: containerRef.current,
+          renderer: 'svg',
+          loop: true,
+          autoplay: true,
+          animationData: json,
+        })
+      } catch (e) { console.warn('LottieSticker error:', e) }
+    })()
+    return () => { cancelled = true; animRef.current?.destroy() }
+  }, [blobUrl])
+  return <div ref={containerRef} style={{ width: size, height: size }} />
+}
+
 function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick, fallbackPath }: {
   mediaKey: string; mediaPath: string; type: 'image'; className?: string;
   token: string; blobMap: Record<string, string>;
@@ -1097,6 +1143,8 @@ function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([])
+  const globalSearchTimer = useRef<any>(null)
   const [contactCount, setContactCount] = useState(0)
   const [contactPage, setContactPage] = useState(1)
   const [loadingMoreContacts, setLoadingMoreContacts] = useState(false)
@@ -1290,12 +1338,16 @@ function App() {
 
   // Typing indicators: { clientId: timestamp }
   const [typingIndicators, setTypingIndicators] = useState<Record<string, number>>({})
+  // Scroll positions: { clientId: scrollTop }
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map())
   // Presence: { tg_peer_id: { status, was_online } }
   const [peerPresence, setPeerPresence] = useState<Record<number, { status: string; was_online: number | null }>>({})
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
-  // Drafts: save text per client when switching chats
-  const draftsRef = useRef<Map<string, { text: string; replyTo?: any }>>(new Map())
+  // Drafts: save text per client when switching chats (persisted to localStorage)
+  const draftsRef = useRef<Map<string, { text: string; replyTo?: any }>>(
+    (() => { try { const s = localStorage.getItem('vg_drafts'); if (s) return new Map(JSON.parse(s)) } catch {} return new Map() })()
+  )
   // Chat search
   const [chatSearchOpen, setChatSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
@@ -1736,6 +1788,29 @@ function App() {
             }
           } catch { /* ignore */ }
         }
+
+        // Fetch presence for all contacts with tg_peer_id
+        const peerIds = list.filter((c: Contact) => c.tg_peer_id).map((c: Contact) => c.tg_peer_id)
+        if (peerIds.length > 0 && selectedAccount) {
+          try {
+            const presResp = await authFetch(`${API_BASE}/telegram/presence/?account_id=${selectedAccount}&peer_ids=${peerIds.join(',')}`, auth.token)
+            if (presResp.ok) {
+              const presData = await presResp.json()
+              if (Array.isArray(presData) && presData.length > 0) {
+                setPeerPresence(prev => {
+                  const next = { ...prev }
+                  for (const p of presData) {
+                    next[p.tg_peer_id] = {
+                      status: p.status || 'unknown',
+                      was_online: p.last_seen_at ? Math.floor(new Date(p.last_seen_at).getTime() / 1000) : null,
+                    }
+                  }
+                  return next
+                })
+              }
+            }
+          } catch { /* ignore */ }
+        }
       }
     } catch (e) { console.error('Contacts:', e) }
   }, [auth?.token, search, selectedAccount, logout])
@@ -1798,7 +1873,13 @@ function App() {
         setHasOlderMessages(!!cached.next_cursor)
         setClientName(cached.client_name || '')
         setClientPhone(cached.client_phone || '')
-        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30)
+        // Check for saved scroll position (Feature 8: scroll restore)
+        const savedPos = scrollPositionsRef.current.get(clientId)
+        if (savedPos !== undefined) {
+          setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 30)
+        } else {
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30)
+        }
       }
     }
 
@@ -1828,8 +1909,15 @@ function App() {
           setReadTs(clientId, msgs[msgs.length - 1].message_date)
         }
         if (scrollToEnd) {
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50)
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 300)
+          const savedPos = scrollPositionsRef.current.get(clientId)
+          if (savedPos !== undefined) {
+            scrollPositionsRef.current.delete(clientId)
+            setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 50)
+            setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 300)
+          } else {
+            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50)
+            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 300)
+          }
         }
         // Save to cache
         putJsonCache(MSG_STORE, cacheKey, {
@@ -1999,18 +2087,16 @@ function App() {
         const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
         if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
       } else {
-        // Multiple files: send caption/text first, then files one by one
+        // Multiple files: send as album (grouped media)
         const caption = fileCaption.trim() || text
-        if (caption) {
-          const fd = _buildSendFd({ text: caption, replyMsgId })
-          const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-          if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-        }
-        for (const f of filesToSend) {
-          const fd = _buildSendFd({ file: f, forceDoc: forceDocument })
-          const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-          if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-        }
+        const albumFd = new FormData()
+        albumFd.append('account_id', selectedAccount)
+        if (caption) albumFd.append('caption', caption)
+        if (forceDocument) albumFd.append('force_document', '1')
+        for (const f of filesToSend) albumFd.append('files', f)
+        const albumUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send-album/`
+        const resp = await authFetch(albumUrl, auth.token, { method: 'POST', body: albumFd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
       }
 
       // Success — clean up
@@ -2018,7 +2104,7 @@ function App() {
       clearAttachment()
       setEditingMsg(null)
       ;(window as any).__replyTo = null
-      if (selectedClient) draftsRef.current.delete(selectedClient)
+      if (selectedClient) { draftsRef.current.delete(selectedClient); try { localStorage.setItem('vg_drafts', JSON.stringify([...draftsRef.current])) } catch {} }
       if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
       loadMessages(selectedClient)
       telemetry.trackChatWrite(selectedClient, selectedAccount, filesToSend.length > 0 ? 'media' : 'text')
@@ -3059,6 +3145,53 @@ function App() {
     setCtxMenu(null)
   }, [ctxMenu, toggleMsgSelection])
 
+  // Enter select mode from context menu (multi-select)
+  const ctxMenuSelect = useCallback(() => {
+    if (!ctxMenu) return
+    setForwardMode(true)
+    toggleMsgSelection(ctxMenu.messageId)
+    setCtxMenu(null)
+  }, [ctxMenu, toggleMsgSelection])
+
+  // Bulk copy selected messages text
+  const bulkCopyMessages = useCallback(() => {
+    const selected = messages.filter(m => selectedMsgIds.has(m.id))
+    const text = selected.map(m => {
+      const time = new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
+      const dir = m.direction === 'sent' ? '→' : '←'
+      return `[${time}] ${dir} ${m.text || (m.media_type ? `[${m.media_type}]` : '')}`
+    }).join('\n')
+    navigator.clipboard.writeText(text)
+    exitForwardMode()
+  }, [messages, selectedMsgIds, exitForwardMode])
+
+  // Bulk delete selected sent messages
+  const bulkDeleteMessages = useCallback(async () => {
+    if (!auth?.token || !selectedAccount || selectedMsgIds.size === 0) return
+    const sentMsgs = messages.filter(m => selectedMsgIds.has(m.id) && m.direction === 'sent' && m.tg_message_id && m.tg_peer_id)
+    if (sentMsgs.length === 0) return
+    const ok = window.confirm(`Видалити ${sentMsgs.length} повідомлень?`)
+    if (!ok) return
+    // Group by peer_id and delete in batches
+    const byPeer = new Map<number, number[]>()
+    for (const msg of sentMsgs) {
+      const list = byPeer.get(msg.tg_peer_id!) || []
+      list.push(msg.tg_message_id!)
+      byPeer.set(msg.tg_peer_id!, list)
+    }
+    for (const [peerId, msgIds] of byPeer) {
+      try {
+        await authFetch(`${API_BASE}/telegram/delete-message/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, message_ids: msgIds }),
+        })
+      } catch { /* continue */ }
+    }
+    exitForwardMode()
+    if (selectedClient) loadMessages(selectedClient)
+  }, [auth?.token, selectedAccount, selectedMsgIds, messages, exitForwardMode, selectedClient, loadMessages])
+
   // Lab assign: open modal from context menu
   const ctxMenuLabAssign = useCallback(() => {
     if (!ctxMenu) return
@@ -3704,12 +3837,24 @@ function App() {
 
   // Select client handler
   const selectClient = useCallback((clientId: string) => {
+    // Save scroll position for current client
+    if (selectedClient && chatContainerRef.current) {
+      const el = chatContainerRef.current
+      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100
+      // Only save position if NOT at the bottom (bottom = default)
+      if (!isAtBottom) {
+        scrollPositionsRef.current.set(selectedClient, el.scrollTop)
+      } else {
+        scrollPositionsRef.current.delete(selectedClient)
+      }
+    }
     // Save draft for current client before switching
     if (selectedClient && messageText.trim()) {
       draftsRef.current.set(selectedClient, { text: messageText, replyTo: (window as any).__replyTo || undefined })
     } else if (selectedClient) {
       draftsRef.current.delete(selectedClient)
     }
+    try { localStorage.setItem('vg_drafts', JSON.stringify([...draftsRef.current])) } catch {}
     // Restore draft for new client
     const draft = draftsRef.current.get(clientId)
     setMessageText(draft?.text || '')
@@ -4065,9 +4210,25 @@ function App() {
               />
             ) : (
               <input
-                placeholder="Пошук контактів..."
+                placeholder="Пошук контактів та повідомлень..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  setSearch(e.target.value)
+                  const q = e.target.value.trim()
+                  clearTimeout(globalSearchTimer.current)
+                  if (q.length >= 3 && auth?.token) {
+                    globalSearchTimer.current = setTimeout(async () => {
+                      try {
+                        const params = new URLSearchParams({ q, limit: '30' })
+                        if (selectedAccount) params.set('account_id', selectedAccount)
+                        const resp = await authFetch(`${API_BASE}/telegram/search-messages/?${params}`, auth!.token)
+                        if (resp.ok) setGlobalSearchResults(await resp.json())
+                      } catch { /* ignore */ }
+                    }, 400)
+                  } else {
+                    setGlobalSearchResults([])
+                  }
+                }}
               />
             )}
           </div>
@@ -4208,6 +4369,31 @@ function App() {
                 ))}
                 {loadingMoreContacts && (
                   <div className="loading-more">Завантаження...</div>
+                )}
+                {/* Global message search results */}
+                {globalSearchResults.length > 0 && (
+                  <>
+                    <div className="search-section-header">Повідомлення ({globalSearchResults.length})</div>
+                    {globalSearchResults.map((r, i) => (
+                      <div key={`sr-${i}`} className="contact search-result" onClick={() => {
+                        if (r.client_id) { selectClient(r.client_id); setSearch(''); setGlobalSearchResults([]) }
+                      }}>
+                        <div className="avatar"><UserIcon /></div>
+                        <div className="contact-body">
+                          <div className="contact-row">
+                            <span className="contact-name">{r.client_name || r.client_phone || 'Невідомий'}</span>
+                            <span className="contact-time">{r.message_date && formatContactDate(r.message_date)}</span>
+                          </div>
+                          <div className="contact-row">
+                            <span className="contact-preview search-preview">
+                              {r.direction === 'sent' && <span className="preview-you">Ви: </span>}
+                              {r.text?.slice(0, 80)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
               <div className="sidebar-footer">
@@ -4906,7 +5092,25 @@ function App() {
                         )}
                         {/* Sticker — show emoji or media */}
                         {m.media_type === 'sticker' && (() => {
-                          // Sticker with image (static/video) — render large without bubble
+                          // Animated sticker (TGS/Lottie) — render with lottie-web
+                          if (m.is_animated_sticker && (m.media_file || m.thumbnail)) {
+                            const stickerKey = `sticker_${m.id}`
+                            const blobUrl = mediaBlobMap[stickerKey]
+                            if (!blobUrl) {
+                              loadMediaBlob(stickerKey, m.media_file || m.thumbnail)
+                              return (
+                                <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
+                                  {m.sticker_emoji || '🏷️'}
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
+                                <LottieSticker blobUrl={blobUrl} size={200} />
+                              </div>
+                            )
+                          }
+                          // Static/video sticker with image — render large without bubble
                           if (m.thumbnail || m.media_file) {
                             return (
                               <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
@@ -5116,6 +5320,14 @@ function App() {
                 <div className="forward-bar">
                   <button className="forward-bar-cancel" onClick={exitForwardMode}><XIcon /> Скасувати</button>
                   <span className="forward-bar-count">Обрано: {selectedMsgIds.size}</span>
+                  <button className="forward-bar-btn" onClick={bulkCopyMessages} disabled={selectedMsgIds.size === 0} title="Копіювати">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                  {messages.some(m => selectedMsgIds.has(m.id) && m.direction === 'sent') && (
+                    <button className="forward-bar-btn forward-bar-btn-danger" onClick={bulkDeleteMessages} disabled={selectedMsgIds.size === 0} title="Видалити">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                  )}
                   <button className="forward-bar-send" onClick={openForwardModal} disabled={selectedMsgIds.size === 0}>
                     <ForwardIcon /> Переслати
                   </button>
@@ -6080,6 +6292,10 @@ function App() {
             <button className="ctx-menu-item" onClick={ctxMenuForward}>
               <ForwardIcon />
               Переслати
+            </button>
+            <button className="ctx-menu-item" onClick={ctxMenuSelect}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Виділити
             </button>
             <button className="ctx-menu-item" onClick={ctxMenuLabAssign}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>

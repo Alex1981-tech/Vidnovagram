@@ -574,6 +574,9 @@ body {
 
 /* === Contact List === */
 .contact-list { flex: 1; overflow-y: auto; }
+.search-section-header { padding: 6px 16px; font-size: 11px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid var(--border); margin-top: 4px; }
+.search-result { border-left: 3px solid var(--primary); }
+.search-preview { font-style: italic; }
 
 .contact {
   display: flex;
@@ -1750,6 +1753,12 @@ body {
 }
 .forward-bar-send:disabled { opacity: 0.3; cursor: default; }
 .forward-bar-send:hover:not(:disabled) { opacity: 0.9; }
+.forward-bar-btn {
+  background: none; border: none; color: var(--muted-foreground); cursor: pointer; padding: 6px 10px; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-size: 13px;
+}
+.forward-bar-btn:hover:not(:disabled) { color: var(--foreground); background: var(--accent); }
+.forward-bar-btn:disabled { opacity: 0.3; cursor: default; }
+.forward-bar-btn-danger:hover:not(:disabled) { color: #ef4444; background: rgba(239,68,68,0.1); }
 
 /* Message selection (forward mode) */
 .msg.selectable { cursor: pointer; }
