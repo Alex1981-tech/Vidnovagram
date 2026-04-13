@@ -65,6 +65,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.18': [
+    'Закріпити/Відкріпити — нова дія в контекстному меню повідомлення',
+    'Закріплення миттєво оновлює банер та стан в чаті',
+  ],
   '0.13.17': [
     'Чернетки — текст зберігається при перемиканні чатів та відновлюється автоматично',
     'Чернетки — "Чернетка:" відображається в списку контактів (червоний індикатор)',
@@ -3062,6 +3066,28 @@ function App() {
     chatInputRef.current?.focus()
   }, [ctxMenu, messages])
 
+  // Pin/unpin message from context menu
+  const ctxMenuPin = useCallback(async () => {
+    if (!ctxMenu || !auth?.token || !selectedAccount) return
+    const msg = messages.find(m => m.id === ctxMenu.messageId)
+    if (!msg?.tg_message_id || !msg?.tg_peer_id) { setCtxMenu(null); return }
+    const action = msg.is_pinned ? 'unpin' : 'pin'
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/pin-message/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAccount, peer_id: msg.tg_peer_id, message_id: msg.tg_message_id, action }),
+      })
+      if (resp.ok) {
+        setMessages(prev => prev.map(m => {
+          if (action === 'pin') return { ...m, is_pinned: m.id === msg.id }
+          return m.id === msg.id ? { ...m, is_pinned: false } : m
+        }))
+      }
+    } catch (e) { console.error('Pin error:', e) }
+    setCtxMenu(null)
+  }, [ctxMenu, messages, auth?.token, selectedAccount])
+
   // Copy text to clipboard
   const ctxMenuCopy = useCallback(() => {
     if (!ctxMenu) return
@@ -6004,6 +6030,12 @@ function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
               Додати аналіз
             </button>
+            {selectedAccount && (
+              <button className="ctx-menu-item" onClick={ctxMenuPin}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>
+                {messages.find(m => m.id === ctxMenu.messageId)?.is_pinned ? 'Відкріпити' : 'Закріпити'}
+              </button>
+            )}
             {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
               <button className="ctx-menu-item ctx-menu-item-danger" onClick={() => {
                 const msg = messages.find(m => m.id === ctxMenu.messageId)
