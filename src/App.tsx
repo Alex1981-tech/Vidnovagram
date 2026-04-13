@@ -65,6 +65,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.13.15': [
+    'Альбоми — фото/відео з одного media_group відображаються як єдиний блок (grid 2×2)',
+    'Альбоми — відео-бейдж (play іконка) на відео в альбомі',
+    'Альбоми — підпис групи та lightbox при натисканні на фото',
+  ],
   '0.13.14': [
     'Контакти, опитування, геолокації — рендеринг через структуровані API-поля (замість парсингу тексту)',
     'Стікери — відображення емодзі та назви набору з API',
@@ -358,6 +363,16 @@ interface ChatMessage {
   edited_at?: string
   original_text?: string
   reactions?: { emoji: string; count: number; chosen?: boolean }[]
+}
+
+interface AlbumGroup {
+  type: 'album'
+  media_group_id: number
+  messages: ChatMessage[]
+  direction: 'sent' | 'received'
+  message_date: string
+  caption?: string
+  source?: 'telegram' | 'whatsapp' | 'binotel'
 }
 
 interface WsReactionEvent {
@@ -3546,7 +3561,7 @@ function App() {
   }, [contacts, newChatClient])
 
   // Group messages + notes by date
-  const groupedMessages: (ChatMessage | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = useMemo(() => {
+  const groupedMessages: (ChatMessage | AlbumGroup | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = useMemo(() => {
     // Merge messages and notes into a single timeline
     type Item = { date: string; kind: 'msg'; data: ChatMessage } | { date: string; kind: 'note'; data: ClientNote }
     const items: Item[] = []
@@ -3554,8 +3569,24 @@ function App() {
     for (const n of clientNotes) items.push({ date: n.created_at, kind: 'note', data: n })
     items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-    const result: (ChatMessage | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = []
+    const result: (ChatMessage | AlbumGroup | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = []
     let lastDateStr = ''
+    // Collect album groups: media_group_id → messages
+    const albumMap = new Map<number, ChatMessage[]>()
+    const albumFirst = new Set<number>() // track first occurrence index
+    for (const item of items) {
+      if (item.kind === 'msg' && item.data.media_group_id) {
+        const gid = item.data.media_group_id
+        if (!albumMap.has(gid)) albumMap.set(gid, [])
+        albumMap.get(gid)!.push(item.data)
+      }
+    }
+    // Only treat as album if 2+ messages in group
+    const validAlbums = new Set<number>()
+    for (const [gid, msgs] of albumMap) {
+      if (msgs.length >= 2) validAlbums.add(gid)
+    }
+
     for (const item of items) {
       const d = formatDateSeparator(item.date)
       if (d !== lastDateStr) {
@@ -3565,7 +3596,28 @@ function App() {
       if (item.kind === 'note') {
         result.push({ ...item.data, _isNote: true } as ClientNote & { _isNote: true })
       } else {
-        result.push(item.data)
+        const m = item.data
+        if (m.media_group_id && validAlbums.has(m.media_group_id)) {
+          // Only emit album on first message of group
+          if (!albumFirst.has(m.media_group_id)) {
+            albumFirst.add(m.media_group_id)
+            const albumMsgs = albumMap.get(m.media_group_id)!
+            // Caption = text of last message in album (TG sends caption on last)
+            const caption = albumMsgs.find(am => am.text && am.media_type !== 'contact')?.text || ''
+            result.push({
+              type: 'album',
+              media_group_id: m.media_group_id,
+              messages: albumMsgs,
+              direction: m.direction as 'sent' | 'received',
+              message_date: albumMsgs[albumMsgs.length - 1].message_date,
+              caption,
+              source: m.source,
+            })
+          }
+          // Skip individual messages that are part of an album
+        } else {
+          result.push(m)
+        }
       }
     }
     return result
@@ -4431,6 +4483,68 @@ function App() {
                           <div className="msg-note-text">{note.text}</div>
                           <div className="msg-time">
                             {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+                  // Album group
+                  if ('type' in item && (item as any).type === 'album') {
+                    const album = item as AlbumGroup
+                    const count = album.messages.length
+                    // Grid class: 2 items = 2 cols, 3 = 2+1, 4+ = 2x2 grid
+                    const gridClass = count === 2 ? 'album-grid-2' : count === 3 ? 'album-grid-3' : 'album-grid-4'
+                    return (
+                      <div key={`album-${album.media_group_id}`} className={`msg ${album.direction} src-${album.source || 'telegram'}`}>
+                        <div className="msg-bubble">
+                          <div className={`album-grid ${gridClass}`}>
+                            {album.messages.map((am, ai) => (
+                              <div key={am.id} className={`album-item${count === 3 && ai === 0 ? ' album-item-wide' : ''}`}>
+                                {am.thumbnail || am.media_file ? (
+                                  <AuthMedia
+                                    mediaKey={`thumb_${am.id}`}
+                                    mediaPath={am.thumbnail || am.media_file}
+                                    type="image"
+                                    className="album-media"
+                                    token={auth?.token || ''}
+                                    blobMap={mediaBlobMap}
+                                    loadBlob={loadMediaBlob}
+                                    onClick={async () => {
+                                      if (am.media_file) {
+                                        const blob = mediaBlobMap[`full_${am.id}`] || await loadMediaBlob(`full_${am.id}`, am.media_file)
+                                        if (blob) setLightboxSrc(blob)
+                                      } else if (mediaBlobMap[`thumb_${am.id}`]) {
+                                        setLightboxSrc(mediaBlobMap[`thumb_${am.id}`])
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="album-placeholder">
+                                    {am.media_status === 'pending' ? <div className="spinner-sm" /> : `📎 ${am.media_type || 'медіа'}`}
+                                  </div>
+                                )}
+                                {am.media_type === 'video' && (
+                                  <div className="album-video-badge">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {album.caption && <div className="msg-text"><Linkify text={album.caption} onLinkClick={u => shellOpen(u)} /></div>}
+                          <div className="msg-footer">
+                            <span className="msg-source">
+                              {album.source === 'whatsapp'
+                                ? <WhatsAppIcon size={10} color="#25D366" />
+                                : <TelegramIcon size={10} color="#2AABEE" />
+                              }
+                            </span>
+                            <span className="msg-time">
+                              {new Date(album.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {album.direction === 'sent' && (
+                              <span className="msg-status-text read">Прочитано</span>
+                            )}
                           </div>
                         </div>
                       </div>
