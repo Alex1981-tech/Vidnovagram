@@ -1032,14 +1032,18 @@ function resolveLinkedDisplay(linked?: { phone: string; full_name?: string; tg_n
   if (!linked?.length) return null
   const preferred =
     linked.find(lp => (lp.tg_name || '').trim())
-    || linked.find(lp => (lp.full_name || '').trim())
+    || linked.find(lp => {
+      const value = (lp.full_name || '').trim()
+      return !!value && !isPlaceholderName(value)
+    })
     || linked.find(lp => (lp.tg_username || '').trim())
     || linked.find(lp => (lp.phone || '').trim())
     || null
   if (!preferred) return null
   const username = (preferred.tg_username || '').trim().replace(/^@+/, '')
   const tgName = (preferred.tg_name || '').trim()
-  const fullName = (preferred.full_name || '').trim()
+  const fullNameRaw = (preferred.full_name || '').trim()
+  const fullName = isPlaceholderName(fullNameRaw) ? '' : fullNameRaw
   const phone = (preferred.phone || '').trim()
   return {
     name: tgName || fullName || (username ? `@${username}` : phone),
@@ -1054,12 +1058,14 @@ function resolveContactDisplay(contact?: {
   tg_username?: string
   linked_phones?: { phone: string; full_name?: string; tg_name?: string; tg_username?: string }[]
 }) {
-  const fullName = (contact?.full_name || '').trim()
+  const fullNameRaw = (contact?.full_name || '').trim()
   const phone = (contact?.phone || '').trim()
-  const tgName = (contact?.tg_name || '').trim()
+  const tgNameRaw = (contact?.tg_name || '').trim()
   const username = (contact?.tg_username || '').trim().replace(/^@+/, '')
   const linked = resolveLinkedDisplay(contact?.linked_phones)
-  const placeholder = isPlaceholderPhone(phone) || isPlaceholderName(fullName) || isPlaceholderName(tgName)
+  const fullName = isPlaceholderName(fullNameRaw) ? '' : fullNameRaw
+  const tgName = isPlaceholderName(tgNameRaw) ? '' : tgNameRaw
+  const placeholder = isPlaceholderPhone(phone) || isPlaceholderName(fullNameRaw) || isPlaceholderName(tgNameRaw)
 
   if (placeholder && linked) {
     return {
@@ -7159,12 +7165,12 @@ function App() {
               {photoMap[selectedClient]
                 ? <img src={photoMap[selectedClient]} alt="" />
                 : <div className="contact-profile-avatar-placeholder">
-                    {(clientName || chatContact.full_name || '?')[0].toUpperCase()}
+                    {(chatDisplay.name || '?')[0].toUpperCase()}
                   </div>
               }
             </div>
-            <h2 className="contact-profile-name">{clientName || chatContact.full_name || 'Без імені'}</h2>
-            <p className="contact-profile-phone">{clientPhone || chatContact.phone}</p>
+            <h2 className="contact-profile-name">{chatDisplay.name || 'Без імені'}</h2>
+            <p className="contact-profile-phone">{chatDisplay.subtitle || clientPhone || chatContact.phone}</p>
             {clientLinkedPhones.length > 0 && (
               <div className="contact-profile-linked">
                 {clientLinkedPhones.map(lp => (
@@ -7561,7 +7567,7 @@ function App() {
             </div>
             <div className="tpl-edit-footer">
               <span className="tpl-edit-hint">
-                {chatContact?.full_name || chatContact?.phone || ''}
+                {chatDisplay.name || chatDisplay.subtitle || ''}
               </span>
               <button
                 className="tpl-btn-send"
