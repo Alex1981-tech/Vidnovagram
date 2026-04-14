@@ -6913,9 +6913,13 @@ body {
   align-items: center;
   transition: color 0.15s ease, background 0.15s ease;
 }
-.voip-call-btn:hover {
+.voip-call-btn:hover:not(:disabled) {
   color: oklch(0.65 0.2 145);
   background: oklch(0.65 0.2 145 / 0.1);
+}
+.voip-call-btn-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* Animations */

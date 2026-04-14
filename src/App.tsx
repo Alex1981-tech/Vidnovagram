@@ -5150,14 +5150,23 @@ function App() {
                   </div>
                 </div>
                 <div className="chat-header-right">
-                  {(chatContact as any)?.source === 'telegram' && (chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (
-                    <button
-                      className="voip-call-btn"
-                      onClick={() => handleVoipCall(selectedAccount, (chatContact as any).tg_peer_id)}
-                      title="Голосовий дзвінок"
-                    >
-                      <PhoneIcon />
-                    </button>
+                  {(chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (
+                    <>
+                      <button
+                        className="voip-call-btn"
+                        onClick={() => handleVoipCall(selectedAccount, (chatContact as any).tg_peer_id)}
+                        title="Голосовий дзвінок"
+                      >
+                        <PhoneIcon />
+                      </button>
+                      <button
+                        className="voip-call-btn voip-call-btn-disabled"
+                        title="Відеодзвінок (незабаром)"
+                        disabled
+                      >
+                        <VideoIcon />
+                      </button>
+                    </>
                   )}
                   <button className="chat-search-btn" onClick={() => setChatSearchOpen(o => !o)} title="Пошук у чаті">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
