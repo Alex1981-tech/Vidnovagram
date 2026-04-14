@@ -462,6 +462,10 @@ interface WsReactionEvent {
   }
   reactions?: { emoji: string; count: number; chosen?: boolean }[]
   actor?: 'self' | 'peer'
+  target_message_text?: string
+  target_message_direction?: string
+  target_message_has_media?: boolean
+  target_message_media_type?: string
   [key: string]: any
 }
 
@@ -566,7 +570,7 @@ function authFetch(url: string, token: string, opts: RequestInit = {}) {
 
 // ===== IndexedDB cache (media, messages, contacts) =====
 const CACHE_DB_NAME = 'vidnovagram_cache'
-const CACHE_DB_VERSION = 2
+const CACHE_DB_VERSION = 3
 const THUMB_STORE = 'thumbnails'  // key: mediaPath, value: { blob: ArrayBuffer, type: string, ts: number }
 const AVATAR_STORE = 'avatars'    // key: clientId, value: { blob: ArrayBuffer, type: string, ts: number }
 const MSG_STORE = 'messages'      // key: clientId, value: { messages: ChatMessage[], count: number, client_name: string, client_phone: string, ts: number }
@@ -577,12 +581,19 @@ const MSG_CACHE_TTL = 24 * 60 * 60 * 1000  // 24 hours (messages)
 function openCacheDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION)
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result
+      const oldVersion = (event as IDBVersionChangeEvent).oldVersion
       if (!db.objectStoreNames.contains(THUMB_STORE)) db.createObjectStore(THUMB_STORE)
       if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE)
       if (!db.objectStoreNames.contains(MSG_STORE)) db.createObjectStore(MSG_STORE)
       if (!db.objectStoreNames.contains(CONTACTS_STORE)) db.createObjectStore(CONTACTS_STORE)
+      // Clear stale message/contact caches on schema upgrade (adds reply_to_*, reaction context)
+      if (oldVersion > 0 && oldVersion < 3) {
+        const tx = (event.target as IDBOpenDBRequest).transaction!
+        try { tx.objectStore(MSG_STORE).clear() } catch (_) { /* ignore */ }
+        try { tx.objectStore(CONTACTS_STORE).clear() } catch (_) { /* ignore */ }
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -1098,6 +1109,32 @@ function resolveWsContactDisplay(message?: {
     tg_username: message?.tg_username || contact?.tg_username,
     linked_phones: contact?.linked_phones,
   })
+}
+
+function getMediaPreviewLabel(mediaType?: string) {
+  switch ((mediaType || '').toLowerCase()) {
+    case 'photo': return 'фото'
+    case 'video': return 'відео'
+    case 'voice': return 'голосове повідомлення'
+    case 'video_note': return 'відеокружечок'
+    case 'document': return 'документ'
+    case 'sticker': return 'стікер'
+    default: return 'медіаповідомлення'
+  }
+}
+
+function buildReactionTargetPreview(event: WsReactionEvent, sender: string, localMsg?: ChatMessage) {
+  const targetDirection = event.target_message_direction || localMsg?.direction || ''
+  const targetText = (event.target_message_text || localMsg?.text || '').trim()
+  const targetHasMedia = !!event.target_message_has_media || !!localMsg?.has_media
+  const targetMediaType = event.target_message_media_type || localMsg?.media_type || ''
+  const targetLabel = targetDirection === 'sent' ? 'ваше повідомлення' : `повідомлення ${sender}`
+  const preview = targetText
+    ? targetText.slice(0, 100)
+    : targetHasMedia
+      ? getMediaPreviewLabel(targetMediaType)
+      : 'повідомлення'
+  return { targetLabel, preview }
 }
 
 // ===== SVG Icons =====
@@ -3856,18 +3893,26 @@ function App() {
                   ? peerReactions.map(r => r.emoji).join(' ')
                   : data.reactions?.[0]?.emoji || '👍'
                 const contact = contactsRef.current.find(c => c.client_id === clientId)
-                const sender = contact?.full_name || contact?.phone || data.client_name || data.phone || 'Клієнт'
+                const senderDisplay = resolveContactDisplay(contact || {
+                  full_name: data.client_name,
+                  phone: data.phone,
+                })
+                const sender = senderDisplay.name || 'Клієнт'
                 const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
-                const preview = reactedMsg?.text?.trim()
-                  ? reactedMsg.text.trim().slice(0, 100)
-                  : reactedMsg?.has_media
-                    ? 'медіаповідомлення'
-                    : 'повідомлення'
+                const { targetLabel, preview } = buildReactionTargetPreview(data, sender, reactedMsg)
 
                 if (isPopupEnabled(data.account_id)) {
-                  showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${preview}`)
+                  showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${targetLabel}: ${preview}`)
                 }
-                addToastRef.current(clientId, data.account_id || '', sender, '', `Відреагував(ла) ${emoji} · ${preview}`, false, '')
+                addToastRef.current(
+                  clientId,
+                  data.account_id || '',
+                  sender,
+                  '',
+                  `Відреагував(ла) ${emoji} · На ${targetLabel}: ${preview}`,
+                  false,
+                  ''
+                )
                 playNotifSound(data.account_id)
               }
             }
@@ -5553,7 +5598,7 @@ function App() {
                           </div>
                         )}
                         {/* Reply quote */}
-                        {m.reply_to_msg_id && (
+                        {(m.reply_to_msg_id || m.reply_to_text || m.reply_to_sender) && (
                           <div className="msg-reply-quote">
                             <div className="msg-reply-bar" />
                             <div className="msg-reply-body">
