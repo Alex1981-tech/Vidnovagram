@@ -4449,6 +4449,7 @@ function App() {
       setActiveCall(call)
     } catch (e: any) {
       console.error('[VoIP] Call failed:', e.message)
+      addToastRef.current('', accountId, '', '', `Дзвінок не вдався: ${e.message || 'невідома помилка'}`, false, '')
     }
   }, [makeVoipAuthFetch])
 
