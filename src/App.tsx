@@ -4240,7 +4240,7 @@ function App() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await authFetch(`${API}/api/telegram/group-info/?account_id=${selectedAccount}&peer_id=${peerId}`)
+        const res = await authFetch(`${API_BASE}/telegram/group-info/?account_id=${selectedAccount}&peer_id=${peerId}`, auth!.token)
         if (!res.ok || cancelled) return
         const data = await res.json()
         if (!cancelled) setGroupInfo(data)
