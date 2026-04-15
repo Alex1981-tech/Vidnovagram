@@ -4568,15 +4568,33 @@ function App() {
   }, [chatContact, selectedAccount, auth, chatMuted, muteLoading])
 
   const handleVoipCall = useCallback(async (accountId: string, peerId: number) => {
+    // Optimistic: show overlay immediately with ringing state
+    const optimistic: VoIPCall = {
+      id: 0,
+      tg_account_id: accountId,
+      direction: 'outgoing',
+      state: 'ringing',
+      tg_peer_id: peerId,
+      peer_phone: (chatContact as any)?.phone || '',
+      peer_name: (chatContact as any)?.full_name || (chatContact as any)?.name || '',
+      mp_call_id: '',
+      started_at: new Date().toISOString(),
+      answered_at: null,
+      ended_at: null,
+      end_reason: '',
+      recording_duration_seconds: null,
+    }
+    setActiveCall(optimistic)
     try {
       const af = makeVoipAuthFetch()
       const call = await voipCall(af, accountId, peerId)
       setActiveCall(call)
     } catch (e: any) {
       console.error('[VoIP] Call failed:', e.message)
+      setActiveCall(null)
       addToastRef.current('', accountId, '', '', `Дзвінок не вдався: ${e.message || 'невідома помилка'}`, false, '')
     }
-  }, [makeVoipAuthFetch])
+  }, [makeVoipAuthFetch, chatContact])
 
   const handleVoipAnswer = useCallback(async () => {
     if (!incomingCall) return
