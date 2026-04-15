@@ -1333,7 +1333,9 @@ function App() {
   const [clientPhone, setClientPhone] = useState('')
   const [clientLinkedPhones, setClientLinkedPhones] = useState<{ id: string; phone: string }[]>([])
   const [isPlaceholder, setIsPlaceholder] = useState(false)
-  const [groupInfo, setGroupInfo] = useState<{ participants_count?: number; online_count?: number } | null>(null)
+  const [groupInfo, setGroupInfo] = useState<{ participants_count?: number; online_count?: number; about?: string; username?: string; is_broadcast?: boolean; linked_chat_id?: number } | null>(null)
+  const [chatMuted, setChatMuted] = useState(false)
+  const [muteLoading, setMuteLoading] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkSearch, setLinkSearch] = useState('')
   const [linkResults, setLinkResults] = useState<{id: string; phone: string; full_name: string; calls_count: number}[]>([])
@@ -4229,23 +4231,33 @@ function App() {
     }
   }, [contacts, newChatClient])
 
-  // Fetch group info (participants_count, online_count) for group/supergroup chats
+  // Fetch group/channel info (participants_count, online_count, about, is_broadcast) + notify settings
   useEffect(() => {
     const ct = (chatContact as any)?.chat_type
     if (!ct || ct === 'private' || !auth?.token || !selectedAccount) {
       setGroupInfo(null)
+      setChatMuted(false)
       return
     }
     const peerId = (chatContact as any)?.tg_peer_id
-    if (!peerId) { setGroupInfo(null); return }
+    if (!peerId) { setGroupInfo(null); setChatMuted(false); return }
     let cancelled = false
     ;(async () => {
       try {
-        const res = await authFetch(`${API_BASE}/telegram/group-info/?account_id=${selectedAccount}&peer_id=${peerId}`, auth!.token)
-        if (!res.ok || cancelled) return
-        const data = await res.json()
-        if (!cancelled) setGroupInfo(data)
-      } catch { if (!cancelled) setGroupInfo(null) }
+        const [infoRes, notifyRes] = await Promise.all([
+          authFetch(`${API_BASE}/telegram/group-info/?account_id=${selectedAccount}&peer_id=${peerId}`, auth!.token),
+          authFetch(`${API_BASE}/telegram/notify-settings/?account_id=${selectedAccount}&peer_id=${peerId}`, auth!.token),
+        ])
+        if (cancelled) return
+        if (infoRes.ok) {
+          const data = await infoRes.json()
+          if (!cancelled) setGroupInfo(data)
+        }
+        if (notifyRes.ok) {
+          const notifyData = await notifyRes.json()
+          if (!cancelled) setChatMuted(!!notifyData.muted)
+        }
+      } catch { if (!cancelled) { setGroupInfo(null); setChatMuted(false) } }
     })()
     return () => { cancelled = true }
   }, [selectedClient, selectedAccount, (chatContact as any)?.chat_type])
@@ -4546,6 +4558,21 @@ function App() {
   const makeVoipAuthFetch = useCallback(() => {
     return (url: string, opts?: RequestInit) => authFetch(url, auth?.token || '', opts)
   }, [auth?.token])
+
+  const toggleMuteChat = useCallback(async () => {
+    const peerId = (chatContact as any)?.tg_peer_id
+    if (!peerId || !selectedAccount || !auth?.token || muteLoading) return
+    setMuteLoading(true)
+    try {
+      const res = await authFetch(`${API_BASE}/telegram/mute-chat/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, mute: !chatMuted }),
+      })
+      if (res.ok) setChatMuted(!chatMuted)
+    } catch (e) { console.error('mute error', e) }
+    setMuteLoading(false)
+  }, [chatContact, selectedAccount, auth, chatMuted, muteLoading])
 
   const handleVoipCall = useCallback(async (accountId: string, peerId: number) => {
     try {
@@ -5341,8 +5368,11 @@ function App() {
                       const ct = (chatContact as any)?.chat_type
                       if (ct && ct !== 'private' && groupInfo) {
                         const parts: string[] = []
-                        if (groupInfo.participants_count != null) parts.push(`${groupInfo.participants_count} учасників`)
+                        if (groupInfo.participants_count != null) {
+                          parts.push(`${groupInfo.participants_count} ${ct === 'channel' ? 'підписників' : 'учасників'}`)
+                        }
                         if (groupInfo.online_count != null && groupInfo.online_count > 0) parts.push(`${groupInfo.online_count} онлайн`)
+                        if (ct === 'channel' && !parts.length) parts.push('канал')
                         if (parts.length) return <span className="presence-offline">{parts.join(', ')}</span>
                       }
                       const peerId = (chatContact as any)?.tg_peer_id
@@ -5377,6 +5407,19 @@ function App() {
                         <VideoIcon />
                       </button>
                     </>
+                  )}
+                  {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && selectedAccount && (
+                    <button
+                      className={`chat-mute-btn${chatMuted ? ' muted' : ''}`}
+                      onClick={toggleMuteChat}
+                      disabled={muteLoading}
+                      title={chatMuted ? 'Увімкнути сповіщення' : 'Вимкнути сповіщення'}
+                    >
+                      {chatMuted
+                        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.8 8A6 6 0 0 1 20 12"/><path d="m2 2 20 20"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M8.54 5A6 6 0 0 1 18 8c0 1-.3 2.08-.78 3.1"/><path d="M6 6a8.11 8.11 0 0 0-1.56 3.85c-.42 2.15.07 3.75.56 5.15H18"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                      }
+                    </button>
                   )}
                   <button className="chat-search-btn" onClick={() => setChatSearchOpen(o => !o)} title="Пошук у чаті">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -6177,7 +6220,14 @@ function App() {
                   </button>
                 </div>
               )}
-              {!forwardMode && (
+              {!forwardMode && (chatContact as any)?.chat_type === 'channel' && (
+                <div className="channel-readonly-bar">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/></svg>
+                  <span>Канал — тільки перегляд</span>
+                  {chatMuted && <span className="channel-muted-label">🔇</span>}
+                </div>
+              )}
+              {!forwardMode && (chatContact as any)?.chat_type !== 'channel' && (
                 <div className="chat-input">
                   <input type="file" ref={fileInputRef} hidden multiple
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
@@ -7420,39 +7470,100 @@ function App() {
               }
             </div>
             <h2 className="contact-profile-name">{chatDisplay.name || 'Без імені'}</h2>
-            <p className="contact-profile-phone">{chatDisplay.subtitle || clientPhone || chatContact.phone}</p>
-            {clientLinkedPhones.length > 0 && (
-              <div className="contact-profile-linked">
-                {clientLinkedPhones.map(lp => (
-                  <span key={lp.id} className="contact-profile-linked-phone">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                    {lp.phone}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="contact-profile-stats">
-              <div className="contact-profile-stat">
-                <span className="contact-profile-stat-value">{messages.length}</span>
-                <span className="contact-profile-stat-label">повідомлень</span>
-              </div>
-              <div className="contact-profile-stat">
-                <span className="contact-profile-stat-value">{messages.filter(m => m.has_media).length}</span>
-                <span className="contact-profile-stat-label">медіа</span>
-              </div>
-              <div className="contact-profile-stat">
-                <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'sent').length}</span>
-                <span className="contact-profile-stat-label">надіслано</span>
-              </div>
-              <div className="contact-profile-stat">
-                <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'received').length}</span>
-                <span className="contact-profile-stat-label">отримано</span>
-              </div>
-            </div>
-            {(chatContact as any).source === 'telegram' && (chatContact as any).tg_peer_id && (
-              <a className="contact-profile-link" href={`https://t.me/+${(clientPhone || chatContact.phone || '').replace(/^0/, '38')}`} onClick={e => { e.preventDefault(); shellOpen((e.target as HTMLAnchorElement).href) }}>
-                Відкрити в Telegram
-              </a>
+            {(chatContact as any)?.chat_type === 'channel' ? (
+              <>
+                {groupInfo?.username && (
+                  <p className="contact-profile-phone">@{groupInfo.username}</p>
+                )}
+                {groupInfo?.about && (
+                  <p className="contact-profile-about">{groupInfo.about}</p>
+                )}
+                <div className="contact-profile-stats">
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{groupInfo?.participants_count ?? '—'}</span>
+                    <span className="contact-profile-stat-label">підписників</span>
+                  </div>
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.length}</span>
+                    <span className="contact-profile-stat-label">повідомлень</span>
+                  </div>
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.filter(m => m.has_media).length}</span>
+                    <span className="contact-profile-stat-label">медіа</span>
+                  </div>
+                </div>
+                <div className="contact-profile-actions">
+                  <button
+                    className={`contact-profile-mute-btn${chatMuted ? ' muted' : ''}`}
+                    onClick={toggleMuteChat}
+                    disabled={muteLoading}
+                  >
+                    {chatMuted ? '🔇 Сповіщення вимкнено' : '🔔 Сповіщення увімкнено'}
+                  </button>
+                </div>
+                {groupInfo?.username && (
+                  <a className="contact-profile-link" href={`https://t.me/${groupInfo.username}`} onClick={e => { e.preventDefault(); shellOpen(`https://t.me/${groupInfo.username}`) }}>
+                    Відкрити в Telegram
+                  </a>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="contact-profile-phone">{chatDisplay.subtitle || clientPhone || chatContact.phone}</p>
+                {clientLinkedPhones.length > 0 && (
+                  <div className="contact-profile-linked">
+                    {clientLinkedPhones.map(lp => (
+                      <span key={lp.id} className="contact-profile-linked-phone">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        {lp.phone}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && groupInfo?.about && (
+                  <p className="contact-profile-about">{groupInfo.about}</p>
+                )}
+                <div className="contact-profile-stats">
+                  {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && groupInfo?.participants_count != null && (
+                    <div className="contact-profile-stat">
+                      <span className="contact-profile-stat-value">{groupInfo.participants_count}</span>
+                      <span className="contact-profile-stat-label">учасників</span>
+                    </div>
+                  )}
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.length}</span>
+                    <span className="contact-profile-stat-label">повідомлень</span>
+                  </div>
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.filter(m => m.has_media).length}</span>
+                    <span className="contact-profile-stat-label">медіа</span>
+                  </div>
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'sent').length}</span>
+                    <span className="contact-profile-stat-label">надіслано</span>
+                  </div>
+                  <div className="contact-profile-stat">
+                    <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'received').length}</span>
+                    <span className="contact-profile-stat-label">отримано</span>
+                  </div>
+                </div>
+                {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && selectedAccount && (
+                  <div className="contact-profile-actions">
+                    <button
+                      className={`contact-profile-mute-btn${chatMuted ? ' muted' : ''}`}
+                      onClick={toggleMuteChat}
+                      disabled={muteLoading}
+                    >
+                      {chatMuted ? '🔇 Сповіщення вимкнено' : '🔔 Сповіщення увімкнено'}
+                    </button>
+                  </div>
+                )}
+                {(chatContact as any).source === 'telegram' && (chatContact as any).tg_peer_id && (
+                  <a className="contact-profile-link" href={`https://t.me/+${(clientPhone || chatContact.phone || '').replace(/^0/, '38')}`} onClick={e => { e.preventDefault(); shellOpen((e.target as HTMLAnchorElement).href) }}>
+                    Відкрити в Telegram
+                  </a>
+                )}
+              </>
             )}
           </div>
         </div>

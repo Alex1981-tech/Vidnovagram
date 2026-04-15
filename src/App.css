@@ -6439,6 +6439,79 @@ body {
   color: var(--foreground);
 }
 
+/* Mute button */
+.chat-mute-btn {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+.chat-mute-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.chat-mute-btn.muted {
+  color: oklch(0.65 0.15 25);
+}
+
+/* Channel read-only bar */
+.channel-readonly-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.channel-muted-label {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* Contact profile — about text */
+.contact-profile-about {
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin: 8px 0 12px;
+  text-align: center;
+  padding: 0 16px;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Contact profile — actions (mute button) */
+.contact-profile-actions {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+.contact-profile-mute-btn {
+  background: var(--accent);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+.contact-profile-mute-btn:hover {
+  background: var(--muted);
+}
+.contact-profile-mute-btn.muted {
+  color: oklch(0.65 0.15 25);
+}
+
 /* Chat search panel */
 .chat-search-panel {
   display: flex;
