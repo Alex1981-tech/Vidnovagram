@@ -8,7 +8,7 @@ import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
-import { voipCall, voipAnswer, voipHangup, type VoIPCall } from './voip'
+import { AudioEngine, voipCall, voipAnswer, voipHangup, type AudioEngineState, type VoIPCall } from './voip'
 import lottie from 'lottie-web'
 import pako from 'pako'
 import './App.css'
@@ -1477,9 +1477,11 @@ function App() {
   const [callDuration, setCallDuration] = useState(0)
   const [callMuted, setCallMuted] = useState(false)
   const [callMinimized, setCallMinimized] = useState(false)
-  // Audio is P2P via Telegram — no local AudioEngine needed
+  const [callAudioState, setCallAudioState] = useState<AudioEngineState>('idle')
+  const [callAudioError, setCallAudioError] = useState('')
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const ringtoneRef = useRef<HTMLAudioElement | null>(null)
+  const audioEngineRef = useRef<AudioEngine | null>(null)
   const _linkPreviewCache = useRef<Map<string, LinkPreview | null>>(new Map())
   linkPreviewCacheRef = _linkPreviewCache
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -4069,14 +4071,15 @@ function App() {
             const call = data.call as VoIPCall
             setActiveCall(prev => prev?.id === call.id ? { ...prev, ...call } : prev)
             if (call.state === 'connected') {
-              // Audio is P2P via Telegram — just start duration timer
               setCallDuration(0)
+              if (callTimerRef.current) clearInterval(callTimerRef.current)
               callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
             }
           }
 
           if (data.type === 'voip_ended') {
-            // Recording is handled server-side by MadelineProto
+            audioEngineRef.current?.stop().catch(() => {})
+            audioEngineRef.current = null
             if (callTimerRef.current) {
               clearInterval(callTimerRef.current)
               callTimerRef.current = null
@@ -4086,6 +4089,8 @@ function App() {
             setCallDuration(0)
             setCallMuted(false)
             setCallMinimized(false)
+            setCallAudioState('idle')
+            setCallAudioError('')
             ringtoneRef.current?.pause()
           }
         } catch { /* ignore */ }
@@ -4596,8 +4601,8 @@ function App() {
     } catch (e: any) {
       console.error('[VoIP] Hangup failed:', e.message)
     }
-    // Stop engine
-    // Recording is handled server-side by MadelineProto
+    audioEngineRef.current?.stop().catch(() => {})
+    audioEngineRef.current = null
     if (callTimerRef.current) {
       clearInterval(callTimerRef.current)
       callTimerRef.current = null
@@ -4607,6 +4612,8 @@ function App() {
     setCallDuration(0)
     setCallMuted(false)
     setCallMinimized(false)
+    setCallAudioState('idle')
+    setCallAudioError('')
   }, [activeCall, incomingCall, makeVoipAuthFetch])
 
   const handleVoipDecline = useCallback(async () => {
@@ -4622,9 +4629,53 @@ function App() {
   }, [incomingCall, makeVoipAuthFetch])
 
   const handleVoipToggleMute = useCallback(() => {
-    // Mute is a UI-only state for now (audio is P2P via Telegram)
-    setCallMuted(m => !m)
+    setCallMuted(prev => {
+      const next = !prev
+      if (next) audioEngineRef.current?.mute()
+      else audioEngineRef.current?.unmute()
+      return next
+    })
   }, [])
+
+  useEffect(() => {
+    return () => {
+      audioEngineRef.current?.stop().catch(() => {})
+      audioEngineRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeCall || !['connected', 'media_connecting', 'media_live'].includes(activeCall.state) || !auth?.token) return
+    if (audioEngineRef.current?.callId === activeCall.id && audioEngineRef.current.isActive) return
+
+    const engine = new AudioEngine((state, error) => {
+      setCallAudioState(state)
+      setCallAudioError(error || '')
+    })
+    audioEngineRef.current = engine
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        await engine.start({
+          callId: activeCall.id,
+          mpCallId: activeCall.mp_call_id,
+          token: auth.token,
+        })
+        if (cancelled) {
+          await engine.stop()
+          return
+        }
+        if (callMuted) engine.mute()
+      } catch (e: any) {
+        console.error('[VoIP] Audio engine failed:', e?.message || e)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeCall, auth?.token, callMuted])
 
   const formatCallDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60)
@@ -4665,10 +4716,29 @@ function App() {
         <div className="voip-active-overlay">
           <div className="voip-active-card">
             <div className="voip-active-status">
-              {activeCall.state === 'connected' ? 'Розмова' : activeCall.state === 'ringing' ? 'Дзвонить...' : activeCall.state === 'connecting' ? "З'єднання..." : activeCall.state}
+              {activeCall.state === 'media_live'
+                ? 'Аудіо підключено'
+                : activeCall.state === 'media_connecting'
+                  ? 'Підключення аудіо...'
+                  : activeCall.state === 'media_failed'
+                    ? 'Помилка аудіо'
+                : activeCall.state === 'connected'
+                ? callAudioState === 'streaming'
+                  ? 'Розмова'
+                  : callAudioState === 'connecting'
+                    ? 'Підключення аудіо...'
+                    : callAudioState === 'error'
+                      ? 'Помилка аудіо'
+                      : 'Розмова'
+                : activeCall.state === 'ringing'
+                  ? 'Дзвонить...'
+                  : activeCall.state === 'connecting'
+                    ? "З'єднання..."
+                    : activeCall.state}
             </div>
             <div className="voip-active-name">{activeCall.peer_name || activeCall.peer_phone || 'Абонент'}</div>
             {activeCall.peer_phone && <div className="voip-active-phone">{activeCall.peer_phone}</div>}
+            {(callAudioError || activeCall.media_error) && <div className="voip-active-phone">{callAudioError || activeCall.media_error}</div>}
             <div className="voip-active-timer">{formatCallDuration(callDuration)}</div>
             <div className="voip-active-actions">
               <button
