@@ -359,6 +359,7 @@ interface Contact {
   has_whatsapp?: boolean
   is_employee?: boolean
   tg_peer_id?: number
+  chat_type?: 'private' | 'group' | 'supergroup' | 'channel'
   linked_phones?: { id: string; phone: string; full_name: string; tg_name?: string; tg_username?: string }[]
 }
 
@@ -2203,6 +2204,66 @@ function App() {
     observer.observe(sentinel)
     return () => observer.disconnect()
   }, [hasOlderMessages, loadingOlder, msgCursor, loadOlderMessages])
+
+  // Scroll to quoted message when clicking reply quote
+  const scrollToReplyMessage = useCallback(async (replyToMsgId: number, peerIdHint?: number) => {
+    // 1. Find message in loaded messages by tg_message_id
+    const findInLoaded = () => messages.find(m =>
+      m.tg_message_id === replyToMsgId && (!peerIdHint || !m.tg_peer_id || m.tg_peer_id === peerIdHint)
+    )
+    let target = findInLoaded()
+
+    // 2. If not loaded — fetch older messages in loop until found or exhausted
+    if (!target && hasOlderMessages && msgCursor) {
+      const el = chatContainerRef.current
+      let cursor = msgCursor
+      let attempts = 0
+      while (!target && cursor && attempts < 10) {
+        attempts++
+        try {
+          const params = new URLSearchParams({ per_page: '100', before: cursor })
+          if (selectedAccount) params.set('account', selectedAccount)
+          const resp = await authFetch(
+            `${API_BASE}/telegram/contacts/${selectedClient}/messages/?${params}`,
+            auth?.token || ''
+          )
+          if (!resp.ok) break
+          const data = await resp.json()
+          const older: ChatMessage[] = data.results || []
+          if (older.length === 0) { setHasOlderMessages(false); setMsgCursor(null); break }
+
+          const prevScrollHeight = el ? el.scrollHeight : 0
+          const prevScrollTop = el ? el.scrollTop : 0
+          setMessages(prev => [...older, ...prev])
+          cursor = data.next_cursor ?? null
+          setMsgCursor(cursor)
+          setHasOlderMessages(!!cursor || !!data.has_more)
+
+          // Wait for DOM update
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+          if (el) {
+            el.scrollTop = prevScrollTop + (el.scrollHeight - prevScrollHeight)
+          }
+
+          target = older.find(m =>
+            m.tg_message_id === replyToMsgId && (!peerIdHint || !m.tg_peer_id || m.tg_peer_id === peerIdHint)
+          )
+        } catch (e) { console.error('scrollToReply load:', e); break }
+      }
+    }
+
+    // 3. Scroll to target and highlight
+    if (target) {
+      setTimeout(() => {
+        const el = document.querySelector(`[data-msg-id="${target!.id}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.classList.add('search-active')
+          setTimeout(() => el.classList.remove('search-active'), 2000)
+        }
+      }, 50)
+    }
+  }, [messages, hasOlderMessages, msgCursor, selectedAccount, selectedClient, auth?.token])
 
   // Send message (text, file, voice/video note)
   // Helper: build FormData for one send request
@@ -5275,8 +5336,8 @@ function App() {
                 </div>
               )}
 
-              {/* Placeholder banner */}
-              {isPlaceholder && (
+              {/* Placeholder banner — hide for groups/supergroups */}
+              {isPlaceholder && (!chatContact?.chat_type || chatContact.chat_type === 'private') && (
                 <div className="placeholder-banner">
                   <span>Номер прихований у пацієнта в Telegram</span>
                   <button className="placeholder-link-btn" onClick={() => { setShowLinkModal(true); setLinkSearch(''); setLinkResults([]) }}>
@@ -5598,9 +5659,9 @@ function App() {
                             <span>Переслано від <strong>{m.fwd_from_name}</strong></span>
                           </div>
                         )}
-                        {/* Reply quote */}
+                        {/* Reply quote — click to scroll to quoted message */}
                         {(m.reply_to_msg_id || m.reply_to_text || m.reply_to_sender) && (
-                          <div className="msg-reply-quote">
+                          <div className="msg-reply-quote clickable" onClick={m.reply_to_msg_id ? (e) => { e.stopPropagation(); scrollToReplyMessage(m.reply_to_msg_id!, m.tg_peer_id) } : undefined}>
                             <div className="msg-reply-bar" />
                             <div className="msg-reply-body">
                               {m.reply_to_sender && <span className="msg-reply-sender">{m.reply_to_sender}</span>}

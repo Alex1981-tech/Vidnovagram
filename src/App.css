@@ -972,8 +972,14 @@ body {
   max-height: 48px;
   overflow: hidden;
 }
+.msg-reply-quote.clickable:hover {
+  background: oklch(0 0 0 / 0.1);
+}
 .dark .msg-reply-quote {
   background: oklch(1 0 0 / 0.06);
+}
+.dark .msg-reply-quote.clickable:hover {
+  background: oklch(1 0 0 / 0.12);
 }
 .msg-reply-bar {
   width: 3px;
