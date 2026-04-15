@@ -13,6 +13,16 @@
 Рішення: **pytgcalls** (Python) + **ntgcalls** (C++ WebRTC) — єдина бібліотека, яка підтримує
 як аудіо, так і відео для приватних дзвінків (1-to-1 P2P) через Telegram.
 
+### Критичне продуктове правило
+
+Дзвінок має йти **з того самого Telegram акаунта**, з якого оператор уже веде переписку в Vidnovagram.
+
+Тому план далі базується на таких правилах:
+- `voip-bridge` працює не з окремим сервісним TG акаунтом, а з **усіма наявними робочими Telegram акаунтами**;
+- один Telegram акаунт може мати **один активний дзвінок одночасно**;
+- якщо в системі підключено 10 TG акаунтів, кожен з них повинен мати можливість ініціювати і приймати дзвінки;
+- `Call_center`/backend має контролювати ownership дзвінка: хто саме з операторів зараз використовує конкретний TG акаунт.
+
 ### Що підтверджено дослідженням
 
 1. **pytgcalls підтримує P2P приватні дзвінки** — є офіційний `p2p_example/`, метод `ChatUpdate.Status.INCOMING_CALL`
@@ -197,6 +207,11 @@ Byte 0: Message Type
 Замінити PHP VoipBridge на Python voip-bridge, валідувати архітектуру тільки з аудіо.
 
 ### 3.1. Мікросервіс voip-bridge
+
+**Принцип роботи з акаунтами:**
+- `voip-bridge` піднімає calling-client **для кожного активного Telegram акаунта**, який уже використовується в системі;
+- bridge не вводить окремий номер “тільки для дзвінків”;
+- якщо акаунт недоступний для calling, це вважається проблемою інтеграції конкретного акаунта, а не підставою заводити інший номер.
 
 **Структура директорії:**
 ```
@@ -768,10 +783,14 @@ export class MediaEngine {
 
 ### 5.3. Django API зміни
 
-Мінімальні — voip-bridge має свій REST API. Django потрібен тільки для:
+Не мінімальні. Для production Django/backend потрібен для:
 1. **Авторизації** — voip-bridge перевіряє token через Django `/api/auth/status/`
-2. **Збереження логів дзвінків** — voip-bridge POST-ить результат дзвінка в Django
-3. **Telegram акаунти** — voip-bridge читає TG session з shared volume
+2. **Call session lifecycle** — start / answer / reject / hangup / timeout / failed
+3. **Ownership Telegram акаунта** — хто з операторів зараз має право дзвонити з конкретного акаунта
+4. **Обмеження один дзвінок на акаунт** — guard від паралельних дзвінків
+5. **Маршрутизації incoming call** — якому desktop-клієнту показати вхідний дзвінок
+6. **Збереження логів дзвінків** — voip-bridge POST-ить результат дзвінка в Django
+7. **Telegram акаунти та їх calling-state** — bridge читає session з shared volume, а backend тримає source of truth по стану
 
 ### 5.4. Повний docker-compose фрагмент
 
@@ -927,11 +946,17 @@ voip-bridge контейнер:
   app.run()  # Введе код авторизації
   "
 
-Session file зберігається у voip-bridge/session/voip_bridge.session
-Монтується як Docker volume.
+Session files мають зберігатися так, щоб `telegram-mp` і `voip-bridge` працювали з тією самою моделлю акаунтів.
 
-УВАГА: Той самий акаунт НЕ може бути одночасно в telegram-mp і voip-bridge!
-Потрібен окремий TG акаунт для відеодзвінків (або мігрувати повністю).
+Цільова модель:
+- кожен вже підключений у системі Telegram акаунт має свій calling session;
+- `voip-bridge` підключається до тих самих робочих акаунтів, що і месенджер;
+- окремий TG акаунт “тільки для дзвінків” не використовується;
+- якщо одночасне використання одного session storage неможливе, потрібно реалізувати керовану схему окремих calling-sessions **для тих самих акаунтів**, а не для інших номерів.
+
+Отже, головне обмеження не “потрібен окремий TG номер”, а:
+- потрібен **окремий calling-runtime на кожен робочий TG акаунт**;
+- потрібен контроль, щоб один акаунт не використовувався одночасно двома активними дзвінками.
 ```
 
 ### 6.6. Error handling та reconnection
@@ -991,8 +1016,8 @@ class CallRecorder:
 
 | Обмеження | Опис | Вплив |
 |-----------|------|-------|
-| **Один TG акаунт** | pytgcalls потребує userbot; не можна ділити з telegram-mp | Потрібен окремий TG номер |
-| **Один дзвінок на акаунт** | Telegram дозволяє тільки 1 активний дзвінок на акаунт | Немає паралельних дзвінків |
+| **Один активний дзвінок на TG акаунт** | Telegram дозволяє тільки 1 активний дзвінок на акаунт | Один акаунт = один активний call |
+| **Calling має працювати на тих самих TG акаунтах** | Не можна дзвонити з іншого номера, ніж той, з якого йде переписка | Потрібен per-account calling runtime |
 | **Raw frame bandwidth** | I420 640x480@30fps = 13 MB/s через WS | Потрібна компресія (JPEG/H264) |
 | **Латентність WS** | Browser → Server → Telegram додає ~50-150ms | Помітно, але прийнятно для не-real-time |
 | **CPU на сервері** | Кожен відеодзвінок = decode+encode overhead | Обмежує кількість одночасних дзвінків |
@@ -1007,17 +1032,36 @@ class CallRecorder:
 | Telegram блокує userbot | Низька | Використовувати premium акаунт |
 | Великий jitter аудіо через WS | Середня | Jitter buffer на browser (5 chunks max) |
 | ICE/STUN fails за NAT | Низька | ntgcalls підтримує TURN relay |
+| Calling session не вдається стабільно підняти на всіх робочих акаунтах | Середня | Запускати pilot поетапно, акаунт за акаунтом |
+| Два оператори одночасно намагаються дзвонити з одного акаунта | Висока | Backend lock + ownership state на акаунт |
 
 ---
 
 ## 8. Roadmap
 
-### Phase 1: Audio-only VoIP bridge (2-3 тижні)
-- [ ] Створити voip-bridge мікросервіс (FastAPI + pytgcalls)
-- [ ] WebSocket протокол для аудіо (PCM16LE бінарний)
-- [ ] Інтеграція з існуючим VoIPCall API
-- [ ] Тестування P2P дзвінків (вхідні + вихідні)
-- [ ] Docker compose інтеграція
+### Phase 0: Account model та ownership (1 тиждень)
+- [x] Описати модель “той самий TG акаунт для чату і дзвінка”
+  > ✅ 2026-04-14: VoipBridge per account, multi-account через _fetch_accounts() з Django API
+- [x] Визначити, де і як зберігаються calling sessions для всіх робочих акаунтів
+  > ✅ 2026-04-14: Pyrogram sessions у /app/session/voip_{account_id}.session (Docker volume voip_sessions)
+- [x] Реалізувати backend lock: один активний дзвінок на один TG акаунт
+  > ✅ 2026-04-14: bridge.is_busy перевірка + active_calls dict в VoipBridge (один дзвінок per bridge)
+- [ ] Описати routing incoming call → конкретний оператор / desktop
+- [x] Підтвердити, що окремий TG номер для дзвінків не потрібен
+  > ✅ Pyrogram створює окремий session від MadelineProto — співіснують як різні “пристрої” одного акаунта
+
+### Phase 1: Audio-only VoIP bridge (2-3 тижні) — 🔄 IN PROGRESS
+- [x] Створити voip-bridge мікросервіс (FastAPI + pytgcalls) з підтримкою кількох TG акаунтів
+  > ✅ 2026-04-14: main.py (FastAPI + multi-account), bridge.py (VoipBridge per account), auth.py, ws_handler.py, protocol.py, config.py
+  > Docker image зібраний: python:3.13-slim, ntgcalls 2.1.0, pytgcalls 2.2.11, hydrogram 0.2.0
+- [x] WebSocket протокол для аудіо (PCM16LE бінарний)
+  > ✅ 2026-04-14: protocol.py (0x01=Audio, 0x02=Video, 0x03=Control), ws_handler.py (binary frame routing)
+- [ ] Інтеграція з існуючим VoIPCall API та backend call-session state
+- [ ] Тестування P2P дзвінків (вхідні + вихідні) на кількох реальних акаунтах
+- [x] Docker compose інтеграція
+  > ✅ 2026-04-14: voip-bridge сервіс в docker-compose.yml, bind mount sessions + accounts.json,
+  > nginx proxy /ws/voip + /api/voip/, healthcheck, Pyrogram session створена для Рецепція Віднова
+  > PyTgCalls v2.2.11 + NTgCalls v2.1.0 запущені, account=Vidnova (ID:1667227705)
 - [ ] Міграція з MadelineProto PHP audio bridge
 
 ### Phase 2a: Video MVP - JPEG (1-2 тижні)
@@ -1051,11 +1095,12 @@ class CallRecorder:
 
 ## 9. Перший крок
 
-1. **Створити Telegram акаунт** для voip-bridge (окремий від telegram-mp)
-2. **Авторизувати Pyrogram session** з цим акаунтом
-3. **Створити мінімальний voip-bridge** тільки для аудіо
-4. **Тест**: `!call` → дзвінок → PCM через WS → відтворення в браузері
-5. Переконатися що P2P працює стабільно, потім додавати відео
+1. ~~**Підтвердити calling-модель для всіх існуючих Telegram акаунтів**~~ ✅ done
+2. **Підняти Pyrogram/pytgcalls session для одного вже робочого TG акаунта** ← NEXT
+3. ~~**Зробити мінімальний audio-only voip-bridge**~~ ✅ мікросервіс створений, Docker image ready
+4. ~~**Додати backend lock/state для одного активного дзвінка на акаунт**~~ ✅ bridge.is_busy
+5. **Тест**: вихідний і вхідний дзвінок на тому самому TG акаунті, що вже використовується для чату
+6. Після цього масштабувати на інші акаунти і лише потім починати video
 
 ---
 

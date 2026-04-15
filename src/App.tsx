@@ -1332,6 +1332,7 @@ function App() {
   const [clientPhone, setClientPhone] = useState('')
   const [clientLinkedPhones, setClientLinkedPhones] = useState<{ id: string; phone: string }[]>([])
   const [isPlaceholder, setIsPlaceholder] = useState(false)
+  const [groupInfo, setGroupInfo] = useState<{ participants_count?: number; online_count?: number } | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkSearch, setLinkSearch] = useState('')
   const [linkResults, setLinkResults] = useState<{id: string; phone: string; full_name: string; calls_count: number}[]>([])
@@ -4227,6 +4228,27 @@ function App() {
     }
   }, [contacts, newChatClient])
 
+  // Fetch group info (participants_count, online_count) for group/supergroup chats
+  useEffect(() => {
+    const ct = (chatContact as any)?.chat_type
+    if (!ct || ct === 'private' || !auth?.token || !selectedAccount) {
+      setGroupInfo(null)
+      return
+    }
+    const peerId = (chatContact as any)?.tg_peer_id
+    if (!peerId) { setGroupInfo(null); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await authFetch(`${API}/api/telegram/group-info/?account_id=${selectedAccount}&peer_id=${peerId}`)
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        if (!cancelled) setGroupInfo(data)
+      } catch { if (!cancelled) setGroupInfo(null) }
+    })()
+    return () => { cancelled = true }
+  }, [selectedClient, selectedAccount, (chatContact as any)?.chat_type])
+
   // Group messages + notes by date
   const groupedMessages: (ChatMessage | AlbumGroup | ClientNote & { _isNote: true } | { type: 'date'; date: string })[] = useMemo(() => {
     // Merge messages and notes into a single timeline
@@ -5257,7 +5279,7 @@ function App() {
                   {selectedClient && photoMap[selectedClient]
                     ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
-                  {(chatContact as any)?.tg_peer_id && peerPresence[(chatContact as any).tg_peer_id]?.status === 'online' && (
+                  {(chatContact as any)?.tg_peer_id && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && peerPresence[(chatContact as any).tg_peer_id]?.status === 'online' && (
                     <span className="online-dot online-dot-header" />
                   )}
                 </div>
@@ -5269,6 +5291,13 @@ function App() {
                     {selectedClient && typingIndicators[selectedClient] ? (
                       <span className="typing-indicator">набирає повідомлення<span className="typing-dots"><span>.</span><span>.</span><span>.</span></span></span>
                     ) : (() => {
+                      const ct = (chatContact as any)?.chat_type
+                      if (ct && ct !== 'private' && groupInfo) {
+                        const parts: string[] = []
+                        if (groupInfo.participants_count != null) parts.push(`${groupInfo.participants_count} учасників`)
+                        if (groupInfo.online_count != null && groupInfo.online_count > 0) parts.push(`${groupInfo.online_count} онлайн`)
+                        if (parts.length) return <span className="presence-offline">{parts.join(', ')}</span>
+                      }
                       const peerId = (chatContact as any)?.tg_peer_id
                       const pr = peerId ? peerPresence[peerId] : undefined
                       const { text: presText, isOnline } = formatPresence(pr)
@@ -5284,7 +5313,7 @@ function App() {
                   </div>
                 </div>
                 <div className="chat-header-right">
-                  {(chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (
+                  {(chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && (
                     <>
                       <button
                         className="voip-call-btn"
