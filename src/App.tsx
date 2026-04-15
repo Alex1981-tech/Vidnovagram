@@ -1455,6 +1455,8 @@ function App() {
   // In-app toast notifications
   const [toasts, setToasts] = useState<{ id: number; clientId: string; accountId: string; sender: string; account: string; text: string; hasMedia: boolean; mediaType: string; time: number }[]>([])
   const toastIdRef = useRef(0)
+  // Dedup group messages/reactions: same tg_message_id+tg_peer_id arrives once per account
+  const wsDedup = useRef(new Map<string, number>())
   const [expandedToastGroup, setExpandedToastGroup] = useState<string | null>(null)
 
   // Per-account unread counts (from WS events)
@@ -3865,13 +3867,25 @@ function App() {
             const accountId = data.account_id
             const isMediaUpdate = !!msg._media_update
 
+            // Dedup: same group message arrives via multiple accounts — notify only once
+            const dedupKey = msg.tg_message_id && msg.tg_peer_id ? `msg:${msg.tg_message_id}:${msg.tg_peer_id}` : ''
+            const isDupe = dedupKey && wsDedup.current.has(dedupKey)
+            if (dedupKey && !isDupe) {
+              wsDedup.current.set(dedupKey, Date.now())
+              // Cleanup old entries every 100 inserts
+              if (wsDedup.current.size > 200) {
+                const cutoff = Date.now() - 30_000
+                for (const [k, t] of wsDedup.current) { if (t < cutoff) wsDedup.current.delete(k) }
+              }
+            }
+
             if (clientId === selectedClientRef.current) {
               // Current chat — reload messages (scroll only for new messages, not media updates)
               loadMessagesRef.current(clientId, !isMediaUpdate)
             }
 
-            // Notification for received messages only (not our own sent, not media updates)
-            if (msg.direction === 'received' && !isMediaUpdate) {
+            // Notification for received messages only (not our own sent, not media updates, not dupes)
+            if (msg.direction === 'received' && !isMediaUpdate && !isDupe) {
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
                 const matchedContact = clientId ? contactsRef.current.find(c => c.client_id === clientId) : undefined
@@ -3944,8 +3958,14 @@ function App() {
                 ? { ...m, reactions: data.reactions || [] }
                 : m
             ))
+            // Dedup: same reaction arrives via multiple accounts in shared groups
+            const reactDedupKey = data.tg_message_id && data.tg_peer_id ? `react:${data.tg_message_id}:${data.tg_peer_id}` : ''
+            const isReactDupe = reactDedupKey && wsDedup.current.has(reactDedupKey)
+            if (reactDedupKey && !isReactDupe) {
+              wsDedup.current.set(reactDedupKey, Date.now())
+            }
             // Notify only about peer reactions, not our own local reaction updates.
-            if (data.actor === 'peer' && data.client_id) {
+            if (data.actor === 'peer' && data.client_id && !isReactDupe) {
               const clientId = data.client_id
               const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
@@ -3962,14 +3982,15 @@ function App() {
                 const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
                 const { targetLabel, preview } = buildReactionTargetPreview(data, sender, reactedMsg)
 
+                const acctLabel = data.account_label || accounts.find(a => a.id === data.account_id)?.label || ''
                 if (isPopupEnabled(data.account_id)) {
-                  showNotification(`${sender} відреагував(ла) ${emoji}`, `На ${targetLabel}: ${preview}`)
+                  showNotification(`${sender} → ${acctLabel} відреагував(ла) ${emoji}`, `На ${targetLabel}: ${preview}`)
                 }
                 addToastRef.current(
                   clientId,
                   data.account_id || '',
                   sender,
-                  '',
+                  acctLabel,
                   `Відреагував(ла) ${emoji} · На ${targetLabel}: ${preview}`,
                   false,
                   ''
@@ -5337,7 +5358,7 @@ function App() {
               )}
 
               {/* Placeholder banner — hide for groups/supergroups */}
-              {isPlaceholder && (!chatContact?.chat_type || chatContact.chat_type === 'private') && (
+              {isPlaceholder && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && (
                 <div className="placeholder-banner">
                   <span>Номер прихований у пацієнта в Telegram</span>
                   <button className="placeholder-link-btn" onClick={() => { setShowLinkModal(true); setLinkSearch(''); setLinkResults([]) }}>
