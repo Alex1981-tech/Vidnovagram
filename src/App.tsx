@@ -1315,6 +1315,7 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([])
+  const [usernameSearchResult, setUsernameSearchResult] = useState<any | null>(null)
   const globalSearchTimer = useRef<any>(null)
   const [contactCount, setContactCount] = useState(0)
   const [contactPage, setContactPage] = useState(1)
@@ -4885,6 +4886,7 @@ function App() {
                   setSearch(e.target.value)
                   const q = e.target.value.trim()
                   clearTimeout(globalSearchTimer.current)
+                  setUsernameSearchResult(null)
                   if (q.length >= 3 && auth?.token) {
                     globalSearchTimer.current = setTimeout(async () => {
                       try {
@@ -4893,6 +4895,13 @@ function App() {
                         const resp = await authFetch(`${API_BASE}/telegram/search-messages/?${params}`, auth!.token)
                         if (resp.ok) setGlobalSearchResults(await resp.json())
                       } catch { /* ignore */ }
+                      // If starts with @, also resolve username
+                      if (q.startsWith('@') && q.length >= 4 && selectedAccount) {
+                        try {
+                          const resp = await authFetch(`${API_BASE}/telegram/resolve-username/?account_id=${selectedAccount}&username=${encodeURIComponent(q)}`, auth!.token)
+                          if (resp.ok) setUsernameSearchResult(await resp.json())
+                        } catch { /* ignore */ }
+                      }
                     }, 400)
                   } else {
                     setGlobalSearchResults([])
@@ -5047,6 +5056,44 @@ function App() {
                     })}
                     {loadingMoreContacts && (
                       <div className="loading-more">Завантаження...</div>
+                    )}
+                    {/* Username search result (@bot / @user) */}
+                    {usernameSearchResult && (
+                      <>
+                        <div className="search-section-header">
+                          {usernameSearchResult.is_bot ? '🤖 Бот' : '👤 Користувач'}
+                        </div>
+                        <div className="contact search-result username-result" onClick={async () => {
+                          // Start chat with bot/user: send /start if bot, or just open chat
+                          const peerId = usernameSearchResult.peer_id
+                          if (!peerId || !selectedAccount) return
+                          try {
+                            if (usernameSearchResult.is_bot) {
+                              // Send /start to bot via MadelineProto directly
+                              await authFetch(`${API_BASE}/telegram/send-to-peer/`, auth!.token, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, text: '/start' }),
+                              })
+                            }
+                            // Reload contacts — bot should appear after /start
+                            setSearch('')
+                            setUsernameSearchResult(null)
+                            setGlobalSearchResults([])
+                            setTimeout(() => loadContacts(), 1500)
+                          } catch (e) { console.error('Failed to start bot chat:', e) }
+                        }}>
+                          <div className="avatar">{usernameSearchResult.is_bot ? <span>🤖</span> : <UserIcon />}</div>
+                          <div className="contact-body">
+                            <div className="contact-row">
+                              <span className="contact-name">{usernameSearchResult.first_name} {usernameSearchResult.last_name || ''}</span>
+                            </div>
+                            <div className="contact-row">
+                              <span className="contact-preview">@{usernameSearchResult.username}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
                     )}
                     {/* Global message search results */}
                     {globalSearchResults.length > 0 && (
@@ -5973,6 +6020,52 @@ function App() {
                         {/* Message text — always shown, even for deleted */}
                         {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
+                        {/* Inline keyboard (bot buttons) */}
+                        {m.reply_markup && m.reply_markup.length > 0 && (
+                          <div className="msg-inline-keyboard">
+                            {m.reply_markup.map((row: any[], ri: number) => (
+                              <div key={ri} className="msg-inline-row">
+                                {row.map((btn: any, bi: number) => (
+                                  <button
+                                    key={bi}
+                                    className={`msg-inline-btn${btn.type === 'url' || btn.type === 'web_app' ? ' msg-inline-btn-url' : ''}`}
+                                    onClick={async () => {
+                                      if (btn.type === 'url' || btn.type === 'web_app') {
+                                        shellOpen(btn.url)
+                                      } else if (btn.type === 'callback' && selectedAccount) {
+                                        try {
+                                          const res = await authFetch(`${API_BASE}/telegram/click-inline-button/`, auth!.token, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              account_id: selectedAccount,
+                                              peer_id: m.tg_peer_id,
+                                              msg_id: m.tg_message_id,
+                                              data: btn.data,
+                                            }),
+                                          })
+                                          if (res.ok) {
+                                            const result = await res.json()
+                                            if (result.message) {
+                                              if (result.alert) {
+                                                alert(result.message)
+                                              }
+                                              // Bot may send new messages — they'll arrive via WS
+                                            }
+                                            if (result.url) shellOpen(result.url)
+                                          }
+                                        } catch (e) { console.error('Inline button click failed:', e) }
+                                      }
+                                    }}
+                                  >
+                                    {(btn.type === 'url' || btn.type === 'web_app') && <span className="inline-btn-icon">↗</span>}
+                                    {btn.text}
+                                  </button>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {/* Deleted label under message */}
                         {m.is_deleted && (
                           <div className="msg-deleted-label">

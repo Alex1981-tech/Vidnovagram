@@ -6108,6 +6108,63 @@ body {
   cursor: help;
 }
 
+/* Inline keyboard (bot buttons) */
+.msg-inline-keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  width: 100%;
+}
+.msg-inline-row {
+  display: flex;
+  gap: 4px;
+}
+.msg-inline-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: oklch(0.55 0.15 250 / 0.25);
+  color: oklch(0.55 0.15 250);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  line-height: 1.4;
+}
+.msg-inline-btn:hover {
+  background: oklch(0.55 0.15 250 / 0.4);
+}
+.msg-inline-btn:active {
+  background: oklch(0.55 0.15 250 / 0.55);
+}
+.msg-inline-btn-url {
+  color: oklch(0.55 0.15 250);
+}
+.inline-btn-icon {
+  margin-right: 4px;
+  font-size: 0.75rem;
+}
+.dark .msg-inline-btn {
+  background: oklch(0.55 0.15 250 / 0.2);
+  color: oklch(0.75 0.12 250);
+}
+.dark .msg-inline-btn:hover {
+  background: oklch(0.55 0.15 250 / 0.35);
+}
+
+.username-result .avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
 /* Reactions row under message */
 .msg-reactions {
   display: flex;
