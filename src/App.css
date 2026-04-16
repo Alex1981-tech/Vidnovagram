@@ -1161,28 +1161,45 @@ body {
 /* Geo location card */
 .msg-geo-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: color-mix(in oklch, var(--primary) 8%, transparent);
-  border-radius: 10px;
-  margin-bottom: 4px;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
   cursor: pointer;
-  transition: background 0.15s;
-  min-width: 180px;
+  transition: opacity 0.15s;
+  max-width: 320px;
+  margin-bottom: 4px;
 }
 .msg-geo-card:hover {
-  background: color-mix(in oklch, var(--primary) 15%, transparent);
+  opacity: 0.88;
 }
-.msg-geo-icon {
-  font-size: 1.5rem;
-  flex-shrink: 0;
+.msg-geo-map {
+  position: relative;
+  width: 320px;
+  height: 180px;
+  background: var(--muted);
+  overflow: hidden;
 }
-.msg-geo-info {
+.msg-geo-map-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.msg-geo-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -80%);
+  font-size: 2rem;
+  filter: drop-shadow(0 2px 4px oklch(0 0 0 / 0.4));
+  pointer-events: none;
+}
+.msg-geo-info-bottom {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
+  padding: 8px 10px;
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
 }
 .msg-geo-title {
   font-size: 0.85rem;
@@ -1191,11 +1208,6 @@ body {
 .msg-geo-address {
   font-size: 0.75rem;
   color: var(--muted-foreground);
-}
-.msg-geo-link {
-  font-size: 0.72rem;
-  color: var(--primary);
-  opacity: 0.8;
 }
 
 /* Album grid */
@@ -1274,6 +1286,7 @@ body {
   backdrop-filter: none !important;
   box-shadow: none !important;
   padding: 0 !important;
+  border: none !important;
 }
 
 .msg-media-placeholder {
