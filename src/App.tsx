@@ -90,6 +90,12 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.9': [
+    'WhatsApp налаштування — нова вкладка в Налаштуваннях для управління WA акаунтами',
+    'QR-авторизація WhatsApp — сканування QR-коду прямо у Vidnovagram',
+    'Створення та видалення WA акаунтів з інтерфейсу',
+    'Міграція з Baileys на Astra Engine (Python + Playwright) — стабільніша робота WA',
+  ],
   '0.17.8': [
     'Фонове завантаження — файли та медіа відправляються у фоні, модальне вікно закривається одразу',
     'Індикатор прогресу завантаження внизу екрана — можна переключатись між чатами під час відправки',
@@ -1384,11 +1390,21 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [appSettings, setAppSettings] = useState<AppSettings>(loadSettings)
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([])
-  const [settingsTab, setSettingsTab] = useState<'notifications' | 'background'>('notifications')
+  const [settingsTab, setSettingsTab] = useState<'notifications' | 'background' | 'whatsapp'>('notifications')
   const [previewSound, setPreviewSound] = useState<string | null>(null)
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
   const [wallpaperBlobUrl, setWallpaperBlobUrl] = useState('')
   const [soundDropdownOpen, setSoundDropdownOpen] = useState<string | null>(null) // account ID
+
+  // WhatsApp settings
+  interface WaAccount { id: string; label: string; phone: string; status: string; wa_name: string; error_message: string }
+  const [waSettingsAccounts, setWaSettingsAccounts] = useState<WaAccount[]>([])
+  const [waQrAccountId, setWaQrAccountId] = useState<string | null>(null)
+  const [waQrImage, setWaQrImage] = useState<string | null>(null)
+  const [waQrStatus, setWaQrStatus] = useState<string>('')
+  const [waCreating, setWaCreating] = useState(false)
+  const [waNewLabel, setWaNewLabel] = useState('')
+  const waQrPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -2018,6 +2034,101 @@ function App() {
       setAccounts([...tgAccounts, ...waAccounts])
     } catch (e) { console.error('Accounts:', e) }
   }, [auth?.token])
+
+  // ----- WhatsApp settings helpers -----
+  const loadWaSettings = useCallback(async () => {
+    if (!auth?.token) return
+    try {
+      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token)
+      if (resp.ok) {
+        const data = await resp.json()
+        const list = Array.isArray(data) ? data : data.results || []
+        setWaSettingsAccounts(list)
+      }
+    } catch (e) { console.error('WA settings load:', e) }
+  }, [auth?.token])
+
+  const waCreateAccount = useCallback(async () => {
+    if (!auth?.token || !waNewLabel.trim()) return
+    setWaCreating(true)
+    try {
+      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: waNewLabel.trim() }),
+      })
+      if (resp.ok) {
+        setWaNewLabel('')
+        await loadWaSettings()
+      }
+    } catch (e) { console.error('WA create:', e) }
+    finally { setWaCreating(false) }
+  }, [auth?.token, waNewLabel, loadWaSettings])
+
+  const waDeleteAccount = useCallback(async (id: string) => {
+    if (!auth?.token) return
+    try {
+      await authFetch(`${API_BASE}/whatsapp/accounts/${id}/`, auth.token, { method: 'DELETE' })
+      await loadWaSettings()
+      await loadAccounts()
+    } catch (e) { console.error('WA delete:', e) }
+  }, [auth?.token, loadWaSettings, loadAccounts])
+
+  const waStartQr = useCallback(async (accountId: string) => {
+    if (!auth?.token) return
+    setWaQrAccountId(accountId)
+    setWaQrImage(null)
+    setWaQrStatus('starting')
+    try {
+      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/${accountId}/qr/`, auth.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        setWaQrStatus(data.status || 'pending')
+        if (data.qr_image) setWaQrImage(data.qr_image)
+      }
+    } catch (e) { console.error('WA QR start:', e) }
+
+    // Poll for QR updates
+    if (waQrPollRef.current) clearInterval(waQrPollRef.current)
+    waQrPollRef.current = setInterval(async () => {
+      try {
+        const resp = await authFetch(`${API_BASE}/whatsapp/accounts/${accountId}/qr/`, auth!.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'check' }),
+        })
+        if (resp.ok) {
+          const data = await resp.json()
+          setWaQrStatus(data.status || 'pending')
+          if (data.qr_image) setWaQrImage(data.qr_image)
+          if (data.status === 'connected') {
+            if (waQrPollRef.current) clearInterval(waQrPollRef.current)
+            waQrPollRef.current = null
+            setWaQrAccountId(null)
+            await loadWaSettings()
+            await loadAccounts()
+          }
+        }
+      } catch { /* ignore poll errors */ }
+    }, 3000)
+  }, [auth?.token, loadWaSettings, loadAccounts])
+
+  const waStopQr = useCallback(() => {
+    if (waQrPollRef.current) { clearInterval(waQrPollRef.current); waQrPollRef.current = null }
+    setWaQrAccountId(null)
+    setWaQrImage(null)
+    setWaQrStatus('')
+  }, [])
+
+  // Cleanup QR polling on unmount
+  useEffect(() => () => { if (waQrPollRef.current) clearInterval(waQrPollRef.current) }, [])
+
+  // Load WA settings when tab opens
+  useEffect(() => { if (showSettingsModal && settingsTab === 'whatsapp') loadWaSettings() }, [showSettingsModal, settingsTab, loadWaSettings])
 
   // Load contacts (cache-first: show from IndexedDB, then refresh from server)
   const loadContacts = useCallback(async () => {
@@ -8511,6 +8622,10 @@ function App() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                 Сповіщення
               </button>
+              <button className={`settings-tab${settingsTab === 'whatsapp' ? ' active' : ''}`} onClick={() => setSettingsTab('whatsapp')}>
+                <WhatsAppIcon size={16} color={settingsTab === 'whatsapp' ? '#25D366' : 'currentColor'} />
+                WhatsApp
+              </button>
               <button className={`settings-tab${settingsTab === 'background' ? ' active' : ''}`} onClick={() => setSettingsTab('background')}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 Фон чату
@@ -8706,6 +8821,111 @@ function App() {
                         </div>
                       )
                     })}
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'whatsapp' && (
+                <div className="settings-section">
+                  <div className="wa-settings">
+                    <h3 className="wa-settings-title">WhatsApp акаунти</h3>
+                    <p className="wa-settings-desc">Підключіть WhatsApp акаунт через QR-код для обміну повідомленнями.</p>
+
+                    {/* Account list */}
+                    <div className="wa-acct-list">
+                      {waSettingsAccounts.length === 0 && (
+                        <div className="wa-acct-empty">Немає акаунтів. Створіть новий для підключення.</div>
+                      )}
+                      {waSettingsAccounts.map(wa => (
+                        <div key={wa.id} className={`wa-acct-card wa-status-${wa.status}`}>
+                          <div className="wa-acct-info">
+                            <WhatsAppIcon size={20} color="#25D366" />
+                            <div className="wa-acct-details">
+                              <span className="wa-acct-label">{wa.label || 'Без назви'}</span>
+                              <span className="wa-acct-phone">{wa.phone || wa.wa_name || '—'}</span>
+                            </div>
+                            <span className={`wa-acct-status-badge wa-badge-${wa.status}`}>
+                              {wa.status === 'connected' ? 'Підключено' : wa.status === 'pending' ? 'Очікує' : wa.status === 'error' ? 'Помилка' : 'Відключено'}
+                            </span>
+                          </div>
+                          <div className="wa-acct-actions">
+                            {wa.status !== 'connected' && (
+                              <button
+                                className="wa-acct-btn wa-btn-qr"
+                                onClick={() => waStartQr(wa.id)}
+                                disabled={waQrAccountId === wa.id}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
+                                QR-код
+                              </button>
+                            )}
+                            <button
+                              className="wa-acct-btn wa-btn-delete"
+                              onClick={() => { if (confirm(`Видалити акаунт "${wa.label}"?`)) waDeleteAccount(wa.id) }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </div>
+                          {wa.error_message && <div className="wa-acct-error">{wa.error_message}</div>}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* QR code display */}
+                    {waQrAccountId && (
+                      <div className="wa-qr-section">
+                        <div className="wa-qr-header">
+                          <h4>Скануйте QR-код в WhatsApp</h4>
+                          <button className="icon-btn" onClick={waStopQr}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                        <div className="wa-qr-body">
+                          {waQrImage ? (
+                            <img src={waQrImage} alt="WhatsApp QR" className="wa-qr-image" />
+                          ) : (
+                            <div className="wa-qr-loading">
+                              <div className="spinner-sm" />
+                              <span>{waQrStatus === 'starting' ? 'Запуск...' : 'Очікування QR-коду...'}</span>
+                            </div>
+                          )}
+                          <div className="wa-qr-instructions">
+                            <p>1. Відкрийте WhatsApp на телефоні</p>
+                            <p>2. Перейдіть в <b>Налаштування → Пов'язані пристрої</b></p>
+                            <p>3. Натисніть <b>Під'єднати пристрій</b></p>
+                            <p>4. Наведіть камеру на цей QR-код</p>
+                          </div>
+                        </div>
+                        {waQrStatus === 'connected' && (
+                          <div className="wa-qr-success">Підключено!</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Create new account */}
+                    {!waQrAccountId && (
+                      <div className="wa-create-section">
+                        <div className="wa-create-row">
+                          <input
+                            className="wa-create-input"
+                            placeholder="Назва акаунту (напр. Рецепція)"
+                            value={waNewLabel}
+                            onChange={e => setWaNewLabel(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') waCreateAccount() }}
+                          />
+                          <button
+                            className="wa-acct-btn wa-btn-create"
+                            onClick={waCreateAccount}
+                            disabled={waCreating || !waNewLabel.trim()}
+                          >
+                            {waCreating ? <div className="spinner-sm" /> : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            )}
+                            Додати
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

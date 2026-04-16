@@ -4432,6 +4432,90 @@ body {
   opacity: 0.6;
 }
 
+/* === WhatsApp Settings === */
+.wa-settings { padding: 4px 0; }
+.wa-settings-title { font-size: 0.9375rem; font-weight: 600; margin: 0 0 4px; }
+.wa-settings-desc { font-size: 0.8125rem; color: var(--muted-foreground); margin: 0 0 16px; line-height: 1.4; }
+
+.wa-acct-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.wa-acct-empty { text-align: center; color: var(--muted-foreground); font-size: 0.8125rem; padding: 20px; }
+.wa-acct-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+.wa-acct-card:hover { border-color: color-mix(in oklch, #25D366 30%, var(--border)); }
+.wa-acct-info { display: flex; align-items: center; gap: 10px; }
+.wa-acct-details { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.wa-acct-label { font-size: 0.875rem; font-weight: 500; }
+.wa-acct-phone { font-size: 0.75rem; color: var(--muted-foreground); }
+.wa-acct-status-badge {
+  font-size: 0.6875rem; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+}
+.wa-badge-connected { background: color-mix(in oklch, #25D366 20%, transparent); color: #25D366; }
+.wa-badge-pending { background: color-mix(in oklch, #F59E0B 20%, transparent); color: #F59E0B; }
+.wa-badge-disconnected { background: color-mix(in oklch, var(--muted-foreground) 20%, transparent); color: var(--muted-foreground); }
+.wa-badge-error { background: color-mix(in oklch, #EF4444 20%, transparent); color: #EF4444; }
+.wa-acct-actions { display: flex; gap: 6px; align-items: center; }
+.wa-acct-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--background); color: var(--foreground);
+  font-size: 0.75rem; cursor: pointer; transition: all 0.15s;
+}
+.wa-acct-btn:hover { background: var(--muted); }
+.wa-acct-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wa-btn-qr { color: #25D366; border-color: color-mix(in oklch, #25D366 30%, var(--border)); }
+.wa-btn-qr:hover { background: color-mix(in oklch, #25D366 10%, var(--background)); }
+.wa-btn-delete { color: var(--muted-foreground); padding: 5px 6px; }
+.wa-btn-delete:hover { color: #EF4444; border-color: color-mix(in oklch, #EF4444 30%, var(--border)); background: color-mix(in oklch, #EF4444 8%, var(--background)); }
+.wa-btn-create { color: #25D366; border-color: color-mix(in oklch, #25D366 30%, var(--border)); }
+.wa-btn-create:hover:not(:disabled) { background: color-mix(in oklch, #25D366 10%, var(--background)); }
+.wa-acct-error { font-size: 0.75rem; color: #EF4444; padding: 2px 0 0 30px; }
+
+/* QR section */
+.wa-qr-section {
+  border: 1px solid color-mix(in oklch, #25D366 30%, var(--border));
+  border-radius: 12px; padding: 16px;
+  background: color-mix(in oklch, #25D366 4%, var(--background));
+  margin-bottom: 16px;
+}
+.wa-qr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.wa-qr-header h4 { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.wa-qr-body { display: flex; gap: 20px; align-items: flex-start; }
+.wa-qr-image {
+  width: 200px; height: 200px; border-radius: 12px;
+  background: white; padding: 8px; flex-shrink: 0;
+}
+.wa-qr-loading {
+  width: 200px; height: 200px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  border-radius: 12px; background: var(--muted);
+  font-size: 0.8125rem; color: var(--muted-foreground); flex-shrink: 0;
+}
+.wa-qr-instructions { font-size: 0.8125rem; line-height: 1.7; color: var(--muted-foreground); }
+.wa-qr-instructions p { margin: 0; }
+.wa-qr-instructions b { color: var(--foreground); }
+.wa-qr-success {
+  margin-top: 12px; text-align: center; padding: 8px;
+  background: color-mix(in oklch, #25D366 15%, transparent);
+  color: #25D366; border-radius: 8px; font-weight: 600; font-size: 0.875rem;
+}
+
+/* Create section */
+.wa-create-section { border-top: 1px solid var(--border); padding-top: 12px; }
+.wa-create-row { display: flex; gap: 8px; }
+.wa-create-input {
+  flex: 1; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--background);
+  color: var(--foreground); font-size: 0.8125rem;
+  outline: none; transition: border-color 0.15s;
+}
+.wa-create-input:focus { border-color: #25D366; }
+.wa-create-input::placeholder { color: var(--muted-foreground); }
+
 /* === Rail badge (unread count) === */
 .rail-badge {
   position: absolute;
