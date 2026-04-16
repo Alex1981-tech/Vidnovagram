@@ -90,6 +90,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.8': [
+    'Фонове завантаження — файли та медіа відправляються у фоні, модальне вікно закривається одразу',
+    'Індикатор прогресу завантаження внизу екрана — можна переключатись між чатами під час відправки',
+  ],
   '0.17.7': [
     'Виправлено відправку ToDo-списків з меню вкладень',
     'Виправлено відкриття PDF — зберігається у тимчасовий файл замість blob URL',
@@ -1590,6 +1594,20 @@ function App() {
   const [forceDocument, setForceDocument] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Background upload queue — persists across chat switches
+  interface BgUpload {
+    id: string
+    clientId: string
+    accountId: string
+    accountLabel: string
+    status: 'uploading' | 'done' | 'error'
+    fileName: string
+    fileCount: number
+    errorMsg?: string
+  }
+  const [bgUploads, setBgUploads] = useState<BgUpload[]>([])
+  const bgUploadIdRef = useRef(0)
+
   // Voice/video recording
   const [isRecording, setIsRecording] = useState(false)
   const [recordingType, setRecordingType] = useState<'voice' | 'video'>('voice')
@@ -2435,38 +2453,86 @@ function App() {
     const replyMsgId = replyTo?.msg_id || undefined
     const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
 
-    try {
-      if (filesToSend.length === 0) {
-        // Text-only
-        const fd = _buildSendFd({ text, replyMsgId })
-        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-      } else if (filesToSend.length === 1 && !file) {
-        // Single file from modal — send with caption
-        const caption = fileCaption.trim() || text
-        const fd = _buildSendFd({ text: caption, file: filesToSend[0], forceDoc: forceDocument, replyMsgId })
-        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-      } else if (file) {
-        // Direct file (voice/video recording) — single send with text
-        const name = file instanceof File ? file.name : (mediaType === 'voice' ? 'voice.webm' : 'video.webm')
-        const fd = _buildSendFd({ text, file, fileName: name, mediaType, replyMsgId })
-        const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-      } else {
-        // Multiple files: send as album (grouped media)
-        const caption = fileCaption.trim() || text
-        const albumFd = new FormData()
-        albumFd.append('account_id', selectedAccount)
-        if (caption) albumFd.append('caption', caption)
-        if (forceDocument) albumFd.append('force_document', '1')
-        for (const f of filesToSend) albumFd.append('files', f)
-        const albumUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send-album/`
-        const resp = await authFetch(albumUrl, auth.token, { method: 'POST', body: albumFd })
-        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-      }
+    // --- Background upload for files ---
+    const hasFiles = filesToSend.length > 0
+    if (hasFiles) {
+      // Capture state before clearing UI
+      const capturedClient = selectedClient
+      const capturedAccount = selectedAccount
+      const capturedToken = auth.token
+      const capturedCaption = fileCaption.trim() || text
+      const capturedForceDoc = forceDocument
+      const capturedFiles = [...filesToSend]
+      const capturedFile = file
+      const capturedMediaType = mediaType
+      const acctLabel = accounts.find(a => a.id === selectedAccount)?.label || selectedAccount
 
-      // Success — clean up
+      // Build upload ID
+      const uploadId = `upload_${++bgUploadIdRef.current}`
+      const fileName = capturedFiles.length === 1
+        ? (capturedFiles[0] instanceof File ? capturedFiles[0].name : 'file')
+        : `${capturedFiles.length} файлів`
+
+      // Close modal & clear UI immediately
+      setMessageText('')
+      clearAttachment()
+      setEditingMsg(null)
+      ;(window as any).__replyTo = null
+      if (capturedClient) { draftsRef.current.delete(capturedClient); try { localStorage.setItem('vg_drafts', JSON.stringify([...draftsRef.current])) } catch {} }
+      if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+      setSending(false)
+
+      // Add to background uploads
+      setBgUploads(prev => [...prev, {
+        id: uploadId, clientId: capturedClient, accountId: capturedAccount,
+        accountLabel: acctLabel, status: 'uploading', fileName, fileCount: capturedFiles.length,
+      }])
+
+      // Fire-and-forget upload
+      ;(async () => {
+        try {
+          if (capturedFiles.length === 1 && !capturedFile) {
+            // Single file from modal
+            const fd = _buildSendFd({ text: capturedCaption, file: capturedFiles[0], forceDoc: capturedForceDoc, replyMsgId })
+            const resp = await authFetch(sendUrl, capturedToken, { method: 'POST', body: fd })
+            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+          } else if (capturedFile) {
+            // Direct file (voice/video)
+            const name = capturedFile instanceof File ? capturedFile.name : (capturedMediaType === 'voice' ? 'voice.webm' : 'video.webm')
+            const fd = _buildSendFd({ text, file: capturedFile, fileName: name, mediaType: capturedMediaType, replyMsgId })
+            const resp = await authFetch(sendUrl, capturedToken, { method: 'POST', body: fd })
+            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+          } else {
+            // Album (multiple files)
+            const albumFd = new FormData()
+            albumFd.append('account_id', capturedAccount)
+            if (capturedCaption) albumFd.append('caption', capturedCaption)
+            if (capturedForceDoc) albumFd.append('force_document', '1')
+            for (const f of capturedFiles) albumFd.append('files', f)
+            const albumUrl = `${API_BASE}/telegram/contacts/${capturedClient}/send-album/`
+            const resp = await authFetch(albumUrl, capturedToken, { method: 'POST', body: albumFd })
+            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+          }
+
+          // Success
+          setBgUploads(prev => prev.map(u => u.id === uploadId ? { ...u, status: 'done' as const } : u))
+          // Auto-remove after 4s
+          setTimeout(() => setBgUploads(prev => prev.filter(u => u.id !== uploadId)), 4000)
+          telemetry.trackChatWrite(capturedClient, capturedAccount, 'media')
+        } catch (e: any) {
+          console.error('Background upload:', e)
+          setBgUploads(prev => prev.map(u => u.id === uploadId ? { ...u, status: 'error' as const, errorMsg: e.message || String(e) } : u))
+        }
+      })()
+      return
+    }
+
+    // --- Text-only (synchronous as before) ---
+    try {
+      const fd = _buildSendFd({ text, replyMsgId })
+      const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+      if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+
       setMessageText('')
       clearAttachment()
       setEditingMsg(null)
@@ -2474,14 +2540,14 @@ function App() {
       if (selectedClient) { draftsRef.current.delete(selectedClient); try { localStorage.setItem('vg_drafts', JSON.stringify([...draftsRef.current])) } catch {} }
       if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
       loadMessages(selectedClient)
-      telemetry.trackChatWrite(selectedClient, selectedAccount, filesToSend.length > 0 ? 'media' : 'text')
+      telemetry.trackChatWrite(selectedClient, selectedAccount, 'text')
     } catch (e: any) {
       console.error('Send:', e)
       alert(`Помилка відправки: ${e.message || e}`)
     } finally {
       setSending(false)
     }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFiles, fileCaption, forceDocument, _buildSendFd, clearAttachment])
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFiles, fileCaption, forceDocument, _buildSendFd, clearAttachment, accounts])
 
   // Send lab results to current chat: text header + files sequentially
   const sendLabResults = useCallback(async () => {
@@ -8890,6 +8956,31 @@ function App() {
           </div>
         )
       })()}
+      {/* Background upload indicators */}
+      {bgUploads.length > 0 && (
+        <div className="bg-upload-container">
+          {bgUploads.map(u => (
+            <div key={u.id} className={`bg-upload-item bg-upload-${u.status}`}>
+              <div className="bg-upload-icon">
+                {u.status === 'uploading' && <div className="spinner-sm" />}
+                {u.status === 'done' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                {u.status === 'error' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>}
+              </div>
+              <div className="bg-upload-info">
+                <span className="bg-upload-name">{u.fileName}</span>
+                <span className="bg-upload-status">
+                  {u.status === 'uploading' && 'Надсилання…'}
+                  {u.status === 'done' && 'Надіслано'}
+                  {u.status === 'error' && (u.errorMsg || 'Помилка')}
+                </span>
+              </div>
+              {u.status === 'error' && (
+                <button className="bg-upload-dismiss" onClick={() => setBgUploads(prev => prev.filter(x => x.id !== u.id))}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
