@@ -90,6 +90,12 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.7': [
+    'Виправлено відправку ToDo-списків з меню вкладень',
+    'Виправлено відкриття PDF — зберігається у тимчасовий файл замість blob URL',
+    'Геолокація — прибрано зайве посилання під картою',
+    'Діагностика ToDo toggle — логування при помилці синхронізації',
+  ],
   '0.17.3': [
     'Відеокружки — автопрогравання без звуку в чаті (як в Telegram), без підкладки',
     'ToDo-списки — синхронізація ☐/☑ з Telegram через toggle-todo API',
@@ -926,7 +932,11 @@ function PollCard({ question, options, messageId, totalVoters, isClosed, account
   const [syncing, setSyncing] = useState(false)
 
   const toggle = async (idx: number) => {
-    if (syncing || !canSync) return
+    if (syncing) return
+    if (!canSync) {
+      console.error('PollCard canSync=false:', { accountId, peerId, tgMessageId, authToken: !!authToken, onTextUpdate: !!onTextUpdate })
+      return
+    }
     const opt = options[idx]
     if (!opt) return
     const wasChecked = opt.startsWith('☑')
@@ -3506,10 +3516,15 @@ function App() {
       setLightboxSrc(URL.createObjectURL(blob))
       return
     }
-    // PDF → open as blob URL in browser (shellOpen with file path often fails on Windows)
+    // PDF → save to temp and open with system viewer
     if (contentType === 'application/pdf' || mediaPath.toLowerCase().endsWith('.pdf')) {
-      const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
-      await shellOpen(blobUrl)
+      const pdfName = getFilenameFromResponse(mediaPath, resp, 'document')
+      const finalName = pdfName.toLowerCase().endsWith('.pdf') ? pdfName : pdfName + '.pdf'
+      const tmp = await tempDir()
+      const filePath = await join(tmp, finalName)
+      const buf = new Uint8Array(await blob.arrayBuffer())
+      await writeFile(filePath, buf)
+      await shellOpen(filePath)
       return
     }
     const filename = getFilenameFromResponse(mediaPath, resp, fallbackBase)
@@ -6300,7 +6315,7 @@ function App() {
                         })()}
                         {/* Message text — always shown, even for deleted */}
                         {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊') || m.text.startsWith('📋'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
-                        {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
+                        {m.text && !m.is_deleted && m.media_type !== 'geo' && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Inline keyboard (bot buttons) */}
                         {m.reply_markup && m.reply_markup.length > 0 && (
                           <div className="msg-inline-keyboard">
@@ -6515,14 +6530,13 @@ function App() {
                               setShowTodoModal(false)
                               setSending(true)
                               try {
-                                const contact = contacts.find(c => c.client_id === selectedClient)
-                                const fd = new FormData()
-                                fd.append('account_id', selectedAccount)
-                                fd.append('peer_id', String(contact?.tg_peer_id || ''))
-                                fd.append('phone', contact?.phone || '')
-                                fd.append('text', text)
-                                await authFetch(`${API_BASE}/messenger/send/`, auth.token, { method: 'POST', body: fd })
-                              } finally { setSending(false) }
+                                const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
+                                const fd = _buildSendFd({ text })
+                                await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+                                setTodoTitle('')
+                                setTodoItems(['', '', ''])
+                              } catch (e) { console.error('ToDo send failed:', e) }
+                              finally { setSending(false) }
                             }}>
                             <SendIcon /> Надіслати
                           </button>
