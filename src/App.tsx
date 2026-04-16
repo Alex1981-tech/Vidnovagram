@@ -90,6 +90,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.3': [
+    'Відеокружки — автопрогравання без звуку в чаті (як в Telegram), без підкладки',
+    'ToDo-списки — синхронізація ☐/☑ з Telegram через toggle-todo API',
+    'Чеклісти — виправлено відображення для нативних Telegram ToDo',
+  ],
   '0.17.2': [
     'Синхронізація чеклістів — позначки ☐/☑ тепер синхронізуються з Telegram (видно іншому користувачу)',
     'Виправлено відкриття PDF файлів у чаті',
@@ -908,66 +913,82 @@ function extractFirstUrl(text: string): string | null {
   return m ? m[0] : null
 }
 
-function PollCard({ question, options, messageId, totalVoters, isClosed, accountId, peerId, tgMessageId, fullText, authToken, onTextUpdate }: {
+function PollCard({ question, options, messageId, totalVoters, isClosed, accountId, peerId, tgMessageId, fullText, authToken, onTextUpdate, isTodo }: {
   question: string; options: string[]; messageId: number | string; totalVoters?: number; isClosed?: boolean;
   accountId?: string; peerId?: number; tgMessageId?: number; fullText?: string; authToken?: string;
-  onTextUpdate?: (msgId: number | string, newText: string) => void;
+  onTextUpdate?: (msgId: number | string, newText: string) => void; isTodo?: boolean;
 }) {
-  const canSync = !!(fullText && accountId && peerId && tgMessageId && authToken && onTextUpdate)
-  // Derive checked state: from text markers if syncing, from localStorage for native polls
-  const [localChecked, setLocalChecked] = useState<Set<number>>(() => {
-    if (canSync) return new Set<number>()
-    try { const s = localStorage.getItem(`poll_${messageId}`); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
-  })
-  const checked = canSync
-    ? new Set<number>(options.map((opt, i) => opt.startsWith('☑') ? i : -1).filter(i => i >= 0))
-    : localChecked
+  const canSync = !!(accountId && peerId && tgMessageId && authToken && onTextUpdate)
+  // Derive checked state from option markers (☑ = checked)
+  const checked = new Set<number>(options.map((opt, i) => opt.startsWith('☑') ? i : -1).filter(i => i >= 0))
   const [syncing, setSyncing] = useState(false)
 
   const toggle = async (idx: number) => {
-    if (syncing) return
-    if (canSync) {
-      // Sync checklist: edit message text in Telegram
-      const lines = fullText!.split('\n')
+    if (syncing || !canSync) return
+    const opt = options[idx]
+    if (!opt) return
+    const wasChecked = opt.startsWith('☑')
+
+    // Optimistic local update
+    const newMarker = wasChecked ? '☐' : '☑'
+    if (fullText) {
+      const lines = fullText.split('\n')
       const checklistLines = lines.filter(l => l.startsWith('☐') || l.startsWith('☑'))
       const targetLine = checklistLines[idx]
-      if (!targetLine) return
-      const newMarker = targetLine.startsWith('☐') ? '☑' : '☐'
-      const newLine = newMarker + targetLine.slice(1)
-      let replaced = false
-      const newLines = lines.map(l => {
-        if (!replaced && l === targetLine) { replaced = true; return newLine }
-        return l
-      })
-      const newText = newLines.join('\n')
-      onTextUpdate!(messageId, newText)
-      setSyncing(true)
-      try {
-        await authFetch(`${API_BASE}/telegram/edit-message/`, authToken!, {
+      if (targetLine) {
+        let replaced = false
+        const newLines = lines.map(l => {
+          if (!replaced && l === targetLine) { replaced = true; return newMarker + l.slice(1) }
+          return l
+        })
+        onTextUpdate!(messageId, newLines.join('\n'))
+      }
+    }
+
+    setSyncing(true)
+    try {
+      if (isTodo) {
+        // Native Telegram ToDo — use toggle-todo API
+        await authFetch(`${API_BASE}/telegram/toggle-todo/`, authToken!, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, peer_id: peerId, message_id: tgMessageId, text: newText }),
+          body: JSON.stringify({
+            account_id: accountId, peer_id: peerId, message_id: tgMessageId,
+            completed: wasChecked ? [] : [idx],
+            incompleted: wasChecked ? [idx] : [],
+          }),
         })
-      } catch (e) {
-        console.error('Checklist sync failed:', e)
-        onTextUpdate!(messageId, fullText!)
+      } else {
+        // Text-based checklist — edit message text
+        if (fullText) {
+          const lines = fullText.split('\n')
+          const checklistLines = lines.filter(l => l.startsWith('☐') || l.startsWith('☑'))
+          const targetLine = checklistLines[idx]
+          if (targetLine) {
+            let replaced = false
+            const newLines = lines.map(l => {
+              if (!replaced && l === targetLine) { replaced = true; return newMarker + l.slice(1) }
+              return l
+            })
+            await authFetch(`${API_BASE}/telegram/edit-message/`, authToken!, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ account_id: accountId, peer_id: peerId, message_id: tgMessageId, text: newLines.join('\n') }),
+            })
+          }
+        }
       }
-      setSyncing(false)
-    } else {
-      // Native poll: local-only toggle
-      setLocalChecked(prev => {
-        const next = new Set(prev)
-        if (next.has(idx)) next.delete(idx); else next.add(idx)
-        localStorage.setItem(`poll_${messageId}`, JSON.stringify([...next]))
-        return next
-      })
+    } catch (e) {
+      console.error('Checklist sync failed:', e)
+      if (fullText) onTextUpdate!(messageId, fullText) // revert
     }
+    setSyncing(false)
   }
 
   const doneCount = checked.size
   return (
     <div className="msg-poll-card">
-      <div className="msg-poll-title">📊 {question}</div>
+      <div className="msg-poll-title">{isTodo ? '📋' : '📊'} {question}</div>
       <div className="msg-poll-options">
         {options.map((opt, i) => {
           const label = opt.replace(/^[☐☑]\s*/, '')
@@ -3546,6 +3567,14 @@ function App() {
     }
   }, [auth?.token, mediaBlobMap, loadMediaBlob, openFetchedFile])
 
+  // Auto-load video notes for inline autoplay (muted, like Telegram)
+  useEffect(() => {
+    const vnotes = messages.filter(m => m.media_type === 'video_note' && m.media_file && !mediaBlobMap[`vid_${m.id}`])
+    for (const m of vnotes.slice(-6)) { // load last 6 visible
+      loadMediaBlob(`vid_${m.id}`, m.media_file)
+    }
+  }, [messages]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const ctxMenuOpen = useCallback(() => {
     if (!ctxMenu?.mediaPath) return
     openMedia(ctxMenu.mediaPath, ctxMenu.mediaType || '', ctxMenu.messageId)
@@ -5912,7 +5941,7 @@ function App() {
                           {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
                         </div>
                       )}
-                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}`}>
+                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}${m.media_type === 'video_note' ? ' msg-bubble-vnote' : ''}`}>
                         {/* Group sender name */}
                         {m.chat_type && m.chat_type !== 'private' && m.direction === 'received' && m.sender_name && (
                           <div className="msg-group-sender">{m.sender_name}</div>
@@ -5982,31 +6011,45 @@ function App() {
                             direction={m.direction}
                           />
                         )}
-                        {/* Video note (round video / кружок) */}
+                        {/* Video note (round video / кружок) — autoplay muted like Telegram */}
                         {m.has_media && m.media_type === 'video_note' && m.media_file && (
                           <div className={`msg-vnote-wrap ${m.direction}`}>
                             <div className="msg-vnote" onClick={async () => {
                               const key = `vid_${m.id}`
                               let src = mediaBlobMap[key]
-                              if (!src) { src = await loadMediaBlob(key, m.media_file) || ''; }
+                              if (!src) { src = await loadMediaBlob(key, m.media_file) || '' }
                               if (src) { setVnoteModal({ src, id: m.id }); setVnotePlaying(true); setVnoteProgress(0) }
                             }}>
-                              {m.thumbnail ? (
-                                <AuthMedia
-                                  mediaKey={`vnthumb_${m.id}`}
-                                  mediaPath={m.thumbnail}
-                                  type="image"
-                                  className="msg-vnote-thumb"
-                                  token={auth?.token || ''}
-                                  blobMap={mediaBlobMap}
-                                  loadBlob={loadMediaBlob}
+                              {mediaBlobMap[`vid_${m.id}`] ? (
+                                <video
+                                  src={mediaBlobMap[`vid_${m.id}`]}
+                                  className="msg-vnote-player"
+                                  autoPlay muted loop playsInline
                                 />
-                              ) : <div className="msg-vnote-thumb" style={{background: 'var(--muted)'}} />}
-                              <div className="msg-vnote-play">
-                                {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                                )}
-                              </div>
+                              ) : (
+                                <>
+                                  {m.thumbnail ? (
+                                    <AuthMedia
+                                      mediaKey={`vnthumb_${m.id}`}
+                                      mediaPath={m.thumbnail}
+                                      type="image"
+                                      className="msg-vnote-thumb"
+                                      token={auth?.token || ''}
+                                      blobMap={mediaBlobMap}
+                                      loadBlob={loadMediaBlob}
+                                    />
+                                  ) : <div className="msg-vnote-thumb" style={{background: 'var(--muted)'}} />}
+                                  <div className="msg-vnote-play" onClick={async (e) => {
+                                    e.stopPropagation()
+                                    const key = `vid_${m.id}`
+                                    if (!mediaBlobMap[key]) await loadMediaBlob(key, m.media_file)
+                                  }}>
+                                    {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
+                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                    )}
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
                         )}
@@ -6142,21 +6185,28 @@ function App() {
                             </div>
                           )
                         })()}
-                        {/* Poll/checklist card */}
+                        {/* Poll/checklist/ToDo card */}
                         {m.media_type === 'poll' && (() => {
-                          // Use dedicated API fields, fallback to text parsing
+                          const onUpdate = (msgId: number | string, newText: string) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))
+                          const syncProps = { accountId: m.account_id || selectedAccount, peerId: m.tg_peer_id, tgMessageId: m.tg_message_id, fullText: m.text, authToken: auth?.token, onTextUpdate: onUpdate }
+                          // Dedicated API fields (poll_question present)
                           if (m.poll_question) {
                             const opts = (m.poll_options || []).map(o => typeof o === 'string' ? o : o.text)
-                            return <PollCard question={m.poll_question} options={opts.map(o => `☐ ${o}`)} messageId={m.id} totalVoters={m.poll_total_voters} isClosed={m.poll_is_closed} />
+                            // Detect ToDo: options already have ☐/☑ markers
+                            const isTodo = opts.some(o => o.startsWith('☐ ') || o.startsWith('☑ '))
+                            const normalizedOpts = isTodo ? opts : opts.map(o => `☐ ${o}`)
+                            return <PollCard question={m.poll_question} options={normalizedOpts} messageId={m.id}
+                              totalVoters={m.poll_total_voters} isClosed={m.poll_is_closed}
+                              isTodo={isTodo} {...syncProps} />
                           }
-                          if (m.text && m.text.startsWith('📊')) {
+                          // Text-based fallback (📊 or 📋 prefix)
+                          if (m.text && (m.text.startsWith('📊') || m.text.startsWith('📋'))) {
                             const lines = m.text.split('\n')
-                            const question = lines[0]?.replace('📊 ', '') || 'Опитування'
+                            const isTodo = m.text.startsWith('📋')
+                            const question = lines[0]?.replace(/^[📊📋]\s*/, '') || 'Опитування'
                             const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
                             return <PollCard question={question} options={options} messageId={m.id}
-                              accountId={m.account_id || selectedAccount} peerId={m.tg_peer_id} tgMessageId={m.tg_message_id}
-                              fullText={m.text} authToken={auth?.token}
-                              onTextUpdate={(msgId, newText) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))} />
+                              isTodo={isTodo} {...syncProps} />
                           }
                           return null
                         })()}
@@ -6189,7 +6239,7 @@ function App() {
                           )
                         })()}
                         {/* Message text — always shown, even for deleted */}
-                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
+                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊') || m.text.startsWith('📋'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Inline keyboard (bot buttons) */}
                         {m.reply_markup && m.reply_markup.length > 0 && (

@@ -1268,7 +1268,8 @@ body {
   height: auto;
   display: block;
 }
-.msg-bubble-sticker {
+.msg-bubble-sticker,
+.msg-bubble-vnote {
   background: transparent !important;
   backdrop-filter: none !important;
   box-shadow: none !important;
