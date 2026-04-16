@@ -1657,6 +1657,10 @@ function App() {
   const [gmailSelectedMsg, setGmailSelectedMsg] = useState<GmailEmail | null>(null)
   const [showSelectAccountHint, setShowSelectAccountHint] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [showTodoModal, setShowTodoModal] = useState(false)
+  const [todoTitle, setTodoTitle] = useState('')
+  const [todoItems, setTodoItems] = useState<string[]>(['', ''])
   const [showContactProfile, setShowContactProfile] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: number | string; tgMsgId: number; peerId: number } | null>(null)
   const [showCompose, setShowCompose] = useState(false)
@@ -4034,12 +4038,14 @@ function App() {
 
           // --- New TG event types ---
           if (data.type === 'edit_message') {
-            // Update message text in-place
-            setMessages(prev => prev.map(m =>
-              m.tg_message_id === data.tg_message_id
-                ? { ...m, text: data.new_text, is_edited: true, edited_at: data.edit_date, original_text: data.original_text || m.text }
-                : m
-            ))
+            // Update message text in-place (+ poll/todo options if present)
+            setMessages(prev => prev.map(m => {
+              if (m.tg_message_id !== data.tg_message_id) return m
+              const upd: Partial<ChatMessage> = { text: data.new_text, is_edited: true, edited_at: data.edit_date, original_text: data.original_text || m.text }
+              if (data.poll_options) upd.poll_options = data.poll_options
+              if (data.poll_question) upd.poll_question = data.poll_question
+              return { ...m, ...upd }
+            }))
           }
 
           if (data.type === 'delete_message') {
@@ -6263,15 +6269,25 @@ function App() {
                           const lat = m.location_lat ?? parseFloat((mapUrl.match(/q=([-\d.]+)/) || [])[1] || '0')
                           const lng = m.location_lng ?? parseFloat((mapUrl.match(/,([-\d.]+)/) || [])[1] || '0')
                           const hasCoords = lat !== 0 || lng !== 0
-                          // OpenStreetMap static map (no API key needed)
-                          const tileUrl = hasCoords
-                            ? `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${isLive ? 14 : 15}&size=320x180&maptype=mapnik&markers=${lat},${lng},red-pushpin`
-                            : ''
+                          // Build 2x2 tile grid from OSM for map preview
+                          const zoom = isLive ? 14 : 15
+                          const n = Math.pow(2, zoom)
+                          const xTile = (lng + 180) / 360 * n
+                          const yTile = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n
+                          const tx = Math.floor(xTile), ty = Math.floor(yTile)
+                          // Fractional position within tile for pin offset
+                          const fracX = xTile - tx, fracY = yTile - ty
+                          const tileBase = `https://tile.openstreetmap.org/${zoom}`
                           return (
                             <div className="msg-geo-card" onClick={() => mapUrl && shellOpen(mapUrl)}>
                               {hasCoords && (
                                 <div className="msg-geo-map">
-                                  <img src={tileUrl} alt="Map" className="msg-geo-map-img" loading="lazy" />
+                                  <div className="msg-geo-tiles" style={{ transform: `translate(${-(fracX * 256)}px, ${-(fracY * 256)}px)` }}>
+                                    <img src={`${tileBase}/${tx}/${ty}.png`} alt="" loading="lazy" />
+                                    <img src={`${tileBase}/${tx + 1}/${ty}.png`} alt="" loading="lazy" />
+                                    <img src={`${tileBase}/${tx}/${ty + 1}.png`} alt="" loading="lazy" />
+                                    <img src={`${tileBase}/${tx + 1}/${ty + 1}.png`} alt="" loading="lazy" />
+                                  </div>
                                   <div className="msg-geo-pin">{isLive ? '📡' : '📍'}</div>
                                 </div>
                               )}
@@ -6454,6 +6470,66 @@ function App() {
                   <input type="file" ref={fileInputRef} hidden multiple
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
                     onChange={handleFileSelect} />
+                  {/* ToDo list creation modal */}
+                  {showTodoModal && (
+                    <div className="file-modal-overlay" onClick={() => setShowTodoModal(false)}>
+                      <div className="file-modal" onClick={e => e.stopPropagation()} style={{ width: 380 }}>
+                        <div className="file-modal-header">
+                          <span className="file-modal-title">Новий список</span>
+                          <button className="file-modal-close" onClick={() => setShowTodoModal(false)}>✕</button>
+                        </div>
+                        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <input
+                            className="todo-modal-input"
+                            value={todoTitle}
+                            onChange={e => setTodoTitle(e.target.value)}
+                            placeholder="Назва списку"
+                            autoFocus
+                          />
+                          {todoItems.map((item, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ opacity: 0.4, fontSize: 14 }}>☐</span>
+                              <input
+                                className="todo-modal-input"
+                                value={item}
+                                onChange={e => { const arr = [...todoItems]; arr[i] = e.target.value; setTodoItems(arr) }}
+                                placeholder={`Пункт ${i + 1}`}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') { e.preventDefault(); setTodoItems(prev => [...prev, '']) }
+                                  if (e.key === 'Backspace' && !item && todoItems.length > 1) { e.preventDefault(); setTodoItems(prev => prev.filter((_, j) => j !== i)) }
+                                }}
+                              />
+                            </div>
+                          ))}
+                          <button className="attach-menu-item" onClick={() => setTodoItems(prev => [...prev, ''])} style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                            + Додати пункт
+                          </button>
+                        </div>
+                        <div className="file-modal-actions">
+                          <button className="file-modal-send" disabled={!todoTitle.trim() || todoItems.filter(i => i.trim()).length === 0 || sending}
+                            onClick={async () => {
+                              if (!selectedClient || !auth?.token || !selectedAccount) return
+                              const items = todoItems.filter(i => i.trim())
+                              if (!todoTitle.trim() || items.length === 0) return
+                              const text = `📋 ${todoTitle.trim()}\n${items.map(i => `☐ ${i.trim()}`).join('\n')}`
+                              setShowTodoModal(false)
+                              setSending(true)
+                              try {
+                                const contact = contacts.find(c => c.client_id === selectedClient)
+                                const fd = new FormData()
+                                fd.append('account_id', selectedAccount)
+                                fd.append('peer_id', String(contact?.tg_peer_id || ''))
+                                fd.append('phone', contact?.phone || '')
+                                fd.append('text', text)
+                                await authFetch(`${API_BASE}/messenger/send/`, auth.token, { method: 'POST', body: fd })
+                              } finally { setSending(false) }
+                            }}>
+                            <SendIcon /> Надіслати
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {/* File upload modal (multi-file) */}
                   {showFileModal && attachedFiles.length > 0 && (
                     <div className="file-modal-overlay" onClick={clearAttachment}>
@@ -6559,9 +6635,27 @@ function App() {
                   ) : (
                     /* Normal input */
                     <>
-                      <button className="chat-input-btn" onClick={() => fileInputRef.current?.click()} title="Вкласти файл">
-                        <PaperclipIcon />
-                      </button>
+                      <div className="attach-menu-wrap">
+                        <button className="chat-input-btn" onClick={() => { setShowAttachMenu(p => !p); setShowEmojiPicker(false) }} title="Вкласти">
+                          <PaperclipIcon />
+                        </button>
+                        {showAttachMenu && (
+                          <div className="attach-menu-panel">
+                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); fileInputRef.current?.click() }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                              Медіа
+                            </button>
+                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); setForceDocument(true); fileInputRef.current?.click() }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              Файл
+                            </button>
+                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); setShowTodoModal(true); setTodoTitle(''); setTodoItems(['', '']) }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                              Список
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <div className="emoji-picker-wrap">
                         <button className="chat-input-btn" onClick={() => setShowEmojiPicker(p => !p)} title="Емодзі">
                           <span style={{ fontSize: 18, lineHeight: 1 }}>😊</span>
@@ -6581,6 +6675,7 @@ function App() {
                       <textarea
                         ref={chatInputRef}
                         value={messageText}
+                        onFocus={() => { setShowAttachMenu(false); setShowEmojiPicker(false) }}
                         onChange={e => {
                           setMessageText(e.target.value)
                           e.target.style.height = 'auto'

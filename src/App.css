@@ -1191,6 +1191,17 @@ body {
   background: var(--muted);
   overflow: hidden;
 }
+.msg-geo-tiles {
+  display: grid;
+  grid-template-columns: 256px 256px;
+  grid-template-rows: 256px 256px;
+  position: absolute;
+}
+.msg-geo-tiles img {
+  width: 256px;
+  height: 256px;
+  display: block;
+}
 .msg-geo-map-img {
   width: 100%;
   height: 100%;
@@ -1496,6 +1507,59 @@ body {
 }
 
 /* Emoji picker */
+/* Attach menu dropdown */
+.attach-menu-wrap {
+  position: relative;
+}
+.attach-menu-panel {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.25);
+  padding: 4px;
+  z-index: 50;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+}
+.attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.82rem;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+.attach-menu-item:hover {
+  background: var(--accent);
+}
+.attach-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+/* ToDo modal input */
+.todo-modal-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  outline: none;
+}
+.todo-modal-input:focus {
+  border-color: var(--primary);
+}
 .emoji-picker-wrap {
   position: relative;
 }
