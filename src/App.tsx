@@ -406,6 +406,8 @@ interface ChatMessage {
   reply_to_msg_id?: number | null
   reply_to_text?: string
   reply_to_sender?: string
+  reply_to_media_type?: string
+  reply_to_thumbnail?: string
   fwd_from_name?: string
   // Extended message types (Етап 2)
   media_group_id?: number | null
@@ -3655,7 +3657,8 @@ function App() {
     const msg = messages.find(m => m.id === ctxMenu.messageId)
     if (msg) {
       setEditingMsg(null)
-      const replyPreview = msg.text?.slice(0, 80) || (msg.has_media ? `📎 ${msg.media_type || 'медіа'}` : '...')
+      const mediaLabels: Record<string, string> = { photo: 'Фото', video: 'Відео', video_note: 'Відеоповідомлення', voice: 'Голосове повідомлення', sticker: 'Стікер', document: 'Документ' }
+      const replyPreview = msg.text?.slice(0, 80) || (msg.has_media && msg.media_type ? mediaLabels[msg.media_type] || 'Медіа' : '...')
       const contact = contacts.find(c => c.client_id === selectedClient)
       const sender = msg.direction === 'sent' ? 'Ви' : (contact?.full_name || contact?.phone || '')
       ;(window as any).__replyTo = { msg_id: msg.tg_message_id, text: replyPreview, sender }
@@ -5954,15 +5957,45 @@ function App() {
                           </div>
                         )}
                         {/* Reply quote — click to scroll to quoted message */}
-                        {(m.reply_to_msg_id || m.reply_to_text || m.reply_to_sender) && (
-                          <div className="msg-reply-quote clickable" onClick={m.reply_to_msg_id ? (e) => { e.stopPropagation(); scrollToReplyMessage(m.reply_to_msg_id!, m.tg_peer_id) } : undefined}>
-                            <div className="msg-reply-bar" />
-                            <div className="msg-reply-body">
-                              {m.reply_to_sender && <span className="msg-reply-sender">{m.reply_to_sender}</span>}
-                              <span className="msg-reply-text">{m.reply_to_text || '...'}</span>
+                        {(m.reply_to_msg_id || m.reply_to_text || m.reply_to_sender) && (() => {
+                          // Find thumbnail from replied message (lookup in loaded messages)
+                          const replyThumb = (() => {
+                            if (m.reply_to_thumbnail) return { thumb: m.reply_to_thumbnail, mediaType: m.reply_to_media_type || '' }
+                            if (!m.reply_to_msg_id) return null
+                            const replied = messages.find(rm => rm.tg_message_id === m.reply_to_msg_id && (!m.tg_peer_id || rm.tg_peer_id === m.tg_peer_id))
+                            if (replied?.thumbnail) return { thumb: replied.thumbnail, mediaType: replied.media_type || '' }
+                            return null
+                          })()
+                          const replyMediaType = m.reply_to_media_type || (() => {
+                            if (!m.reply_to_msg_id) return ''
+                            const replied = messages.find(rm => rm.tg_message_id === m.reply_to_msg_id && (!m.tg_peer_id || rm.tg_peer_id === m.tg_peer_id))
+                            return replied?.media_type || ''
+                          })()
+                          const replyText = m.reply_to_text || (replyMediaType ? ({
+                            photo: 'Фото', video: 'Відео', video_note: 'Відеоповідомлення',
+                            voice: 'Голосове повідомлення', sticker: 'Стікер', document: 'Документ',
+                          } as Record<string, string>)[replyMediaType] || 'Медіа' : '...')
+                          return (
+                            <div className="msg-reply-quote clickable" onClick={m.reply_to_msg_id ? (e) => { e.stopPropagation(); scrollToReplyMessage(m.reply_to_msg_id!, m.tg_peer_id) } : undefined}>
+                              <div className="msg-reply-bar" />
+                              <div className="msg-reply-body">
+                                {m.reply_to_sender && <span className="msg-reply-sender">{m.reply_to_sender}</span>}
+                                <span className="msg-reply-text">{replyText}</span>
+                              </div>
+                              {replyThumb && (
+                                <AuthMedia
+                                  mediaKey={`reply_thumb_${m.id}`}
+                                  mediaPath={replyThumb.thumb}
+                                  type="image"
+                                  className={`msg-reply-thumb${replyThumb.mediaType === 'video_note' ? ' msg-reply-thumb-round' : ''}`}
+                                  token={auth?.token || ''}
+                                  blobMap={mediaBlobMap}
+                                  onBlobReady={handleBlobReady}
+                                />
+                              )}
                             </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                         {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
                           <AuthMedia
@@ -6227,13 +6260,24 @@ function App() {
                           } else {
                             return null
                           }
+                          const lat = m.location_lat ?? parseFloat((mapUrl.match(/q=([-\d.]+)/) || [])[1] || '0')
+                          const lng = m.location_lng ?? parseFloat((mapUrl.match(/,([-\d.]+)/) || [])[1] || '0')
+                          const hasCoords = lat !== 0 || lng !== 0
+                          // OpenStreetMap static map (no API key needed)
+                          const tileUrl = hasCoords
+                            ? `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${isLive ? 14 : 15}&size=320x180&maptype=mapnik&markers=${lat},${lng},red-pushpin`
+                            : ''
                           return (
                             <div className="msg-geo-card" onClick={() => mapUrl && shellOpen(mapUrl)}>
-                              <div className="msg-geo-icon">{isLive ? '📡' : '📍'}</div>
-                              <div className="msg-geo-info">
+                              {hasCoords && (
+                                <div className="msg-geo-map">
+                                  <img src={tileUrl} alt="Map" className="msg-geo-map-img" loading="lazy" />
+                                  <div className="msg-geo-pin">{isLive ? '📡' : '📍'}</div>
+                                </div>
+                              )}
+                              <div className="msg-geo-info-bottom">
                                 <span className="msg-geo-title">{title}</span>
                                 {address && <span className="msg-geo-address">{address}</span>}
-                                {mapUrl && <span className="msg-geo-link">Відкрити на карті</span>}
                               </div>
                             </div>
                           )

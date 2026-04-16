@@ -1005,6 +1005,18 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Reply thumbnail (photo/video_note preview) */
+.msg-reply-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.msg-reply-thumb-round {
+  border-radius: 50%;
+}
 /* Forward header */
 /* Service messages — centered, no bubble */
 .msg-service {
