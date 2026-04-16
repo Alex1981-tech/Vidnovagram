@@ -90,6 +90,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.2': [
+    'Синхронізація чеклістів — позначки ☐/☑ тепер синхронізуються з Telegram (видно іншому користувачу)',
+    'Виправлено відкриття PDF файлів у чаті',
+    'Модальне вікно профілю контакта — клік на аватарку показує телефон, username, медіа-статистику',
+  ],
   '0.15.1': [
     'Виправлено відкриття документів — PDF, Word, Excel зберігаються з правильним іменем та розширенням',
     'Ім\'я файлу тепер береться з content-disposition, а якщо немає — відновлюється з URL',
@@ -903,21 +908,62 @@ function extractFirstUrl(text: string): string | null {
   return m ? m[0] : null
 }
 
-function PollCard({ question, options, messageId, totalVoters, isClosed }: { question: string; options: string[]; messageId: number | string; totalVoters?: number; isClosed?: boolean }) {
-  const [checked, setChecked] = useState<Set<number>>(() => {
-    try {
-      const saved = localStorage.getItem(`poll_${messageId}`)
-      return saved ? new Set(JSON.parse(saved)) : new Set()
-    } catch { return new Set() }
+function PollCard({ question, options, messageId, totalVoters, isClosed, accountId, peerId, tgMessageId, fullText, authToken, onTextUpdate }: {
+  question: string; options: string[]; messageId: number | string; totalVoters?: number; isClosed?: boolean;
+  accountId?: string; peerId?: number; tgMessageId?: number; fullText?: string; authToken?: string;
+  onTextUpdate?: (msgId: number | string, newText: string) => void;
+}) {
+  const canSync = !!(fullText && accountId && peerId && tgMessageId && authToken && onTextUpdate)
+  // Derive checked state: from text markers if syncing, from localStorage for native polls
+  const [localChecked, setLocalChecked] = useState<Set<number>>(() => {
+    if (canSync) return new Set<number>()
+    try { const s = localStorage.getItem(`poll_${messageId}`); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
   })
-  const toggle = (idx: number) => {
-    setChecked(prev => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx); else next.add(idx)
-      localStorage.setItem(`poll_${messageId}`, JSON.stringify([...next]))
-      return next
-    })
+  const checked = canSync
+    ? new Set<number>(options.map((opt, i) => opt.startsWith('☑') ? i : -1).filter(i => i >= 0))
+    : localChecked
+  const [syncing, setSyncing] = useState(false)
+
+  const toggle = async (idx: number) => {
+    if (syncing) return
+    if (canSync) {
+      // Sync checklist: edit message text in Telegram
+      const lines = fullText!.split('\n')
+      const checklistLines = lines.filter(l => l.startsWith('☐') || l.startsWith('☑'))
+      const targetLine = checklistLines[idx]
+      if (!targetLine) return
+      const newMarker = targetLine.startsWith('☐') ? '☑' : '☐'
+      const newLine = newMarker + targetLine.slice(1)
+      let replaced = false
+      const newLines = lines.map(l => {
+        if (!replaced && l === targetLine) { replaced = true; return newLine }
+        return l
+      })
+      const newText = newLines.join('\n')
+      onTextUpdate!(messageId, newText)
+      setSyncing(true)
+      try {
+        await authFetch(`${API_BASE}/telegram/edit-message/`, authToken!, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, peer_id: peerId, message_id: tgMessageId, text: newText }),
+        })
+      } catch (e) {
+        console.error('Checklist sync failed:', e)
+        onTextUpdate!(messageId, fullText!)
+      }
+      setSyncing(false)
+    } else {
+      // Native poll: local-only toggle
+      setLocalChecked(prev => {
+        const next = new Set(prev)
+        if (next.has(idx)) next.delete(idx); else next.add(idx)
+        localStorage.setItem(`poll_${messageId}`, JSON.stringify([...next]))
+        return next
+      })
+    }
   }
+
   const doneCount = checked.size
   return (
     <div className="msg-poll-card">
@@ -927,7 +973,7 @@ function PollCard({ question, options, messageId, totalVoters, isClosed }: { que
           const label = opt.replace(/^[☐☑]\s*/, '')
           const done = checked.has(i)
           return (
-            <button key={i} className={`msg-poll-option${done ? ' checked' : ''}`} onClick={() => toggle(i)}>
+            <button key={i} className={`msg-poll-option${done ? ' checked' : ''}`} onClick={() => toggle(i)} disabled={syncing}>
               <span className="msg-poll-check">{done ? '☑' : '☐'}</span>
               <span className={`msg-poll-label${done ? ' done' : ''}`}>{label}</span>
             </button>
@@ -3433,6 +3479,12 @@ function App() {
       setLightboxSrc(URL.createObjectURL(blob))
       return
     }
+    // PDF → open as blob URL in browser (shellOpen with file path often fails on Windows)
+    if (contentType === 'application/pdf' || mediaPath.toLowerCase().endsWith('.pdf')) {
+      const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+      await shellOpen(blobUrl)
+      return
+    }
     const filename = getFilenameFromResponse(mediaPath, resp, fallbackBase)
     const tmp = await tempDir()
     const filePath = await join(tmp, filename)
@@ -3483,7 +3535,14 @@ function App() {
         if (blob) setLightboxSrc(blob)
       }
     } else {
-      await openFetchedFile(mediaPath, mediaPath.split('?')[0].split('/').pop() || 'file')
+      const docKey = `doc_${mediaPath}`
+      setMediaLoading(prev => ({ ...prev, [docKey]: true }))
+      try {
+        await openFetchedFile(mediaPath, mediaPath.split('?')[0].split('/').pop() || 'file')
+      } catch (err) {
+        console.error('openMedia document failed:', err)
+      }
+      setMediaLoading(prev => ({ ...prev, [docKey]: false }))
     }
   }, [auth?.token, mediaBlobMap, loadMediaBlob, openFetchedFile])
 
@@ -5415,7 +5474,7 @@ function App() {
           {selectedClient && chatContact ? (
             <>
               <div className="chat-header">
-                <div className="chat-header-avatar">
+                <div className="chat-header-avatar" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
                   {selectedClient && photoMap[selectedClient]
                     ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
                     : <UserIcon />}
@@ -6094,7 +6153,10 @@ function App() {
                             const lines = m.text.split('\n')
                             const question = lines[0]?.replace('📊 ', '') || 'Опитування'
                             const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
-                            return <PollCard question={question} options={options} messageId={m.id} />
+                            return <PollCard question={question} options={options} messageId={m.id}
+                              accountId={m.account_id || selectedAccount} peerId={m.tg_peer_id} tgMessageId={m.tg_message_id}
+                              fullText={m.text} authToken={auth?.token}
+                              onTextUpdate={(msgId, newText) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))} />
                           }
                           return null
                         })()}
@@ -7523,11 +7585,24 @@ function App() {
       )}
 
       {/* Contact Profile Modal */}
-      {showContactProfile && selectedClient && chatContact && (
+      {showContactProfile && selectedClient && chatContact && (() => {
+        const ct = (chatContact as any)?.chat_type
+        const isPrivate = !ct || ct === 'private'
+        const isChannel = ct === 'channel'
+        const peerId = (chatContact as any)?.tg_peer_id
+        const pr = peerId ? peerPresence[peerId] : undefined
+        const { text: presText, isOnline: presOnline } = formatPresence(pr)
+        const phone = chatDisplay.subtitle || clientPhone || chatContact.phone || ''
+        const username = (chatContact as any)?.tg_username || ''
+        const photoCount = messages.filter(m => m.media_type === 'photo').length
+        const voiceCount = messages.filter(m => m.media_type === 'voice' || m.media_type === 'video_note').length
+        const docCount = messages.filter(m => m.media_type === 'document').length
+        const videoCount = messages.filter(m => m.media_type === 'video').length
+        return (
         <div className="modal-overlay" onClick={() => setShowContactProfile(false)}>
           <div className="contact-profile-modal" onClick={e => e.stopPropagation()}>
             <button className="contact-profile-close" onClick={() => setShowContactProfile(false)}>✕</button>
-            <div className="contact-profile-avatar">
+            <div className="contact-profile-avatar" onClick={() => { if (photoMap[selectedClient]) setLightboxSrc(photoMap[selectedClient]) }} style={photoMap[selectedClient] ? { cursor: 'pointer' } : undefined}>
               {photoMap[selectedClient]
                 ? <img src={photoMap[selectedClient]} alt="" />
                 : <div className="contact-profile-avatar-placeholder">
@@ -7536,7 +7611,12 @@ function App() {
               }
             </div>
             <h2 className="contact-profile-name">{chatDisplay.name || 'Без імені'}</h2>
-            {(chatContact as any)?.chat_type === 'channel' ? (
+            {isPrivate && presText && (
+              <p className={`contact-profile-presence${presOnline ? ' online' : ''}`}>
+                {presOnline ? 'онлайн' : presText}
+              </p>
+            )}
+            {isChannel ? (
               <>
                 {groupInfo?.username && (
                   <p className="contact-profile-phone">@{groupInfo.username}</p>
@@ -7575,7 +7655,27 @@ function App() {
               </>
             ) : (
               <>
-                <p className="contact-profile-phone">{chatDisplay.subtitle || clientPhone || chatContact.phone}</p>
+                {/* Phone + type */}
+                {phone && (
+                  <div className="contact-profile-info-section">
+                    <div className="contact-profile-info-row">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                      <div className="contact-profile-info-text">
+                        <span className="contact-profile-info-value">{phone.replace(/^(\d{3})(\d{2})(\d{3})(\d{2})(\d{2})$/, '+$1 $2 $3 $4 $5')}</span>
+                        <span className="contact-profile-info-label">Мобільний</span>
+                      </div>
+                    </div>
+                    {username && (
+                      <div className="contact-profile-info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+                        <div className="contact-profile-info-text">
+                          <span className="contact-profile-info-value">@{username}</span>
+                          <span className="contact-profile-info-label">Ім'я користувача</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {clientLinkedPhones.length > 0 && (
                   <div className="contact-profile-linked">
                     {clientLinkedPhones.map(lp => (
@@ -7586,54 +7686,59 @@ function App() {
                     ))}
                   </div>
                 )}
-                {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && groupInfo?.about && (
+                {!isPrivate && groupInfo?.about && (
                   <p className="contact-profile-about">{groupInfo.about}</p>
                 )}
-                <div className="contact-profile-stats">
-                  {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && groupInfo?.participants_count != null && (
-                    <div className="contact-profile-stat">
-                      <span className="contact-profile-stat-value">{groupInfo.participants_count}</span>
-                      <span className="contact-profile-stat-label">учасників</span>
+                {/* Media stats — like Telegram */}
+                <div className="contact-profile-media-list">
+                  {photoCount > 0 && (
+                    <div className="contact-profile-media-row">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                      <span>{photoCount} фото</span>
                     </div>
                   )}
-                  <div className="contact-profile-stat">
-                    <span className="contact-profile-stat-value">{messages.length}</span>
-                    <span className="contact-profile-stat-label">повідомлень</span>
-                  </div>
-                  <div className="contact-profile-stat">
-                    <span className="contact-profile-stat-value">{messages.filter(m => m.has_media).length}</span>
-                    <span className="contact-profile-stat-label">медіа</span>
-                  </div>
-                  <div className="contact-profile-stat">
-                    <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'sent').length}</span>
-                    <span className="contact-profile-stat-label">надіслано</span>
-                  </div>
-                  <div className="contact-profile-stat">
-                    <span className="contact-profile-stat-value">{messages.filter(m => m.direction === 'received').length}</span>
-                    <span className="contact-profile-stat-label">отримано</span>
-                  </div>
+                  {videoCount > 0 && (
+                    <div className="contact-profile-media-row">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      <span>{videoCount} відео</span>
+                    </div>
+                  )}
+                  {docCount > 0 && (
+                    <div className="contact-profile-media-row">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <span>{docCount} файлів</span>
+                    </div>
+                  )}
+                  {voiceCount > 0 && (
+                    <div className="contact-profile-media-row">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                      <span>{voiceCount} голосових</span>
+                    </div>
+                  )}
                 </div>
-                {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && selectedAccount && (
-                  <div className="contact-profile-actions">
-                    <button
-                      className={`contact-profile-mute-btn${chatMuted ? ' muted' : ''}`}
-                      onClick={toggleMuteChat}
-                      disabled={muteLoading}
-                    >
-                      {chatMuted ? '🔇 Сповіщення вимкнено' : '🔔 Сповіщення увімкнено'}
-                    </button>
-                  </div>
-                )}
-                {(chatContact as any).source === 'telegram' && (chatContact as any).tg_peer_id && (
-                  <a className="contact-profile-link" href={`https://t.me/+${(clientPhone || chatContact.phone || '').replace(/^0/, '38')}`} onClick={e => { e.preventDefault(); shellOpen((e.target as HTMLAnchorElement).href) }}>
-                    Відкрити в Telegram
-                  </a>
-                )}
+                {/* Actions */}
+                <div className="contact-profile-action-list">
+                  {(chatContact as any).source === 'telegram' && peerId && (
+                    <div className="contact-profile-action-row" onClick={() => { setShowContactProfile(false); shellOpen(`https://t.me/+${phone.replace(/^0/, '38')}`) }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                      <span>Відкрити в Telegram</span>
+                    </div>
+                  )}
+                  {!isPrivate && (
+                    <div className="contact-profile-action-row" onClick={toggleMuteChat}>
+                      {chatMuted
+                        ? <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 2 2 18"/><path d="M18 12H5.91a2 2 0 0 1-1.58-.77L2.2 8.56A2 2 0 0 1 3.91 5.5H18"/></svg><span>Увімкнути сповіщення</span></>
+                        : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Не сповіщати</span></>
+                      }
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Lab Send Modal — send lab results to chat */}
       {labSendModal && (
