@@ -5990,7 +5990,7 @@ function App() {
                                   className={`msg-reply-thumb${replyThumb.mediaType === 'video_note' ? ' msg-reply-thumb-round' : ''}`}
                                   token={auth?.token || ''}
                                   blobMap={mediaBlobMap}
-                                  onBlobReady={handleBlobReady}
+                                  loadBlob={loadMediaBlob}
                                 />
                               )}
                             </div>
