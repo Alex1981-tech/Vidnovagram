@@ -1607,6 +1607,11 @@ function App() {
 
   // Lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [lbScale, setLbScale] = useState(1)
+  const [lbTranslate, setLbTranslate] = useState({ x: 0, y: 0 })
+  const lbDragging = useRef(false)
+  const lbLastPos = useRef({ x: 0, y: 0 })
+  useEffect(() => { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) }, [lightboxSrc])
   // Video note modal
   const [vnoteModal, setVnoteModal] = useState<{ src: string; id: string | number } | null>(null)
   const vnoteModalRef = useRef<HTMLVideoElement>(null)
@@ -7999,55 +8004,19 @@ function App() {
         </div>
       )}
 
-      {lightboxSrc && (() => {
-        const LightboxViewer = () => {
-          const [lbScale, setLbScale] = useState(1)
-          const [lbTranslate, setLbTranslate] = useState({ x: 0, y: 0 })
-          const lbDragging = useRef(false)
-          const lbLastPos = useRef({ x: 0, y: 0 })
-
-          const lbWheel = useCallback((e: React.WheelEvent) => {
-            e.stopPropagation()
-            setLbScale(s => {
-              const d = e.deltaY > 0 ? -0.15 : 0.15
-              const next = Math.max(0.5, Math.min(8, s + d * s))
-              if (next <= 1) setLbTranslate({ x: 0, y: 0 })
-              return next
-            })
-          }, [])
-
-          const lbDown = useCallback((e: React.MouseEvent) => {
-            if (lbScale <= 1) return
-            e.preventDefault(); e.stopPropagation()
-            lbDragging.current = true
-            lbLastPos.current = { x: e.clientX, y: e.clientY }
-          }, [lbScale])
-
-          const lbMove = useCallback((e: React.MouseEvent) => {
-            if (!lbDragging.current) return
-            e.stopPropagation()
-            setLbTranslate(t => ({ x: t.x + e.clientX - lbLastPos.current.x, y: t.y + e.clientY - lbLastPos.current.y }))
-            lbLastPos.current = { x: e.clientX, y: e.clientY }
-          }, [])
-
-          const lbUp = useCallback(() => { lbDragging.current = false }, [])
-
-          const lbDblClick = useCallback((e: React.MouseEvent) => {
-            e.stopPropagation()
-            if (lbScale > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) } else setLbScale(3)
-          }, [lbScale])
-
-          return (
-            <div className="lightbox" onClick={() => setLightboxSrc(null)}
-              onMouseMove={lbMove} onMouseUp={lbUp} onMouseLeave={lbUp}>
-              <img src={lightboxSrc!} alt="" draggable={false}
-                style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? (lbDragging.current ? 'grabbing' : 'grab') : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
-                onClick={e => e.stopPropagation()} onWheel={lbWheel} onMouseDown={lbDown} onDoubleClick={lbDblClick} />
-            </div>
-          )
-        }
-        return <LightboxViewer />
-      })()}
+      {lightboxSrc && (
+        <div className="lightbox" onClick={() => { setLightboxSrc(null); setLbScale(1); setLbTranslate({ x: 0, y: 0 }) }}
+          onMouseMove={e => { if (!lbDragging.current) return; e.stopPropagation(); setLbTranslate(t => ({ x: t.x + e.clientX - lbLastPos.current.x, y: t.y + e.clientY - lbLastPos.current.y })); lbLastPos.current = { x: e.clientX, y: e.clientY } }}
+          onMouseUp={() => { lbDragging.current = false }}
+          onMouseLeave={() => { lbDragging.current = false }}>
+          <img src={lightboxSrc} alt="" draggable={false}
+            style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? (lbDragging.current ? 'grabbing' : 'grab') : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
+            onClick={e => e.stopPropagation()}
+            onWheel={e => { e.stopPropagation(); setLbScale(s => { const d = e.deltaY > 0 ? -0.15 : 0.15; const next = Math.max(0.5, Math.min(8, s + d * s)); if (next <= 1) setLbTranslate({ x: 0, y: 0 }); return next }) }}
+            onMouseDown={e => { if (lbScale <= 1) return; e.preventDefault(); e.stopPropagation(); lbDragging.current = true; lbLastPos.current = { x: e.clientX, y: e.clientY } }}
+            onDoubleClick={e => { e.stopPropagation(); if (lbScale > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) } else setLbScale(3) }} />
+        </div>
+      )}
 
       {/* Note modal */}
       {showNoteModal && (
