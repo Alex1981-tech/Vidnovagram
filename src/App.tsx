@@ -461,6 +461,10 @@ interface ChatMessage {
   reactions?: { emoji: string; count: number; chosen?: boolean }[]
   // Inline keyboard (bot messages)
   reply_markup?: { text: string; url?: string }[][]
+  // Local desktop-only send UX
+  local_status?: 'sending' | 'failed'
+  local_error?: string
+  retry_data?: { text: string; replyMsgId?: string | number }
 }
 
 interface AlbumGroup {
@@ -1620,6 +1624,12 @@ function App() {
     fileName: string
     fileCount: number
     errorMsg?: string
+    files?: (File | Blob)[]
+    mediaType?: string
+    caption?: string
+    forceDoc?: boolean
+    replyMsgId?: string | number
+    directFile?: boolean
   }
   const [bgUploads, setBgUploads] = useState<BgUpload[]>([])
   const bgUploadIdRef = useRef(0)
@@ -2489,7 +2499,16 @@ function App() {
 
   // Send message (text, file, voice/video note)
   // Helper: build FormData for one send request
-  const _buildSendFd = useCallback((opts: { text?: string; file?: File | Blob; fileName?: string; mediaType?: string; forceDoc?: boolean; replyMsgId?: string | number }) => {
+  const _buildSendFd = useCallback((opts: {
+    text?: string
+    file?: File | Blob
+    fileName?: string
+    mediaType?: string
+    forceDoc?: boolean
+    replyMsgId?: string | number
+    clientId?: string
+    accountId?: string
+  }) => {
     const fd = new FormData()
     if (opts.file) {
       fd.append('file', opts.file, opts.fileName || (opts.file instanceof File ? opts.file.name : 'file'))
@@ -2501,18 +2520,20 @@ function App() {
     if (opts.mediaType) fd.append('media_type', opts.mediaType)
     if (opts.replyMsgId) fd.append('reply_to_msg_id', String(opts.replyMsgId))
     // Account routing
-    const contact = contacts.find(c => c.client_id === selectedClient)
-    if (selectedAccount) {
-      const isWaAccount = accounts.some(a => a.id === selectedAccount && a.type === 'whatsapp')
+    const clientId = opts.clientId || selectedClient
+    const accountId = opts.accountId || selectedAccount
+    const contact = contactsRef.current.find(c => c.client_id === clientId)
+    if (accountId) {
+      const isWaAccount = accounts.some(a => a.id === accountId && a.type === 'whatsapp')
       const isTgContact = contact?.has_telegram
       if (isWaAccount && isTgContact) {
         fd.append('source', 'telegram')
       } else {
-        fd.append('account_id', selectedAccount)
+        fd.append('account_id', accountId)
       }
     }
     return fd
-  }, [contacts, selectedClient, selectedAccount, accounts])
+  }, [selectedClient, selectedAccount, accounts])
 
   const clearAttachment = useCallback(() => {
     attachedPreviews.forEach(p => { if (p) URL.revokeObjectURL(p) })
@@ -2522,6 +2543,162 @@ function App() {
     setFileCaption('')
     setForceDocument(false)
   }, [attachedPreviews])
+
+  const sendWhatsAppTextWithUx = useCallback(async (opts: {
+    clientId: string
+    accountId: string
+    token: string
+    text: string
+    replyMsgId?: string | number
+    tempId?: string
+    replyToText?: string
+    replyToSender?: string
+  }) => {
+    const tempId = opts.tempId || `wa_local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const accountLabel = accounts.find(a => a.id === opts.accountId)?.label || opts.accountId
+
+    if (!opts.tempId) {
+      const optimistic: ChatMessage = {
+        id: tempId,
+        source: 'whatsapp',
+        direction: 'sent',
+        text: opts.text,
+        has_media: false,
+        media_type: '',
+        media_file: '',
+        thumbnail: '',
+        message_date: new Date().toISOString(),
+        account_label: accountLabel,
+        account_id: opts.accountId,
+        reply_to_msg_id: null,
+        reply_to_text: opts.replyToText || '',
+        reply_to_sender: opts.replyToSender || '',
+        local_status: 'sending',
+        retry_data: { text: opts.text, replyMsgId: opts.replyMsgId },
+      }
+      setMessages(prev => [...prev, optimistic])
+      requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
+    } else {
+      setMessages(prev => prev.map(m => m.id === tempId ? {
+        ...m,
+        local_status: 'sending',
+        local_error: '',
+        message_date: new Date().toISOString(),
+      } : m))
+    }
+
+    try {
+      const fd = _buildSendFd({ text: opts.text, replyMsgId: opts.replyMsgId })
+      const sendUrl = `${API_BASE}/telegram/contacts/${opts.clientId}/send/`
+      const resp = await authFetch(sendUrl, opts.token, { method: 'POST', body: fd })
+      if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      loadMessages(opts.clientId)
+      telemetry.trackChatWrite(opts.clientId, opts.accountId, 'text')
+      return true
+    } catch (e: any) {
+      const errMsg = e?.message || String(e)
+      console.error('WA send:', errMsg)
+      setMessages(prev => prev.map(m => m.id === tempId ? {
+        ...m,
+        local_status: 'failed',
+        local_error: errMsg,
+        retry_data: { text: opts.text, replyMsgId: opts.replyMsgId },
+      } : m))
+      return false
+    }
+  }, [_buildSendFd, accounts, loadMessages])
+
+  const retryFailedMessage = useCallback(async (messageId: number | string) => {
+    if (!selectedClient || !selectedAccount || !auth?.token) return
+    const msg = messages.find(m => m.id === messageId)
+    if (!msg?.retry_data) return
+    await sendWhatsAppTextWithUx({
+      clientId: selectedClient,
+      accountId: selectedAccount,
+      token: auth.token,
+      text: msg.retry_data.text,
+      replyMsgId: msg.retry_data.replyMsgId,
+      tempId: String(msg.id),
+      replyToText: msg.reply_to_text,
+      replyToSender: msg.reply_to_sender,
+    })
+  }, [selectedClient, selectedAccount, auth?.token, messages, sendWhatsAppTextWithUx])
+
+  const runBgUpload = useCallback(async (upload: BgUpload, token: string) => {
+    try {
+      setBgUploads(prev => prev.map(u => u.id === upload.id ? { ...u, status: 'uploading', errorMsg: '' } : u))
+      const sendUrl = `${API_BASE}/telegram/contacts/${upload.clientId}/send/`
+      const isWaAccount = accounts.some(a => a.id === upload.accountId && a.type === 'whatsapp')
+
+      if (upload.files && upload.files.length === 1 && !upload.directFile) {
+        const file = upload.files[0]
+        const fd = _buildSendFd({
+          text: upload.caption,
+          file,
+          fileName: file instanceof File ? file.name : 'file',
+          forceDoc: upload.forceDoc,
+          replyMsgId: upload.replyMsgId,
+          clientId: upload.clientId,
+          accountId: upload.accountId,
+        })
+        const resp = await authFetch(sendUrl, token, { method: 'POST', body: fd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      } else if (upload.files && upload.files.length === 1 && upload.directFile) {
+        const file = upload.files[0]
+        const name = file instanceof File ? file.name : (upload.mediaType === 'voice' ? 'voice.webm' : 'video.webm')
+        const fd = _buildSendFd({
+          text: upload.caption,
+          file,
+          fileName: name,
+          mediaType: upload.mediaType,
+          replyMsgId: upload.replyMsgId,
+          clientId: upload.clientId,
+          accountId: upload.accountId,
+        })
+        const resp = await authFetch(sendUrl, token, { method: 'POST', body: fd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      } else if (upload.files && upload.files.length > 1 && isWaAccount) {
+        for (let i = 0; i < upload.files.length; i++) {
+          const file = upload.files[i]
+          const fd = _buildSendFd({
+            text: i === 0 ? upload.caption : '',
+            file,
+            fileName: file instanceof File ? file.name : `file_${i + 1}`,
+            forceDoc: upload.forceDoc,
+            replyMsgId: i === 0 ? upload.replyMsgId : undefined,
+            clientId: upload.clientId,
+            accountId: upload.accountId,
+          })
+          const resp = await authFetch(sendUrl, token, { method: 'POST', body: fd })
+          if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+        }
+      } else {
+        const albumFd = new FormData()
+        albumFd.append('account_id', upload.accountId)
+        if (upload.caption) albumFd.append('caption', upload.caption)
+        if (upload.forceDoc) albumFd.append('force_document', '1')
+        for (const f of (upload.files || [])) albumFd.append('files', f)
+        const albumUrl = `${API_BASE}/telegram/contacts/${upload.clientId}/send-album/`
+        const resp = await authFetch(albumUrl, token, { method: 'POST', body: albumFd })
+        if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
+      }
+
+      setBgUploads(prev => prev.map(u => u.id === upload.id ? { ...u, status: 'done' as const } : u))
+      setTimeout(() => setBgUploads(prev => prev.filter(u => u.id !== upload.id)), 4000)
+      telemetry.trackChatWrite(upload.clientId, upload.accountId, 'media')
+    } catch (e: any) {
+      console.error('Background upload:', e)
+      setBgUploads(prev => prev.map(u => u.id === upload.id ? { ...u, status: 'error' as const, errorMsg: e.message || String(e) } : u))
+    }
+  }, [_buildSendFd, accounts])
+
+  const retryBgUpload = useCallback(async (uploadId: string) => {
+    if (!auth?.token) return
+    const upload = bgUploads.find(u => u.id === uploadId)
+    if (!upload) return
+    await runBgUpload(upload, auth.token)
+  }, [auth?.token, bgUploads, runBgUpload])
 
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
@@ -2562,7 +2739,11 @@ function App() {
 
     const replyTo = (window as any).__replyTo
     const replyMsgId = replyTo?.msg_id || undefined
+    const replyPreviewText = replyTo?.text || ''
+    const replyPreviewSender = replyTo?.sender || ''
     const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
+    const contact = contacts.find(c => c.client_id === selectedClient)
+    const isWaRoute = !!selectedAccount && accounts.some(a => a.id === selectedAccount && a.type === 'whatsapp') && !contact?.has_telegram
 
     // --- Background upload for files ---
     const hasFiles = filesToSend.length > 0
@@ -2597,49 +2778,56 @@ function App() {
       setBgUploads(prev => [...prev, {
         id: uploadId, clientId: capturedClient, accountId: capturedAccount,
         accountLabel: acctLabel, status: 'uploading', fileName, fileCount: capturedFiles.length,
+        files: capturedFiles,
+        mediaType: capturedMediaType,
+        caption: capturedCaption || text,
+        forceDoc: capturedForceDoc,
+        replyMsgId,
+        directFile: !!capturedFile,
       }])
 
       // Fire-and-forget upload
       ;(async () => {
-        try {
-          if (capturedFiles.length === 1 && !capturedFile) {
-            // Single file from modal
-            const fd = _buildSendFd({ text: capturedCaption, file: capturedFiles[0], forceDoc: capturedForceDoc, replyMsgId })
-            const resp = await authFetch(sendUrl, capturedToken, { method: 'POST', body: fd })
-            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-          } else if (capturedFile) {
-            // Direct file (voice/video)
-            const name = capturedFile instanceof File ? capturedFile.name : (capturedMediaType === 'voice' ? 'voice.webm' : 'video.webm')
-            const fd = _buildSendFd({ text, file: capturedFile, fileName: name, mediaType: capturedMediaType, replyMsgId })
-            const resp = await authFetch(sendUrl, capturedToken, { method: 'POST', body: fd })
-            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-          } else {
-            // Album (multiple files)
-            const albumFd = new FormData()
-            albumFd.append('account_id', capturedAccount)
-            if (capturedCaption) albumFd.append('caption', capturedCaption)
-            if (capturedForceDoc) albumFd.append('force_document', '1')
-            for (const f of capturedFiles) albumFd.append('files', f)
-            const albumUrl = `${API_BASE}/telegram/contacts/${capturedClient}/send-album/`
-            const resp = await authFetch(albumUrl, capturedToken, { method: 'POST', body: albumFd })
-            if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
-          }
-
-          // Success
-          setBgUploads(prev => prev.map(u => u.id === uploadId ? { ...u, status: 'done' as const } : u))
-          // Auto-remove after 4s
-          setTimeout(() => setBgUploads(prev => prev.filter(u => u.id !== uploadId)), 4000)
-          telemetry.trackChatWrite(capturedClient, capturedAccount, 'media')
-        } catch (e: any) {
-          console.error('Background upload:', e)
-          setBgUploads(prev => prev.map(u => u.id === uploadId ? { ...u, status: 'error' as const, errorMsg: e.message || String(e) } : u))
-        }
+        await runBgUpload({
+          id: uploadId,
+          clientId: capturedClient,
+          accountId: capturedAccount,
+          accountLabel: acctLabel,
+          status: 'uploading',
+          fileName,
+          fileCount: capturedFiles.length,
+          files: capturedFiles,
+          mediaType: capturedMediaType,
+          caption: capturedCaption || text,
+          forceDoc: capturedForceDoc,
+          replyMsgId,
+          directFile: !!capturedFile,
+        }, capturedToken)
       })()
       return
     }
 
     // --- Text-only (synchronous as before) ---
     try {
+      if (isWaRoute) {
+        setMessageText('')
+        clearAttachment()
+        setEditingMsg(null)
+        ;(window as any).__replyTo = null
+        if (selectedClient) { draftsRef.current.delete(selectedClient); try { localStorage.setItem('vg_drafts', JSON.stringify([...draftsRef.current])) } catch {} }
+        if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+        await sendWhatsAppTextWithUx({
+          clientId: selectedClient,
+          accountId: selectedAccount!,
+          token: auth.token,
+          text,
+          replyMsgId,
+          replyToText: replyPreviewText,
+          replyToSender: replyPreviewSender,
+        })
+        return
+      }
+
       const fd = _buildSendFd({ text, replyMsgId })
       const resp = await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
       if (!resp.ok) throw new Error(await resp.text().catch(() => `${resp.status}`))
@@ -2658,7 +2846,7 @@ function App() {
     } finally {
       setSending(false)
     }
-  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFiles, fileCaption, forceDocument, _buildSendFd, clearAttachment, accounts])
+  }, [selectedClient, messageText, selectedAccount, auth?.token, sending, loadMessages, attachedFiles, fileCaption, forceDocument, _buildSendFd, clearAttachment, accounts, contacts, sendWhatsAppTextWithUx, runBgUpload])
 
   // Send lab results to current chat: text header + files sequentially
   const sendLabResults = useCallback(async () => {
@@ -4675,6 +4863,12 @@ function App() {
     selectClient(clientId)
   }, [selectClient, selectedAccount, accounts])
 
+  const openSelectedClientCard = useCallback((clientId?: string | null) => {
+    if (!clientId) return
+    setRightTab('card')
+    loadClientCard(clientId)
+  }, [loadClientCard])
+
   const openToastChat = useCallback((clientId: string, accountId: string, sender: string) => {
     if (!clientId) return
     setSelectedGmail(null)
@@ -5756,6 +5950,13 @@ function App() {
                   </div>
                 </div>
                 <div className="chat-header-right">
+                  <button
+                    className="chat-mute-btn"
+                    onClick={() => openSelectedClientCard(selectedClient)}
+                    title="Картка клієнта"
+                  >
+                    <UserIcon />
+                  </button>
                   {(chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && (
                     <>
                       <button
@@ -6592,10 +6793,20 @@ function App() {
                           </span>
                           {m.direction === 'sent' && (
                             <span className={`msg-status-text ${m.is_read ? 'read' : m.is_read === false ? 'delivered' : 'sent'}`}>
-                              {m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
+                              {m.local_status === 'sending'
+                                ? 'Надсилання'
+                                : m.local_status === 'failed'
+                                  ? 'Не відправлено'
+                                  : m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
                             </span>
                           )}
                         </div>
+                        {m.local_status === 'failed' && (
+                          <div className="msg-deleted-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                            <span>Не вдалося відправити{m.local_error ? ` · ${m.local_error}` : ''}</span>
+                          </div>
+                        )}
                       </div>
                       {/* Lab result strip: linked */}
                       {m.is_lab_result && (m.patient_client_id || m.patient_name) && (
@@ -7382,6 +7593,29 @@ function App() {
                     <div className="rp-empty">Немає даних</div>
                   ) : (
                     <div className="rp-card-content">
+                      <div className="rp-card-section">
+                        <div className="rp-card-label">Канали зв'язку</div>
+                        <div className="rp-card-tags">
+                          {(selectedContact?.has_whatsapp || clientLinkedPhones.length > 0) && (
+                            <span className="rp-card-tag" style={{ backgroundColor: '#25D36622', color: '#25D366', borderColor: '#25D36644' }}>
+                              <WhatsAppIcon size={12} color="#25D366" />&nbsp;Є в WhatsApp
+                            </span>
+                          )}
+                          {selectedContact?.has_telegram && (
+                            <span className="rp-card-tag" style={{ backgroundColor: '#2AABEE22', color: '#2AABEE', borderColor: '#2AABEE44' }}>
+                              <TelegramIcon size={12} color="#2AABEE" />&nbsp;Є в Telegram
+                            </span>
+                          )}
+                          <button
+                            className="rp-card-tag-add"
+                            title="Відкрити чат"
+                            onClick={() => openClientChat(selectedClient, selectedContact?.phone, selectedContact?.full_name)}
+                          >
+                            →
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Tags */}
                       <div className="rp-card-section">
                         <div className="rp-card-label">Теги</div>
@@ -7696,6 +7930,12 @@ function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               Копіювати
             </button>
+            {messages.find(m => m.id === ctxMenu.messageId)?.local_status === 'failed' && (
+              <button className="ctx-menu-item" onClick={() => { retryFailedMessage(ctxMenu.messageId); setCtxMenu(null) }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>
+                Повторити
+              </button>
+            )}
             {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
               <button className="ctx-menu-item" onClick={ctxMenuEdit}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -8109,6 +8349,10 @@ function App() {
                 </div>
                 {/* Actions */}
                 <div className="contact-profile-action-list">
+                  <div className="contact-profile-action-row" onClick={() => { setShowContactProfile(false); openSelectedClientCard(selectedClient) }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>Відкрити картку клієнта</span>
+                  </div>
                   {(chatContact as any).source === 'telegram' && peerId && (
                     <div className="contact-profile-action-row" onClick={() => { setShowContactProfile(false); shellOpen(`https://t.me/+${phone.replace(/^0/, '38')}`) }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
@@ -9206,7 +9450,12 @@ function App() {
                 </span>
               </div>
               {u.status === 'error' && (
-                <button className="bg-upload-dismiss" onClick={() => setBgUploads(prev => prev.filter(x => x.id !== u.id))}>×</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button className="ctx-menu-item" style={{ padding: '6px 8px', fontSize: 12 }} onClick={() => retryBgUpload(u.id)}>
+                    Повторити
+                  </button>
+                  <button className="bg-upload-dismiss" onClick={() => setBgUploads(prev => prev.filter(x => x.id !== u.id))}>×</button>
+                </div>
               )}
             </div>
           ))}
