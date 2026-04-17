@@ -4106,21 +4106,33 @@ function App() {
       return
     }
     const msg = messages.find(m => m.id === msgId)
-    if (!msg?.tg_message_id) return
-    const contact = contacts.find(c => c.client_id === selectedClient)
-    const peerId = contact?.tg_peer_id || msg.tg_peer_id
-    if (!peerId) return
     try {
-      await authFetch(`${API_BASE}/telegram/send-reaction/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: selectedAccount,
-          peer_id: peerId,
-          message_id: msg.tg_message_id,
-          emoji,
-        }),
-      })
+      if (msg?.source === 'whatsapp') {
+        await authFetch(`${API_BASE}/whatsapp/send-reaction/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: selectedAccount,
+            message_id: String(msg.id),
+            emoji,
+          }),
+        })
+      } else {
+        if (!msg?.tg_message_id) return
+        const contact = contacts.find(c => c.client_id === selectedClient)
+        const peerId = contact?.tg_peer_id || msg.tg_peer_id
+        if (!peerId) return
+        await authFetch(`${API_BASE}/telegram/send-reaction/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: selectedAccount,
+            peer_id: peerId,
+            message_id: msg.tg_message_id,
+            emoji,
+          }),
+        })
+      }
       // Optimistic update — replace previous chosen reaction
       setMessages(prev => prev.map(m => {
         if (m.id !== msgId) return m
@@ -6076,20 +6088,23 @@ function App() {
                       />
                     </div>
                     <div className="link-modal-results">
-                      {linkResults.map(c => (
-                        <button
-                          key={c.id}
-                          className="link-modal-item"
-                          onClick={() => handleLinkClient(c.id)}
-                          disabled={linkLoading}
-                        >
-                          <div className="link-modal-item-avatar"><UserIcon /></div>
-                          <div className="link-modal-item-info">
-                            <div className="link-modal-item-name">{c.full_name || c.phone}</div>
-                            <div className="link-modal-item-phone">{c.phone}{c.calls_count > 0 ? ` · ${c.calls_count} дзвінків` : ''}</div>
-                          </div>
-                        </button>
-                      ))}
+                      {linkResults.map(c => {
+                        const display = resolveContactDisplay({ full_name: c.full_name, phone: c.phone })
+                        return (
+                          <button
+                            key={c.id}
+                            className="link-modal-item"
+                            onClick={() => handleLinkClient(c.id)}
+                            disabled={linkLoading}
+                          >
+                            <div className="link-modal-item-avatar"><UserIcon /></div>
+                            <div className="link-modal-item-info">
+                              <div className="link-modal-item-name">{display.name}</div>
+                              <div className="link-modal-item-phone">{c.phone}{c.calls_count > 0 ? ` · ${c.calls_count} дзвінків` : ''}</div>
+                            </div>
+                          </button>
+                        )
+                      })}
                       {linkSearch.length >= 2 && linkResults.length === 0 && (
                         <div className="link-modal-empty">Не знайдено</div>
                       )}
@@ -7460,23 +7475,25 @@ function App() {
                         loadRpClients(rpClientPage + 1, rpClientSearch, true)
                       }
                     }}>
-                      {rpClients.map(c => (
+                      {rpClients.map(c => {
+                        const display = resolveContactDisplay({ full_name: c.full_name, phone: c.phone })
+                        return (
                         <div key={c.id} className="rp-client-item" onClick={() => loadRpClientDetail(c.id)}>
                           <div className="rp-client-avatar">
                             {rpClientPhotos[c.id]
                               ? <img src={rpClientPhotos[c.id]} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                              : <span>{(c.full_name || c.phone || '?')[0].toUpperCase()}</span>}
+                              : <span>{(display.name || '?')[0].toUpperCase()}</span>}
                           </div>
                           <div className="rp-client-info">
                             <div className="rp-client-name-row">
-                              <span className="rp-client-name">{c.full_name || c.phone}</span>
+                              <span className="rp-client-name">{display.name}</span>
                               <span className="rp-client-icons">
                                 {c.has_telegram && <TelegramIcon size={12} color="#2AABEE" />}
                                 {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
                               </span>
                             </div>
                             <div className="rp-client-meta">
-                              {c.full_name && <span className="rp-client-phone">{c.phone}</span>}
+                              {display.subtitle && <span className="rp-client-phone">{display.subtitle}</span>}
                               <span className="rp-client-calls">{c.calls_count} дзв.</span>
                             </div>
                           </div>
@@ -7490,7 +7507,8 @@ function App() {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
                           </button>
                         </div>
-                      ))}
+                        )
+                      })}
                       {rpClientLoading && rpClients.length > 0 && <div className="rp-empty" style={{ padding: '8px' }}>Завантаження...</div>}
                     </div>
                   </>
@@ -8086,20 +8104,23 @@ function App() {
               autoFocus
             />
             <div className="forward-modal-list">
-              {forwardContacts.filter(c => c.client_id !== selectedClient).map(c => (
-                <div key={c.client_id} className="forward-modal-contact" onClick={() => executeForward(c.client_id)}>
-                  <div className="forward-modal-avatar">
-                    {photoMap[c.client_id]
-                      ? <img src={photoMap[c.client_id]} alt="" />
-                      : <span>{(c.full_name || c.phone || '?')[0]}</span>
-                    }
+              {forwardContacts.filter(c => c.client_id !== selectedClient).map(c => {
+                const display = resolveContactDisplay(c)
+                return (
+                  <div key={c.client_id} className="forward-modal-contact" onClick={() => executeForward(c.client_id)}>
+                    <div className="forward-modal-avatar">
+                      {photoMap[c.client_id]
+                        ? <img src={photoMap[c.client_id]} alt="" />
+                        : <span>{(display.name || '?')[0]}</span>
+                      }
+                    </div>
+                    <div className="forward-modal-info">
+                      <div className="forward-modal-name">{display.name}</div>
+                      <div className="forward-modal-phone">{display.subtitle || c.phone}</div>
+                    </div>
                   </div>
-                  <div className="forward-modal-info">
-                    <div className="forward-modal-name">{c.full_name || c.phone}</div>
-                    <div className="forward-modal-phone">{c.phone}</div>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
             </div>
             <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
@@ -8486,15 +8507,18 @@ function App() {
             />
             <div className="lab-assign-list">
               {labAssignLoading && <div className="lab-assign-loading"><div className="spinner-sm" /></div>}
-              {labAssignResults.map(c => (
-                <button key={c.id} className="lab-assign-item" onClick={() => assignLabResult(c.id, c.phone, c.full_name)}>
-                  <div className="lab-assign-avatar"><UserIcon /></div>
-                  <div className="lab-assign-info">
-                    <div className="lab-assign-name">{c.full_name || c.phone}</div>
-                    <div className="lab-assign-phone">{c.phone}</div>
-                  </div>
-                </button>
-              ))}
+              {labAssignResults.map(c => {
+                const display = resolveContactDisplay({ full_name: c.full_name, phone: c.phone })
+                return (
+                  <button key={c.id} className="lab-assign-item" onClick={() => assignLabResult(c.id, c.phone, c.full_name)}>
+                    <div className="lab-assign-avatar"><UserIcon /></div>
+                    <div className="lab-assign-info">
+                      <div className="lab-assign-name">{display.name}</div>
+                      <div className="lab-assign-phone">{display.subtitle || c.phone}</div>
+                    </div>
+                  </button>
+                )
+              })}
               {labAssignSearch.length >= 2 && !labAssignLoading && labAssignResults.length === 0 && (
                 <div className="lab-assign-empty">Не знайдено</div>
               )}
