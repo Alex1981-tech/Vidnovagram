@@ -90,6 +90,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.16': [
+    'Масштабування фото — колесо миші для zoom (0.5x–8x), перетягування мишею при збільшенні',
+    'Подвійний клік по фото — переключення між 1x та 3x масштабом',
+  ],
   '0.17.9': [
     'WhatsApp налаштування — нова вкладка в Налаштуваннях для управління WA акаунтами',
     'QR-авторизація WhatsApp — сканування QR-коду прямо у Vidnovagram',
@@ -6427,14 +6431,14 @@ function App() {
                         {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
                           <AuthMedia
-                            mediaKey={`thumb_${m.id}`}
-                            mediaPath={m.thumbnail}
+                            mediaKey={`${m.source === 'whatsapp' && m.media_file ? 'full' : 'thumb'}_${m.id}`}
+                            mediaPath={m.source === 'whatsapp' && m.media_file ? m.media_file : m.thumbnail}
                             type="image"
-                            className="msg-media"
+                            className={`msg-media${m.source === 'whatsapp' ? ' msg-media-wa' : ''}`}
                             token={auth?.token || ''}
                             blobMap={mediaBlobMap}
                             loadBlob={loadMediaBlob}
-                            fallbackPath={m.media_file || undefined}
+                            fallbackPath={m.source === 'whatsapp' ? undefined : (m.media_file || undefined)}
                             onClick={async () => {
                               if (m.media_file) {
                                 const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, m.media_file)
@@ -6451,7 +6455,7 @@ function App() {
                             mediaKey={`full_${m.id}`}
                             mediaPath={m.media_file}
                             type="image"
-                            className="msg-media"
+                            className={`msg-media${m.source === 'whatsapp' ? ' msg-media-wa' : ''}`}
                             token={auth?.token || ''}
                             blobMap={mediaBlobMap}
                             loadBlob={loadMediaBlob}
@@ -7995,11 +7999,55 @@ function App() {
         </div>
       )}
 
-      {lightboxSrc && (
-        <div className="lightbox" onClick={() => setLightboxSrc(null)}>
-          <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} />
-        </div>
-      )}
+      {lightboxSrc && (() => {
+        const LightboxViewer = () => {
+          const [lbScale, setLbScale] = useState(1)
+          const [lbTranslate, setLbTranslate] = useState({ x: 0, y: 0 })
+          const lbDragging = useRef(false)
+          const lbLastPos = useRef({ x: 0, y: 0 })
+
+          const lbWheel = useCallback((e: React.WheelEvent) => {
+            e.stopPropagation()
+            setLbScale(s => {
+              const d = e.deltaY > 0 ? -0.15 : 0.15
+              const next = Math.max(0.5, Math.min(8, s + d * s))
+              if (next <= 1) setLbTranslate({ x: 0, y: 0 })
+              return next
+            })
+          }, [])
+
+          const lbDown = useCallback((e: React.MouseEvent) => {
+            if (lbScale <= 1) return
+            e.preventDefault(); e.stopPropagation()
+            lbDragging.current = true
+            lbLastPos.current = { x: e.clientX, y: e.clientY }
+          }, [lbScale])
+
+          const lbMove = useCallback((e: React.MouseEvent) => {
+            if (!lbDragging.current) return
+            e.stopPropagation()
+            setLbTranslate(t => ({ x: t.x + e.clientX - lbLastPos.current.x, y: t.y + e.clientY - lbLastPos.current.y }))
+            lbLastPos.current = { x: e.clientX, y: e.clientY }
+          }, [])
+
+          const lbUp = useCallback(() => { lbDragging.current = false }, [])
+
+          const lbDblClick = useCallback((e: React.MouseEvent) => {
+            e.stopPropagation()
+            if (lbScale > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) } else setLbScale(3)
+          }, [lbScale])
+
+          return (
+            <div className="lightbox" onClick={() => setLightboxSrc(null)}
+              onMouseMove={lbMove} onMouseUp={lbUp} onMouseLeave={lbUp}>
+              <img src={lightboxSrc!} alt="" draggable={false}
+                style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? (lbDragging.current ? 'grabbing' : 'grab') : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
+                onClick={e => e.stopPropagation()} onWheel={lbWheel} onMouseDown={lbDown} onDoubleClick={lbDblClick} />
+            </div>
+          )
+        }
+        return <LightboxViewer />
+      })()}
 
       {/* Note modal */}
       {showNoteModal && (
