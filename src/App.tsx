@@ -2489,7 +2489,7 @@ function App() {
 
   // Send message (text, file, voice/video note)
   // Helper: build FormData for one send request
-  const _buildSendFd = useCallback((opts: { text?: string; file?: File | Blob; fileName?: string; mediaType?: string; forceDoc?: boolean; replyMsgId?: number }) => {
+  const _buildSendFd = useCallback((opts: { text?: string; file?: File | Blob; fileName?: string; mediaType?: string; forceDoc?: boolean; replyMsgId?: string | number }) => {
     const fd = new FormData()
     if (opts.file) {
       fd.append('file', opts.file, opts.fileName || (opts.file instanceof File ? opts.file.name : 'file'))
@@ -3857,7 +3857,10 @@ function App() {
       const replyPreview = msg.text?.slice(0, 80) || (msg.has_media && msg.media_type ? mediaLabels[msg.media_type] || 'Медіа' : '...')
       const contact = contacts.find(c => c.client_id === selectedClient)
       const sender = msg.direction === 'sent' ? 'Ви' : (contact?.full_name || contact?.phone || '')
-      ;(window as any).__replyTo = { msg_id: msg.tg_message_id, text: replyPreview, sender }
+      const replyTargetId = msg.source === 'whatsapp'
+        ? msg.id
+        : msg.tg_message_id
+      ;(window as any).__replyTo = { msg_id: replyTargetId, text: replyPreview, sender }
     }
     setCtxMenu(null)
     chatInputRef.current?.focus()
