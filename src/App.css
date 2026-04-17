@@ -1060,12 +1060,12 @@ body {
 }
 
 .msg-media {
-  max-width: 280px;
-  max-height: 200px;
+  max-width: 400px;
+  max-height: 320px;
   border-radius: 8px;
   margin-bottom: 4px;
   cursor: pointer;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .msg-contact-card {
