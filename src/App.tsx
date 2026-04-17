@@ -4161,6 +4161,15 @@ function App() {
             const clientId = data.client_id
             const accountId = data.account_id
             const isMediaUpdate = !!msg._media_update
+            const selectedClientId = selectedClientRef.current
+            const selectedContact = selectedClientId
+              ? contactsRef.current.find(c => c.client_id === selectedClientId)
+              : undefined
+            const selectedLinkedIds = new Set((selectedContact?.linked_phones || []).map(lp => lp.id))
+            const isCurrentChat = !!clientId && (
+              clientId === selectedClientId ||
+              selectedLinkedIds.has(clientId)
+            )
 
             // Dedup: same group message arrives via multiple accounts — notify only once
             const dedupKey = msg.tg_message_id && msg.tg_peer_id ? `msg:${msg.tg_message_id}:${msg.tg_peer_id}` : ''
@@ -4174,14 +4183,13 @@ function App() {
               }
             }
 
-            if (clientId === selectedClientRef.current) {
+            if (isCurrentChat) {
               // Current chat — reload messages (scroll only for new messages, not media updates)
-              loadMessagesRef.current(clientId, !isMediaUpdate)
+              loadMessagesRef.current(selectedClientId || clientId, !isMediaUpdate)
             }
 
             // Notification for received messages only (not our own sent, not media updates, not dupes)
             if (msg.direction === 'received' && !isMediaUpdate && !isDupe) {
-              const isCurrentChat = clientId === selectedClientRef.current
               if (!isCurrentChat) {
                 const matchedContact = clientId ? contactsRef.current.find(c => c.client_id === clientId) : undefined
                 const senderDisplay = resolveWsContactDisplay(msg, matchedContact)
