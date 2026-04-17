@@ -1890,8 +1890,10 @@ function App() {
   }, [appSettings.chatBackground.type, appSettings.chatBackground.value, auth?.token])
 
   // Load wallpapers when settings modal opens — fetch thumbnails as blobs (auth required)
+  const wallpapersLoaded = useRef(false)
   useEffect(() => {
-    if (showSettingsModal && wallpapers.length === 0 && auth?.token) {
+    if (showSettingsModal && wallpapers.length === 0 && !wallpapersLoaded.current && auth?.token) {
+      wallpapersLoaded.current = true
       fetch(`${API_BASE}/vidnovagram/wallpapers/`, { headers: { 'Authorization': `Token ${auth.token}` } })
         .then(r => r.ok ? r.json() : [])
         .then(async (wps: Wallpaper[]) => {
