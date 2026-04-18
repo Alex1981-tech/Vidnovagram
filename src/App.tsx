@@ -3126,6 +3126,31 @@ function App() {
     e.target.value = ''
   }, [showFileModal])
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const files: File[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind === 'file') {
+        const f = item.getAsFile()
+        if (f) files.push(f)
+      }
+    }
+    if (files.length === 0) return
+    e.preventDefault()
+    setAttachedFiles(prev => [...prev, ...files])
+    setAttachedPreviews(prev => [
+      ...prev,
+      ...files.map(f => (f.type.startsWith('image/') || f.type.startsWith('video/')) ? URL.createObjectURL(f) : ''),
+    ])
+    if (!showFileModal) {
+      setFileCaption('')
+      setForceDocument(false)
+    }
+    setShowFileModal(true)
+  }, [showFileModal])
+
   const removeAttachedFile = useCallback((index: number) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index))
     setAttachedPreviews(prev => {
@@ -7132,6 +7157,7 @@ function App() {
                           e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
                         }}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                        onPaste={handlePaste}
                         placeholder="Написати повідомлення..."
                         rows={1}
                       />
