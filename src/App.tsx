@@ -90,9 +90,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.17.17': [
+  '0.17.18': [
     'Масштабування фото — колесо миші для zoom (0.5x–8x), перетягування мишею при збільшенні',
     'Подвійний клік по фото — переключення між 1x та 3x масштабом',
+    'Виправлено перетягування збільшеного фото (drag to pan)',
     'Виправлено дублювання шпалер у налаштуваннях',
   ],
   '0.17.9': [
@@ -1611,7 +1612,9 @@ function App() {
   const [lbScale, setLbScale] = useState(1)
   const [lbTranslate, setLbTranslate] = useState({ x: 0, y: 0 })
   const lbDragging = useRef(false)
+  const lbDidDrag = useRef(false)
   const lbLastPos = useRef({ x: 0, y: 0 })
+  const lbScaleRef = useRef(1)
   useEffect(() => { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) }, [lightboxSrc])
   // Video note modal
   const [vnoteModal, setVnoteModal] = useState<{ src: string; id: string | number } | null>(null)
@@ -8008,16 +8011,23 @@ function App() {
       )}
 
       {lightboxSrc && (
-        <div className="lightbox" onClick={() => { setLightboxSrc(null); setLbScale(1); setLbTranslate({ x: 0, y: 0 }) }}
-          onMouseMove={e => { if (!lbDragging.current) return; e.stopPropagation(); setLbTranslate(t => ({ x: t.x + e.clientX - lbLastPos.current.x, y: t.y + e.clientY - lbLastPos.current.y })); lbLastPos.current = { x: e.clientX, y: e.clientY } }}
+        <div className="lightbox" onClick={() => { if (lbDidDrag.current) { lbDidDrag.current = false; return } setLightboxSrc(null); setLbScale(1); setLbTranslate({ x: 0, y: 0 }); lbScaleRef.current = 1 }}
+          onMouseMove={e => {
+            if (!lbDragging.current) return
+            e.stopPropagation()
+            const dx = e.clientX - lbLastPos.current.x, dy = e.clientY - lbLastPos.current.y
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) lbDidDrag.current = true
+            setLbTranslate(t => ({ x: t.x + dx, y: t.y + dy }))
+            lbLastPos.current = { x: e.clientX, y: e.clientY }
+          }}
           onMouseUp={() => { lbDragging.current = false }}
           onMouseLeave={() => { lbDragging.current = false }}>
           <img src={lightboxSrc} alt="" draggable={false}
-            style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? (lbDragging.current ? 'grabbing' : 'grab') : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
+            style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? 'grab' : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
             onClick={e => e.stopPropagation()}
-            onWheel={e => { e.stopPropagation(); setLbScale(s => { const d = e.deltaY > 0 ? -0.15 : 0.15; const next = Math.max(0.5, Math.min(8, s + d * s)); if (next <= 1) setLbTranslate({ x: 0, y: 0 }); return next }) }}
-            onMouseDown={e => { if (lbScale <= 1) return; e.preventDefault(); e.stopPropagation(); lbDragging.current = true; lbLastPos.current = { x: e.clientX, y: e.clientY } }}
-            onDoubleClick={e => { e.stopPropagation(); if (lbScale > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) } else setLbScale(3) }} />
+            onWheel={e => { e.stopPropagation(); setLbScale(s => { const d = e.deltaY > 0 ? -0.15 : 0.15; const next = Math.max(0.5, Math.min(8, s + d * s)); lbScaleRef.current = next; if (next <= 1) setLbTranslate({ x: 0, y: 0 }); return next }) }}
+            onMouseDown={e => { if (lbScaleRef.current <= 1) return; e.preventDefault(); e.stopPropagation(); lbDragging.current = true; lbDidDrag.current = false; lbLastPos.current = { x: e.clientX, y: e.clientY } }}
+            onDoubleClick={e => { e.stopPropagation(); if (lbScaleRef.current > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }); lbScaleRef.current = 1 } else { setLbScale(3); lbScaleRef.current = 3 } }} />
         </div>
       )}
 
