@@ -90,7 +90,8 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.17.21': [
+  '0.17.22': [
+    'Фото завантажуються у повній якості замість thumbnail — чіткіше відображення',
     'Виправлено відображення фото в альбомах — fallback + автоматичне повторне завантаження',
     'Вставка медіа з буфера обміну (Ctrl+V) у вікно повідомлення',
   ],
@@ -6275,15 +6276,25 @@ function App() {
                             {album.messages.map((am, ai) => (
                               <div key={am.id} className={`album-item${count === 3 && ai === 0 ? ' album-item-wide' : ''}`}>
                                 {am.thumbnail || am.media_file ? (
+                                  (() => {
+                                    const preferFullImage = am.media_type === 'photo' && !!am.media_file
+                                    const mediaKey = `${preferFullImage ? 'full' : 'thumb'}_${am.id}`
+                                    const mediaPath = preferFullImage
+                                      ? am.media_file
+                                      : (am.thumbnail || am.media_file)
+                                    const fallbackPath = preferFullImage
+                                      ? (am.thumbnail || undefined)
+                                      : (am.thumbnail && am.media_file ? am.media_file : undefined)
+                                    return (
                                   <AuthMedia
-                                    mediaKey={`thumb_${am.id}`}
-                                    mediaPath={am.thumbnail || am.media_file}
+                                    mediaKey={mediaKey}
+                                    mediaPath={mediaPath}
                                     type="image"
                                     className="album-media"
                                     token={auth?.token || ''}
                                     blobMap={mediaBlobMap}
                                     loadBlob={loadMediaBlob}
-                                    fallbackPath={am.thumbnail && am.media_file ? am.media_file : undefined}
+                                    fallbackPath={fallbackPath}
                                     onClick={async () => {
                                       if (am.media_file) {
                                         const blob = mediaBlobMap[`full_${am.id}`] || await loadMediaBlob(`full_${am.id}`, am.media_file)
@@ -6293,6 +6304,8 @@ function App() {
                                       }
                                     }}
                                   />
+                                    )
+                                  })()
                                 ) : (
                                   <div className="album-placeholder">
                                     {am.media_status === 'pending' ? <div className="spinner-sm" /> : `📎 ${am.media_type || 'медіа'}`}
@@ -6501,15 +6514,25 @@ function App() {
                         })()}
                         {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
+                          (() => {
+                            const preferFullImage = m.media_type === 'photo' && !!m.media_file
+                            const mediaKey = `${preferFullImage || (m.source === 'whatsapp' && m.media_file) ? 'full' : 'thumb'}_${m.id}`
+                            const mediaPath = preferFullImage
+                              ? m.media_file
+                              : (m.source === 'whatsapp' && m.media_file ? m.media_file : m.thumbnail)
+                            const fallbackPath = preferFullImage
+                              ? (m.thumbnail || undefined)
+                              : (m.source === 'whatsapp' ? undefined : (m.media_file || undefined))
+                            return (
                           <AuthMedia
-                            mediaKey={`${m.source === 'whatsapp' && m.media_file ? 'full' : 'thumb'}_${m.id}`}
-                            mediaPath={m.source === 'whatsapp' && m.media_file ? m.media_file : m.thumbnail}
+                            mediaKey={mediaKey}
+                            mediaPath={mediaPath}
                             type="image"
                             className={`msg-media${m.source === 'whatsapp' ? ' msg-media-wa' : ''}`}
                             token={auth?.token || ''}
                             blobMap={mediaBlobMap}
                             loadBlob={loadMediaBlob}
-                            fallbackPath={m.source === 'whatsapp' ? undefined : (m.media_file || undefined)}
+                            fallbackPath={fallbackPath}
                             onClick={async () => {
                               if (m.media_file) {
                                 const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, m.media_file)
@@ -6519,6 +6542,8 @@ function App() {
                               }
                             }}
                           />
+                            )
+                          })()
                         )}
                         {/* Photo without thumbnail → load full image directly */}
                         {m.has_media && !m.thumbnail && m.media_type === 'photo' && m.media_file && (
