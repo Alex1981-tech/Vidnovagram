@@ -90,6 +90,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.21': [
+    'Виправлено відображення фото в альбомах — fallback + автоматичне повторне завантаження',
+    'Вставка медіа з буфера обміну (Ctrl+V) у вікно повідомлення',
+  ],
   '0.17.19': [
     'Збереження ширини панелей — ширина контактів та правої панелі зберігається між сесіями',
     'Масштабування фото — колесо миші для zoom (0.5x–8x), перетягування мишею при збільшенні',
@@ -775,16 +779,36 @@ function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadB
   fallbackPath?: string;
 }) {
   const fallbackKey = fallbackPath ? mediaKey.replace('thumb_', 'full_') : ''
+  const retried = useRef(false)
   useEffect(() => {
     if (!token || blobMap[mediaKey] || blobMap[fallbackKey]) return
+    retried.current = false
     loadBlob(mediaKey, mediaPath).then(result => {
-      // If thumbnail 404, try full image as fallback
-      if (!result && fallbackPath) loadBlob(fallbackKey, fallbackPath)
+      if (!result && fallbackPath) {
+        return loadBlob(fallbackKey, fallbackPath)
+      }
+      return result
+    }).then(result => {
+      // If both thumbnail and fallback failed, retry once after 3s
+      if (!result && !retried.current) {
+        retried.current = true
+        setTimeout(() => {
+          loadBlob(mediaKey, mediaPath).then(r => {
+            if (!r && fallbackPath) loadBlob(fallbackKey, fallbackPath)
+          })
+        }, 3000)
+      }
     })
   }, [token, mediaKey, mediaPath])
   const src = blobMap[mediaKey] || blobMap[fallbackKey]
   if (!src) return <div className="msg-media-placeholder">📷 ...</div>
-  if (type === 'image') return <img src={src} alt="" className={className} onClick={onClick} />
+  if (type === 'image') return <img src={src} alt="" className={className} onClick={onClick} onError={() => {
+    // Blob URL failed to decode — clear and retry
+    if (!retried.current) {
+      retried.current = true
+      setTimeout(() => loadBlob(mediaKey, mediaPath), 2000)
+    }
+  }} />
   return null
 }
 
@@ -3856,6 +3880,12 @@ function App() {
       const resp = await authFetch(url, auth.token)
       if (resp.ok) {
         let blob = await resp.blob()
+        // Skip empty blobs (server returned 200 but no content)
+        if (blob.size === 0) {
+          mediaLoadingRef.current.delete(key)
+          setMediaLoading(prev => ({ ...prev, [key]: false }))
+          return null
+        }
         // Convert OGG voice messages to WAV for WebView2 compatibility
         const isVoice = key.startsWith('voice_')
         if (isVoice && (mediaPath.endsWith('.ogg') || blob.type.includes('ogg'))) {
@@ -6253,6 +6283,7 @@ function App() {
                                     token={auth?.token || ''}
                                     blobMap={mediaBlobMap}
                                     loadBlob={loadMediaBlob}
+                                    fallbackPath={am.thumbnail && am.media_file ? am.media_file : undefined}
                                     onClick={async () => {
                                       if (am.media_file) {
                                         const blob = mediaBlobMap[`full_${am.id}`] || await loadMediaBlob(`full_${am.id}`, am.media_file)
