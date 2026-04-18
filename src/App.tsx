@@ -90,10 +90,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
-  '0.17.18': [
+  '0.17.19': [
+    'Збереження ширини панелей — ширина контактів та правої панелі зберігається між сесіями',
     'Масштабування фото — колесо миші для zoom (0.5x–8x), перетягування мишею при збільшенні',
     'Подвійний клік по фото — переключення між 1x та 3x масштабом',
-    'Виправлено перетягування збільшеного фото (drag to pan)',
     'Виправлено дублювання шпалер у налаштуваннях',
   ],
   '0.17.9': [
@@ -1742,9 +1742,9 @@ function App() {
   const composeFileRef = useRef<HTMLInputElement>(null)
   const gmailSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Resizable panels
-  const [sidebarWidth, setSidebarWidth] = useState(320)
-  const [rightPanelWidth, setRightPanelWidth] = useState(300)
+  // Resizable panels (persist widths in localStorage)
+  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('vg_sidebar_w')) || 320)
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => Number(localStorage.getItem('vg_rpanel_w')) || 300)
   const resizingRef = useRef<'sidebar' | 'right' | null>(null)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
@@ -1759,7 +1759,11 @@ function App() {
         setRightPanelWidth(Math.max(200, Math.min(500, startWidthRef.current - dx)))
       }
     }
-    const onMouseUp = () => { resizingRef.current = null; document.body.style.cursor = '' ; document.body.style.userSelect = '' }
+    const onMouseUp = () => {
+      if (resizingRef.current === 'sidebar') localStorage.setItem('vg_sidebar_w', String(Math.round(document.querySelector('.sidebar')?.getBoundingClientRect().width ?? 320)))
+      if (resizingRef.current === 'right') localStorage.setItem('vg_rpanel_w', String(Math.round(document.querySelector('.right-panel')?.getBoundingClientRect().width ?? 300)))
+      resizingRef.current = null; document.body.style.cursor = ''; document.body.style.userSelect = ''
+    }
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
     return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp) }
