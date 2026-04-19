@@ -9,8 +9,6 @@ import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
 import { AudioEngine, voipCall, voipAnswer, voipHangup, type AudioEngineState, type VoIPCall } from './voip'
-import lottie from 'lottie-web'
-import pako from 'pako'
 import './App.css'
 import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
 import { formatContactDate, formatDateSeparator } from './utils/dateFormat'
@@ -37,10 +35,28 @@ import {
 } from './settings'
 import { CHANGELOG } from './changelog'
 import { authFetch } from './utils/authFetch'
-import { URL_REGEX, extractFirstUrl } from './utils/urlExtract'
+import { extractFirstUrl } from './utils/urlExtract'
 import { useTheme } from './utils/theme'
+import {
+  THUMB_STORE,
+  AVATAR_STORE,
+  MSG_STORE,
+  CONTACTS_STORE,
+  getCached,
+  putCache,
+  getJsonCache,
+  putJsonCache,
+} from './cache'
+import { AuthMedia } from './components/AuthMedia'
+import { VoicePlayer } from './components/VoicePlayer'
+import { LottieSticker } from './components/LottieSticker'
+import { PollCard } from './components/PollCard'
+import { Linkify } from './components/Linkify'
+import { LinkPreviewCard } from './components/LinkPreviewCard'
+import { ContactName } from './components/ContactName'
+import { ThemeToggle } from './components/ThemeToggle'
+import { LoginScreen } from './screens/LoginScreen'
 import type {
-  Theme,
   AuthState,
   Wallpaper,
   Account,
@@ -48,7 +64,6 @@ import type {
   ChatMessage,
   AlbumGroup,
   WsReactionEvent,
-  LinkPreview,
   GlobalSearchResult,
   ClientNote,
   TemplateCategory,
@@ -60,94 +75,6 @@ import type {
 } from './types'
 
 
-// ===== IndexedDB cache (media, messages, contacts) =====
-const CACHE_DB_NAME = 'vidnovagram_cache'
-const CACHE_DB_VERSION = 3
-const THUMB_STORE = 'thumbnails'  // key: mediaPath, value: { blob: ArrayBuffer, type: string, ts: number }
-const AVATAR_STORE = 'avatars'    // key: clientId, value: { blob: ArrayBuffer, type: string, ts: number }
-const MSG_STORE = 'messages'      // key: clientId, value: { messages: ChatMessage[], count: number, client_name: string, client_phone: string, ts: number }
-const CONTACTS_STORE = 'contacts' // key: accountId|'all', value: { contacts: Contact[], count: number, ts: number }
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days (media)
-const MSG_CACHE_TTL = 24 * 60 * 60 * 1000  // 24 hours (messages)
-
-function openCacheDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION)
-    req.onupgradeneeded = (event) => {
-      const db = req.result
-      const oldVersion = (event as IDBVersionChangeEvent).oldVersion
-      if (!db.objectStoreNames.contains(THUMB_STORE)) db.createObjectStore(THUMB_STORE)
-      if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE)
-      if (!db.objectStoreNames.contains(MSG_STORE)) db.createObjectStore(MSG_STORE)
-      if (!db.objectStoreNames.contains(CONTACTS_STORE)) db.createObjectStore(CONTACTS_STORE)
-      // Clear stale message/contact caches on schema upgrade (adds reply_to_*, reaction context)
-      if (oldVersion > 0 && oldVersion < 3) {
-        const tx = (event.target as IDBOpenDBRequest).transaction!
-        try { tx.objectStore(MSG_STORE).clear() } catch (_) { /* ignore */ }
-        try { tx.objectStore(CONTACTS_STORE).clear() } catch (_) { /* ignore */ }
-      }
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function getCached(store: string, key: string): Promise<string | null> {
-  try {
-    const db = await openCacheDB()
-    return new Promise((resolve) => {
-      const tx = db.transaction(store, 'readonly')
-      const req = tx.objectStore(store).get(key)
-      req.onsuccess = () => {
-        const val = req.result
-        if (val && (Date.now() - val.ts) < CACHE_TTL) {
-          const blob = new Blob([val.blob], { type: val.type || 'image/jpeg' })
-          resolve(URL.createObjectURL(blob))
-        } else {
-          resolve(null)
-        }
-      }
-      req.onerror = () => resolve(null)
-    })
-  } catch { return null }
-}
-
-async function putCache(store: string, key: string, blob: Blob): Promise<void> {
-  try {
-    const ab = await blob.arrayBuffer()
-    const db = await openCacheDB()
-    const tx = db.transaction(store, 'readwrite')
-    tx.objectStore(store).put({ blob: ab, type: blob.type, ts: Date.now() }, key)
-  } catch { /* ignore */ }
-}
-
-// JSON data cache (messages, contacts)
-async function getJsonCache<T>(store: string, key: string, ttl = MSG_CACHE_TTL): Promise<T | null> {
-  try {
-    const db = await openCacheDB()
-    return new Promise((resolve) => {
-      const tx = db.transaction(store, 'readonly')
-      const req = tx.objectStore(store).get(key)
-      req.onsuccess = () => {
-        const val = req.result
-        if (val && (Date.now() - val.ts) < ttl) {
-          resolve(val as T)
-        } else {
-          resolve(null)
-        }
-      }
-      req.onerror = () => resolve(null)
-    })
-  } catch { return null }
-}
-
-async function putJsonCache(store: string, key: string, data: Record<string, unknown>): Promise<void> {
-  try {
-    const db = await openCacheDB()
-    const tx = db.transaction(store, 'readwrite')
-    tx.objectStore(store).put({ ...data, ts: Date.now() }, key)
-  } catch { /* ignore */ }
-}
 
 /** Convert OGG/Opus blob to WAV for WebView2 (Edge) which lacks OGG support */
 async function oggToWav(blob: Blob): Promise<Blob> {
@@ -177,353 +104,6 @@ async function oggToWav(blob: Blob): Promise<Blob> {
   }
   await ctx.close()
   return new Blob([wavBuf], { type: 'audio/wav' })
-}
-
-/** Authenticated media loader — triggers blob fetch on mount */
-// Animated sticker (TGS = gzipped Lottie JSON)
-function LottieSticker({ blobUrl, size = 200 }: { blobUrl: string; size?: number }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animRef = useRef<any>(null)
-  useEffect(() => {
-    if (!blobUrl || !containerRef.current) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const resp = await fetch(blobUrl)
-        const buf = new Uint8Array(await resp.arrayBuffer())
-        // TGS files are gzipped — decompress
-        let json: any
-        try {
-          const decompressed = pako.inflate(buf, { to: 'string' })
-          json = JSON.parse(decompressed)
-        } catch {
-          // Maybe it's already JSON (not gzipped)
-          json = JSON.parse(new TextDecoder().decode(buf))
-        }
-        if (cancelled || !containerRef.current) return
-        animRef.current = lottie.loadAnimation({
-          container: containerRef.current,
-          renderer: 'svg',
-          loop: true,
-          autoplay: true,
-          animationData: json,
-        })
-      } catch (e) { console.warn('LottieSticker error:', e) }
-    })()
-    return () => { cancelled = true; animRef.current?.destroy() }
-  }, [blobUrl])
-  return <div ref={containerRef} style={{ width: size, height: size }} />
-}
-
-function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadBlob, onClick, fallbackPath }: {
-  mediaKey: string; mediaPath: string; type: 'image'; className?: string;
-  token: string; blobMap: Record<string, string>;
-  loadBlob: (key: string, path: string) => Promise<string | null>;
-  onClick?: () => void;
-  fallbackPath?: string;
-}) {
-  const fallbackKey = fallbackPath
-    ? (mediaKey.startsWith('thumb_')
-      ? mediaKey.replace('thumb_', 'full_')
-      : mediaKey.startsWith('full_')
-        ? mediaKey.replace('full_', 'thumb_')
-        : `${mediaKey}__fallback`)
-    : ''
-  const retried = useRef(false)
-  const fallbackTried = useRef(false)
-  useEffect(() => {
-    if (!token || blobMap[mediaKey] || blobMap[fallbackKey]) return
-    retried.current = false
-    fallbackTried.current = false
-    loadBlob(mediaKey, mediaPath).then(result => {
-      if (!result && fallbackPath) {
-        return loadBlob(fallbackKey, fallbackPath)
-      }
-      return result
-    }).then(result => {
-      // If both thumbnail and fallback failed, retry once after 3s
-      if (!result && !retried.current) {
-        retried.current = true
-        setTimeout(() => {
-          loadBlob(mediaKey, mediaPath).then(r => {
-            if (!r && fallbackPath) loadBlob(fallbackKey, fallbackPath)
-          })
-        }, 3000)
-      }
-    })
-  }, [token, mediaKey, mediaPath])
-  const src = blobMap[mediaKey] || blobMap[fallbackKey]
-  if (!src) return <div className="msg-media-placeholder">📷 ...</div>
-  if (type === 'image') return <img src={src} alt="" className={className} onClick={onClick} onError={() => {
-    if (fallbackPath && !blobMap[fallbackKey] && !fallbackTried.current) {
-      fallbackTried.current = true
-      loadBlob(fallbackKey, fallbackPath)
-      return
-    }
-    // Blob URL failed to decode — retry primary once
-    if (!retried.current) {
-      retried.current = true
-      setTimeout(() => loadBlob(mediaKey, mediaPath), 2000)
-    }
-  }} />
-  return null
-}
-
-/** Telegram-style voice message player with waveform */
-function VoicePlayer({ messageId, mediaFile, blobMap, loadBlob, loading, direction }: {
-  messageId: number | string; mediaFile: string;
-  blobMap: Record<string, string>; loadBlob: (key: string, path: string) => Promise<string | null>;
-  loading: boolean; direction: string
-}) {
-  const key = `voice_${messageId}`
-  const src = blobMap[key]
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [currentTime, setCurrentTime] = useState(0)
-  const barsRef = useRef<number[]>([])
-
-  // Generate stable random waveform bars
-  if (barsRef.current.length === 0) {
-    const seed = typeof messageId === 'number' ? messageId : parseInt(String(messageId).replace(/\D/g, '').slice(0, 8)) || 42
-    const bars: number[] = []
-    let s = seed
-    for (let i = 0; i < 32; i++) {
-      s = (s * 16807 + 7) % 2147483647
-      bars.push(0.15 + (s % 1000) / 1000 * 0.85)
-    }
-    barsRef.current = bars
-  }
-
-  useEffect(() => {
-    const a = audioRef.current
-    if (!a) return
-    const onTime = () => { setCurrentTime(a.currentTime); setProgress(a.duration ? a.currentTime / a.duration : 0) }
-    const onMeta = () => setDuration(a.duration || 0)
-    const onEnd = () => { setPlaying(false); setProgress(0); setCurrentTime(0) }
-    a.addEventListener('timeupdate', onTime)
-    a.addEventListener('loadedmetadata', onMeta)
-    a.addEventListener('ended', onEnd)
-    return () => { a.removeEventListener('timeupdate', onTime); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd) }
-  }, [src])
-
-  // Auto-play when blob finishes loading
-  const pendingPlayRef = useRef(false)
-  useEffect(() => {
-    if (src && pendingPlayRef.current) {
-      pendingPlayRef.current = false
-      const a = audioRef.current
-      if (a) { a.play().then(() => setPlaying(true)).catch(() => {}) }
-    }
-  }, [src])
-
-  const togglePlay = async () => {
-    if (!src) { pendingPlayRef.current = true; await loadBlob(key, mediaFile); return }
-    const a = audioRef.current
-    if (!a) return
-    if (playing) { a.pause(); setPlaying(false) }
-    else { a.play(); setPlaying(true) }
-  }
-
-  const seekAt = (e: React.MouseEvent<HTMLDivElement>) => {
-    const a = audioRef.current
-    if (!a || !a.duration) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    a.currentTime = pct * a.duration
-  }
-
-  const fmt = (s: number) => { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}` }
-  const isSent = direction === 'sent'
-
-  return (
-    <div className={`voice-tg ${isSent ? 'sent' : 'received'}`}>
-      <button className="voice-tg-play" onClick={togglePlay} disabled={loading}>
-        {loading ? <div className="spinner-sm" /> : playing ? (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-        ) : (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-        )}
-      </button>
-      <div className="voice-tg-body">
-        <div className="voice-tg-wave" onClick={seekAt}>
-          {barsRef.current.map((h, i) => {
-            const filled = progress > 0 && i / barsRef.current.length <= progress
-            return <div key={i} className={`voice-tg-bar ${filled ? 'filled' : ''}`} style={{ height: `${h * 100}%` }} />
-          })}
-        </div>
-        <span className="voice-tg-time">{src && duration ? fmt(playing ? currentTime : duration) : '0:00'}</span>
-      </div>
-      {src && <audio ref={audioRef} src={src} preload="auto" />}
-    </div>
-  )
-}
-
-
-function PollCard({ question, options, messageId, totalVoters, isClosed, accountId, peerId, tgMessageId, fullText, authToken, onTextUpdate, isTodo }: {
-  question: string; options: string[]; messageId: number | string; totalVoters?: number; isClosed?: boolean;
-  accountId?: string; peerId?: number; tgMessageId?: number; fullText?: string; authToken?: string;
-  onTextUpdate?: (msgId: number | string, newText: string) => void; isTodo?: boolean;
-}) {
-  const canSync = !!(accountId && peerId && tgMessageId && authToken && onTextUpdate)
-  // Derive checked state from option markers (☑ = checked)
-  const checked = new Set<number>(options.map((opt, i) => opt.startsWith('☑') ? i : -1).filter(i => i >= 0))
-  const [syncing, setSyncing] = useState(false)
-
-  const toggle = async (idx: number) => {
-    if (syncing) return
-    if (!canSync) {
-      console.error('PollCard canSync=false:', { accountId, peerId, tgMessageId, authToken: !!authToken, onTextUpdate: !!onTextUpdate })
-      return
-    }
-    const opt = options[idx]
-    if (!opt) return
-    const wasChecked = opt.startsWith('☑')
-
-    // Optimistic local update
-    const newMarker = wasChecked ? '☐' : '☑'
-    if (fullText) {
-      const lines = fullText.split('\n')
-      const checklistLines = lines.filter(l => l.startsWith('☐') || l.startsWith('☑'))
-      const targetLine = checklistLines[idx]
-      if (targetLine) {
-        let replaced = false
-        const newLines = lines.map(l => {
-          if (!replaced && l === targetLine) { replaced = true; return newMarker + l.slice(1) }
-          return l
-        })
-        onTextUpdate!(messageId, newLines.join('\n'))
-      }
-    }
-
-    setSyncing(true)
-    try {
-      if (isTodo) {
-        // Native Telegram ToDo — use toggle-todo API
-        await authFetch(`${API_BASE}/telegram/toggle-todo/`, authToken!, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_id: accountId, peer_id: peerId, message_id: tgMessageId,
-            completed: wasChecked ? [] : [idx],
-            incompleted: wasChecked ? [idx] : [],
-          }),
-        })
-      } else {
-        // Text-based checklist — edit message text
-        if (fullText) {
-          const lines = fullText.split('\n')
-          const checklistLines = lines.filter(l => l.startsWith('☐') || l.startsWith('☑'))
-          const targetLine = checklistLines[idx]
-          if (targetLine) {
-            let replaced = false
-            const newLines = lines.map(l => {
-              if (!replaced && l === targetLine) { replaced = true; return newMarker + l.slice(1) }
-              return l
-            })
-            await authFetch(`${API_BASE}/telegram/edit-message/`, authToken!, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ account_id: accountId, peer_id: peerId, message_id: tgMessageId, text: newLines.join('\n') }),
-            })
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Checklist sync failed:', e)
-      if (fullText) onTextUpdate!(messageId, fullText) // revert
-    }
-    setSyncing(false)
-  }
-
-  const doneCount = checked.size
-  return (
-    <div className="msg-poll-card">
-      <div className="msg-poll-title">{isTodo ? '📋' : '📊'} {question}</div>
-      <div className="msg-poll-options">
-        {options.map((opt, i) => {
-          const label = opt.replace(/^[☐☑]\s*/, '')
-          const done = checked.has(i)
-          return (
-            <button key={i} className={`msg-poll-option${done ? ' checked' : ''}`} onClick={() => toggle(i)} disabled={syncing}>
-              <span className="msg-poll-check">{done ? '☑' : '☐'}</span>
-              <span className={`msg-poll-label${done ? ' done' : ''}`}>{label}</span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="msg-poll-footer">
-        {doneCount} з {options.length} виконано
-        {(totalVoters ?? 0) > 0 && <span className="msg-poll-voters"> · {totalVoters} голосів</span>}
-        {isClosed && <span className="msg-poll-closed"> · Закрито</span>}
-      </div>
-    </div>
-  )
-}
-
-function Linkify({ text, onLinkClick }: { text: string; onLinkClick: (url: string) => void }) {
-  const parts = text.split(URL_REGEX)
-  const urls = text.match(URL_REGEX) || []
-  const result: React.ReactNode[] = []
-  parts.forEach((part, i) => {
-    if (part) result.push(part)
-    if (urls[i]) {
-      result.push(
-        <a key={i} className="msg-link" onClick={e => { e.preventDefault(); e.stopPropagation(); onLinkClick(urls[i]) }}>
-          {urls[i].length > 60 ? urls[i].slice(0, 57) + '...' : urls[i]}
-        </a>
-      )
-    }
-  })
-  return <>{result}</>
-}
-
-function LinkPreviewCard({ url, token, onClick }: { url: string; token: string; onClick: (u: string) => void }) {
-  const [preview, setPreview] = useState<LinkPreview | null>(null)
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    if (!url || loaded) return
-    setLoaded(true)
-    const cached = linkPreviewCacheRef.current.get(url)
-    if (cached !== undefined) { setPreview(cached); return }
-    authFetch(`${API_BASE}/messenger/link-preview/?url=${encodeURIComponent(url)}`, token)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: LinkPreview | null) => {
-        if (data && data.title) {
-          linkPreviewCacheRef.current.set(url, data)
-          setPreview(data)
-        } else {
-          linkPreviewCacheRef.current.set(url, null)
-        }
-      })
-      .catch(() => { linkPreviewCacheRef.current.set(url, null) })
-  }, [url, token, loaded])
-
-  if (!preview) return null
-
-  return (
-    <div className="link-preview" onClick={e => { e.stopPropagation(); onClick(url) }}>
-      {preview.image && (
-        <img src={preview.image} alt="" className="link-preview-img" onError={e => (e.currentTarget.style.display = 'none')} />
-      )}
-      <div className="link-preview-body">
-        {preview.site_name && <span className="link-preview-site">{preview.site_name}</span>}
-        <span className="link-preview-title">{preview.title}</span>
-        {preview.description && <span className="link-preview-desc">{preview.description}</span>}
-      </div>
-    </div>
-  )
-}
-
-// Shared cache ref (set inside App component, used by LinkPreviewCard)
-let linkPreviewCacheRef: React.MutableRefObject<Map<string, LinkPreview | null>> = { current: new Map() }
-
-/** Render contact name: full name in violet for employees */
-function ContactName({ name, isEmployee }: { name: string; isEmployee?: boolean }) {
-  if (!isEmployee || !name.trim()) return <>{name}</>
-  return <span className="employee-name">{name}</span>
 }
 
 function resolveWsContactDisplay(message?: {
@@ -581,21 +161,6 @@ const GmailIcon = ({ size = 20 }: { size?: number; color?: string }) => (
   </svg>
 )
 
-const SunIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-  </svg>
-)
-const MoonIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-  </svg>
-)
-const MonitorIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>
-  </svg>
-)
 const SendIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
@@ -681,18 +246,6 @@ async function showNotification(title: string, body: string) {
   } catch (e) {
     console.log('Notification error:', e)
   }
-}
-
-function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
-  const cycle = () => {
-    const next: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
-    setTheme(next[theme])
-  }
-  return (
-    <button className="icon-btn" onClick={cycle} title={`Тема: ${theme}`}>
-      {theme === 'light' ? <SunIcon /> : theme === 'dark' ? <MoonIcon /> : <MonitorIcon />}
-    </button>
-  )
 }
 
 // ===== Main App =====
@@ -909,8 +462,7 @@ function App() {
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const ringtoneRef = useRef<HTMLAudioElement | null>(null)
   const audioEngineRef = useRef<AudioEngine | null>(null)
-  const _linkPreviewCache = useRef<Map<string, LinkPreview | null>>(new Map())
-  linkPreviewCacheRef = _linkPreviewCache
+  // Link preview cache now lives inside ./components/LinkPreviewCard.tsx
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const chatTopSentinelRef = useRef<HTMLDivElement>(null)
@@ -9116,63 +8668,5 @@ function App() {
 
 // ===== Login Screen =====
 
-function LoginScreen({ onLogin, loading, error, theme, setTheme }: {
-  onLogin: (u: string, p: string) => void
-  loading: boolean
-  error: string
-  theme: Theme
-  setTheme: (t: Theme) => void
-}) {
-  const [u, setU] = useState('')
-  const [p, setP] = useState('')
-  const submit = () => { if (u && p) onLogin(u, p) }
-
-  return (
-    <div className="login-wrapper">
-      <div className="login-bg" />
-      <div className="login-bg-overlay" />
-      <div className="login-card">
-        <div className="login-card-header">
-          <img src="/logo.png" alt="Vidnovagram" className="login-logo" />
-          <h1>Vidnovagram</h1>
-          <p>Месенджер клініки Віднова</p>
-        </div>
-
-        {error && <div className="login-error">{error}</div>}
-
-        <div className="login-field">
-          <label>Логін</label>
-          <input
-            type="text"
-            placeholder="Ім'я користувача"
-            value={u}
-            onChange={e => setU(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && submit()}
-            autoFocus
-          />
-        </div>
-
-        <div className="login-field">
-          <label>Пароль</label>
-          <input
-            type="password"
-            placeholder="Введіть пароль"
-            value={p}
-            onChange={e => setP(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && submit()}
-          />
-        </div>
-
-        <button className="login-btn" onClick={submit} disabled={loading || !u || !p}>
-          {loading ? 'Вхід...' : 'Увійти'}
-        </button>
-
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '0.25rem' }}>
-          <ThemeToggle theme={theme} setTheme={setTheme} />
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default App

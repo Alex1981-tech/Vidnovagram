@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.27': [
+    'Внутрішнє: велика хвиля розбиття App.tsx (9178 → 8672 рядків, −506). Винесено IndexedDB cache layer, 8 leaf-компонентів (AuthMedia, VoicePlayer, LottieSticker, PollCard, Linkify, LinkPreviewCard, ContactName, ThemeToggle), icons, LoginScreen',
+  ],
   '0.17.26': [
     'Внутрішнє: продовження розбиття App.tsx (9478 → 9178 рядків). Винесено типи, authFetch, urlExtract, useTheme в окремі модулі',
   ],
