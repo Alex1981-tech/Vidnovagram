@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import lottie from 'lottie-web'
-import pako from 'pako'
+// lottie-web + pako are heavy (~500 KB combined) and only needed when
+// an animated Telegram sticker is actually rendered. Lazy-import them.
 
 /**
  * Plays a Telegram TGS (gzipped Lottie) sticker from an already-fetched
@@ -15,6 +15,10 @@ export function LottieSticker({ blobUrl, size = 200 }: { blobUrl: string; size?:
     let cancelled = false
     ;(async () => {
       try {
+        const [{ default: lottie }, { default: pako }] = await Promise.all([
+          import('lottie-web'),
+          import('pako'),
+        ])
         const resp = await fetch(blobUrl)
         const buf = new Uint8Array(await resp.arrayBuffer())
         let json: any

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { getVersion } from '@tauri-apps/api/app'
+// getVersion is loaded dynamically to avoid the static+dynamic import conflict
+// with src/telemetry.ts (which owns the lazy import).
 import { LAST_VERSION_KEY } from '../constants'
 
 export interface TauriUpdater {
@@ -29,6 +30,7 @@ export function useTauriUpdater(): TauriUpdater {
   useEffect(() => {
     (async () => {
       try {
+        const { getVersion } = await import('@tauri-apps/api/app')
         const ver = await getVersion()
         setCurrentVersion(ver)
         const lastVer = localStorage.getItem(LAST_VERSION_KEY)

@@ -2,6 +2,11 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.36': [
+    'Збірка: lottie-web (~307 KB) та pako (~47 KB) тепер lazy-chunks, завантажуються тільки коли треба анімований стікер',
+    'Збірка: прибрано попередження про dynamic/static конфлікт `@tauri-apps/api/app` — getVersion тепер dynamic',
+    'Збірка: піднято chunkSizeWarningLimit до 600 KB — основний chunk ~509 KB це baseline після всіх lazy-виносів',
+  ],
   '0.17.35': [
     'Внутрішнє: винесено `useMessages` — messages state + loadMessages + loadOlderMessages + paging + scroll-restore. Plus clientName/Phone/LinkedPhones/isPlaceholder метадані чату. App.tsx 7762 → 7670',
   ],
