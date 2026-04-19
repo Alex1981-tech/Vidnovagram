@@ -49,6 +49,7 @@ import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContain
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
+import { LightboxOverlay } from './components/LightboxOverlay'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -361,15 +362,8 @@ function App() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const linkSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Lightbox
+  // Lightbox (scale/pan/drag state encapsulated in <LightboxOverlay/>)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
-  const [lbScale, setLbScale] = useState(1)
-  const [lbTranslate, setLbTranslate] = useState({ x: 0, y: 0 })
-  const lbDragging = useRef(false)
-  const lbDidDrag = useRef(false)
-  const lbLastPos = useRef({ x: 0, y: 0 })
-  const lbScaleRef = useRef(1)
-  useEffect(() => { setLbScale(1); setLbTranslate({ x: 0, y: 0 }) }, [lightboxSrc])
   // Video note modal
   const [vnoteModal, setVnoteModal] = useState<{ src: string; id: string | number } | null>(null)
   const vnoteModalRef = useRef<HTMLVideoElement>(null)
@@ -5988,26 +5982,7 @@ function App() {
         </div>
       )}
 
-      {lightboxSrc && (
-        <div className="lightbox" onClick={() => { if (lbDidDrag.current) { lbDidDrag.current = false; return } setLightboxSrc(null); setLbScale(1); setLbTranslate({ x: 0, y: 0 }); lbScaleRef.current = 1 }}
-          onMouseMove={e => {
-            if (!lbDragging.current) return
-            e.stopPropagation()
-            const dx = e.clientX - lbLastPos.current.x, dy = e.clientY - lbLastPos.current.y
-            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) lbDidDrag.current = true
-            setLbTranslate(t => ({ x: t.x + dx, y: t.y + dy }))
-            lbLastPos.current = { x: e.clientX, y: e.clientY }
-          }}
-          onMouseUp={() => { lbDragging.current = false }}
-          onMouseLeave={() => { lbDragging.current = false }}>
-          <img src={lightboxSrc} alt="" draggable={false}
-            style={{ transform: `translate(${lbTranslate.x}px, ${lbTranslate.y}px) scale(${lbScale})`, cursor: lbScale > 1 ? 'grab' : 'zoom-in', transition: lbDragging.current ? 'none' : 'transform 0.15s ease' }}
-            onClick={e => e.stopPropagation()}
-            onWheel={e => { e.stopPropagation(); setLbScale(s => { const d = e.deltaY > 0 ? -0.15 : 0.15; const next = Math.max(0.5, Math.min(8, s + d * s)); lbScaleRef.current = next; if (next <= 1) setLbTranslate({ x: 0, y: 0 }); return next }) }}
-            onMouseDown={e => { if (lbScaleRef.current <= 1) return; e.preventDefault(); e.stopPropagation(); lbDragging.current = true; lbDidDrag.current = false; lbLastPos.current = { x: e.clientX, y: e.clientY } }}
-            onDoubleClick={e => { e.stopPropagation(); if (lbScaleRef.current > 1) { setLbScale(1); setLbTranslate({ x: 0, y: 0 }); lbScaleRef.current = 1 } else { setLbScale(3); lbScaleRef.current = 3 } }} />
-        </div>
-      )}
+      <LightboxOverlay src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
 
       {/* Note modal */}
       {showNoteModal && (

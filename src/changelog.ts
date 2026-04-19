@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.41': [
+    'Внутрішнє: винесено `<LightboxOverlay/>` — повноекранний перегляд з zoom/pan/double-click. Весь drag-state (scale/translate refs) тепер інкапсульовано в компоненті. App.tsx 6978 → 6948',
+  ],
   '0.17.40': [
     'Внутрішнє: винесено `<SettingsModal/>` — вкладки Сповіщення/WhatsApp/Фон чату, звукові превʼю, QR-налаштування WA. App.tsx 7403 → 6978. Бренд-іконки (TelegramIcon/WhatsAppIcon/GmailIcon) переїхали у `components/icons.tsx`',
   ],
