@@ -90,6 +90,9 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.23': [
+    'Виправлено "поламані картинки" в альбомах — Canon RAW (CR2/ARW/NEF) та інші дублі документів приховуються коли в альбомі вже є photo-версія',
+  ],
   '0.17.22': [
     'Фото завантажуються у повній якості замість thumbnail — чіткіше відображення',
     'Виправлено відображення фото в альбомах — fallback + автоматичне повторне завантаження',
@@ -779,11 +782,19 @@ function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadB
   onClick?: () => void;
   fallbackPath?: string;
 }) {
-  const fallbackKey = fallbackPath ? mediaKey.replace('thumb_', 'full_') : ''
+  const fallbackKey = fallbackPath
+    ? (mediaKey.startsWith('thumb_')
+      ? mediaKey.replace('thumb_', 'full_')
+      : mediaKey.startsWith('full_')
+        ? mediaKey.replace('full_', 'thumb_')
+        : `${mediaKey}__fallback`)
+    : ''
   const retried = useRef(false)
+  const fallbackTried = useRef(false)
   useEffect(() => {
     if (!token || blobMap[mediaKey] || blobMap[fallbackKey]) return
     retried.current = false
+    fallbackTried.current = false
     loadBlob(mediaKey, mediaPath).then(result => {
       if (!result && fallbackPath) {
         return loadBlob(fallbackKey, fallbackPath)
@@ -804,7 +815,12 @@ function AuthMedia({ mediaKey, mediaPath, type, className, token, blobMap, loadB
   const src = blobMap[mediaKey] || blobMap[fallbackKey]
   if (!src) return <div className="msg-media-placeholder">📷 ...</div>
   if (type === 'image') return <img src={src} alt="" className={className} onClick={onClick} onError={() => {
-    // Blob URL failed to decode — clear and retry
+    if (fallbackPath && !blobMap[fallbackKey] && !fallbackTried.current) {
+      fallbackTried.current = true
+      loadBlob(fallbackKey, fallbackPath)
+      return
+    }
+    // Blob URL failed to decode — retry primary once
     if (!retried.current) {
       retried.current = true
       setTimeout(() => loadBlob(mediaKey, mediaPath), 2000)
@@ -4854,9 +4870,30 @@ function App() {
         albumMap.get(gid)!.push(item.data)
       }
     }
-    // Only treat as album if 2+ messages in group
-    const validAlbums = new Set<number>()
+    // Filter duplicate documents when album also has photo version (e.g. Canon CR2 RAW
+    // sent alongside compressed JPEG preview). Telegram-native behavior — show only
+    // photo, document is the same content as separate downloadable file.
+    const filteredAlbumMap = new Map<number, ChatMessage[]>()
+    const skippedMessageIds = new Set<string | number>()
     for (const [gid, msgs] of albumMap) {
+      const hasPhoto = msgs.some(m => m.media_type === 'photo')
+      if (hasPhoto) {
+        const filtered: ChatMessage[] = []
+        for (const m of msgs) {
+          if (m.media_type === 'document') {
+            skippedMessageIds.add(m.id)
+          } else {
+            filtered.push(m)
+          }
+        }
+        filteredAlbumMap.set(gid, filtered)
+      } else {
+        filteredAlbumMap.set(gid, msgs)
+      }
+    }
+    // Only treat as album if 2+ messages in group (after filtering)
+    const validAlbums = new Set<number>()
+    for (const [gid, msgs] of filteredAlbumMap) {
       if (msgs.length >= 2) validAlbums.add(gid)
     }
 
@@ -4870,11 +4907,12 @@ function App() {
         result.push({ ...item.data, _isNote: true } as ClientNote & { _isNote: true })
       } else {
         const m = item.data
+        if (skippedMessageIds.has(m.id)) continue
         if (m.media_group_id && validAlbums.has(m.media_group_id)) {
           // Only emit album on first message of group
           if (!albumFirst.has(m.media_group_id)) {
             albumFirst.add(m.media_group_id)
-            const albumMsgs = albumMap.get(m.media_group_id)!
+            const albumMsgs = filteredAlbumMap.get(m.media_group_id)!
             // Caption = text of last message in album (TG sends caption on last)
             const caption = albumMsgs.find(am => am.text && am.media_type !== 'contact')?.text || ''
             result.push({
