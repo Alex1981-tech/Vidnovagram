@@ -55,6 +55,8 @@ import { AddToAccountModal } from './components/AddToAccountModal'
 import { AddContactModal } from './components/AddContactModal'
 import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
+import { SidebarSearch } from './components/SidebarSearch'
+import { GmailSidebarFilter } from './components/GmailSidebarFilter'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3297,72 +3299,54 @@ function App() {
             hasMessengerAccounts={hasMessengerAccounts}
             contacts={contacts}
           />
-          {/* Search */}
-          <div className="sidebar-search">
-            <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-            </svg>
-            {selectedGmail ? (
-              <input
-                placeholder="Пошук листів..."
-                value={gmailSearch}
-                onChange={e => {
-                  setGmailSearch(e.target.value)
-                  clearTimeout(gmailSearchTimer.current)
-                  gmailSearchTimer.current = setTimeout(() => {
-                    setGmailSelectedMsg(null)
-                    loadGmailEmails(selectedGmail, 1, e.target.value, gmailDirection)
-                  }, 400)
-                }}
-              />
-            ) : (
-              <input
-                placeholder="Пошук контактів та повідомлень..."
-                value={search}
-                onChange={e => {
-                  setSearch(e.target.value)
-                  const q = e.target.value.trim()
-                  clearTimeout(globalSearchTimer.current)
-                  setUsernameSearchResult(null)
-                  if (q.length >= 3 && auth?.token) {
-                    globalSearchTimer.current = setTimeout(async () => {
-                      try {
-                        const params = new URLSearchParams({ q, limit: '30' })
-                        if (selectedAccount) params.set('account_id', selectedAccount)
-                        const resp = await authFetch(`${API_BASE}/telegram/search-messages/?${params}`, auth!.token)
-                        if (resp.ok) setGlobalSearchResults(await resp.json())
-                      } catch { /* ignore */ }
-                      // If starts with @, also resolve username
-                      if (q.startsWith('@') && q.length >= 4 && selectedAccount) {
-                        try {
-                          const resp = await authFetch(`${API_BASE}/telegram/resolve-username/?account_id=${selectedAccount}&username=${encodeURIComponent(q)}`, auth!.token)
-                          if (resp.ok) setUsernameSearchResult(await resp.json())
-                        } catch { /* ignore */ }
-                      }
-                    }, 400)
-                  } else {
-                    setGlobalSearchResults([])
+          <SidebarSearch
+            isGmailMode={!!selectedGmail}
+            search={search}
+            gmailSearch={gmailSearch}
+            onGmailSearchChange={value => {
+              setGmailSearch(value)
+              clearTimeout(gmailSearchTimer.current)
+              gmailSearchTimer.current = setTimeout(() => {
+                setGmailSelectedMsg(null)
+                if (selectedGmail) loadGmailEmails(selectedGmail, 1, value, gmailDirection)
+              }, 400)
+            }}
+            onSearchChange={value => {
+              setSearch(value)
+              const q = value.trim()
+              clearTimeout(globalSearchTimer.current)
+              setUsernameSearchResult(null)
+              if (q.length >= 3 && auth?.token) {
+                globalSearchTimer.current = setTimeout(async () => {
+                  try {
+                    const params = new URLSearchParams({ q, limit: '30' })
+                    if (selectedAccount) params.set('account_id', selectedAccount)
+                    const resp = await authFetch(`${API_BASE}/telegram/search-messages/?${params}`, auth!.token)
+                    if (resp.ok) setGlobalSearchResults(await resp.json())
+                  } catch { /* ignore */ }
+                  if (q.startsWith('@') && q.length >= 4 && selectedAccount) {
+                    try {
+                      const resp = await authFetch(`${API_BASE}/telegram/resolve-username/?account_id=${selectedAccount}&username=${encodeURIComponent(q)}`, auth!.token)
+                      if (resp.ok) setUsernameSearchResult(await resp.json())
+                    } catch { /* ignore */ }
                   }
-                }}
-              />
-            )}
-          </div>
+                }, 400)
+              } else {
+                setGlobalSearchResults([])
+              }
+            }}
+          />
           {/* Gmail filter / New chat */}
           {selectedGmail ? (
-            <div className="gmail-sidebar-filter">
-              <button className={`gmail-filter-btn ${gmailDirection === '' ? 'active' : ''}`} onClick={() => { setGmailDirection(''); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, '') }} title="Усі">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 4 10 8 10-8"/></svg>
-              </button>
-              <button className={`gmail-filter-btn gmail-filter-inbox ${gmailDirection === 'inbox' ? 'active' : ''}`} onClick={() => { setGmailDirection('inbox'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'inbox') }} title="Вхідні">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12l-7 7-7-7"/><path d="M12 5v14"/></svg>
-              </button>
-              <button className={`gmail-filter-btn gmail-filter-sent ${gmailDirection === 'sent' ? 'active' : ''}`} onClick={() => { setGmailDirection('sent'); setGmailSelectedMsg(null); loadGmailEmails(selectedGmail, 1, gmailSearch, 'sent') }} title="Надіслані">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 12l7-7 7 7"/><path d="M12 19V5"/></svg>
-              </button>
-              <button className="gmail-filter-compose" onClick={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }} title="Написати">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
-              </button>
-            </div>
+            <GmailSidebarFilter
+              direction={gmailDirection}
+              onDirectionChange={dir => {
+                setGmailDirection(dir)
+                setGmailSelectedMsg(null)
+                loadGmailEmails(selectedGmail, 1, gmailSearch, dir)
+              }}
+              onCompose={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }}
+            />
           ) : (
             hasMessengerAccounts ? (
               <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>

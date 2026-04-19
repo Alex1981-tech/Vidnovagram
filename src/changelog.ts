@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.45': [
+    'Внутрішнє: ще 2 leaf-компоненти сайдбару — `<SidebarSearch/>` (перемикач пошуку TG/WA/Gmail) і `<GmailSidebarFilter/>` (кнопки All/Inbox/Sent + Compose). App.tsx 6694 → 6678',
+  ],
   '0.17.44': [
     'Внутрішнє: початок розбиття Sidebar. Винесено `<AccountRail/>` (вузька ліва панель з іконками акаунтів, розгортається при hover) і `<ActiveAccountCard/>` (заголовок з активним акаунтом). App.tsx 6791 → 6694',
   ],
