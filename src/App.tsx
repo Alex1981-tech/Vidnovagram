@@ -12,12 +12,19 @@ import { AudioEngine, voipCall, voipAnswer, voipHangup, type AudioEngineState, t
 import lottie from 'lottie-web'
 import pako from 'pako'
 import './App.css'
+import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
+import { formatContactDate, formatDateSeparator } from './utils/dateFormat'
+import {
+  isPlaceholderPhone,
+  isPlaceholderName,
+  resolveContactDisplay,
+  getMediaPreviewLabel,
+} from './utils/contactDisplay'
 
 const API_BASE = 'https://cc.vidnova.app/api'
 const WS_BASE = 'wss://cc.vidnova.app/ws'
 const AUTH_KEY = 'vidnovagram_auth'
 const THEME_KEY = 'vidnovagram_theme'
-const READ_TS_KEY = 'vidnovagram_read_ts'
 const LAST_VERSION_KEY = 'vidnovagram_last_version'
 const SETTINGS_KEY = 'vidnovagram_settings'
 
@@ -90,6 +97,10 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.25': [
+    'Typing-indicator: "набирає повідомлення" знову працює — з’єднано виклик при введенні тексту (регрес з WIP)',
+    'Внутрішнє: перша фаза розбиття App.tsx (9855 рядків) — винесено утиліти readTs/dateFormat/contactDisplay в окремі модулі, додано Vitest і базові unit-тести (35 тестів)',
+  ],
   '0.17.24': [
     'VoIP: голосовий плеєр та мікрофон переведено на AudioWorklet (стабільніший звук, менше затримок)',
     'Менше мережевого навантаження: fallback-polling вимикається коли WebSocket активний (економить ~60 запитів/хв)',
@@ -501,8 +512,10 @@ interface AlbumGroup {
 
 interface WsReactionEvent {
   type: string
+  source?: 'telegram' | 'whatsapp'
   client_id?: string
   account_id?: string
+  message_id?: string
   tg_message_id?: number
   message?: {
     client_name?: string
@@ -532,6 +545,19 @@ interface LinkPreview {
   description: string
   image: string
   site_name: string
+}
+
+interface GlobalSearchResult {
+  id: string | number
+  account_id?: string | null
+  client_id?: string | null
+  client_name?: string
+  client_phone?: string
+  text?: string
+  message_date?: string | null
+  direction?: string
+  source?: 'telegram' | 'whatsapp'
+  account_label?: string
 }
 
 interface ClientNote {
@@ -967,20 +993,6 @@ function useTheme() {
 
 // ===== Read timestamps (unread tracking) =====
 
-function getReadTs(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(READ_TS_KEY) || '{}')
-  } catch { return {} }
-}
-
-function setReadTs(clientId: string, ts: string) {
-  const all = getReadTs()
-  all[clientId] = ts
-  localStorage.setItem(READ_TS_KEY, JSON.stringify(all))
-}
-
-// ===== Date formatting =====
-
 // ===== URL detection & linkify =====
 
 const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi
@@ -1149,102 +1161,10 @@ function LinkPreviewCard({ url, token, onClick }: { url: string; token: string; 
 // Shared cache ref (set inside App component, used by LinkPreviewCard)
 let linkPreviewCacheRef: React.MutableRefObject<Map<string, LinkPreview | null>> = { current: new Map() }
 
-function formatContactDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const yesterday = new Date(today.getTime() - 86400000)
-  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-
-  const time = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
-  if (msgDay.getTime() === today.getTime()) return time
-  if (msgDay.getTime() === yesterday.getTime()) return `Вчора`
-  return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })
-}
-
-function formatDateSeparator(dateStr: string): string {
-  const d = new Date(dateStr)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const yesterday = new Date(today.getTime() - 86400000)
-  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-
-  if (msgDay.getTime() === today.getTime()) return 'Сьогодні'
-  if (msgDay.getTime() === yesterday.getTime()) return 'Вчора'
-  return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
 /** Render contact name: full name in violet for employees */
 function ContactName({ name, isEmployee }: { name: string; isEmployee?: boolean }) {
   if (!isEmployee || !name.trim()) return <>{name}</>
   return <span className="employee-name">{name}</span>
-}
-
-function isPlaceholderPhone(phone?: string) {
-  const value = (phone || '').trim().toLowerCase()
-  return value.startsWith('tg_') || value.startsWith('wa_')
-}
-
-function isPlaceholderName(name?: string) {
-  const value = (name || '').trim()
-  return /^TG-\d+$/i.test(value) || /^WA-\d+$/i.test(value)
-}
-
-function resolveLinkedDisplay(linked?: { phone: string; full_name?: string; tg_name?: string; tg_username?: string }[]) {
-  if (!linked?.length) return null
-  const preferred =
-    linked.find(lp => (lp.tg_name || '').trim())
-    || linked.find(lp => {
-      const value = (lp.full_name || '').trim()
-      return !!value && !isPlaceholderName(value)
-    })
-    || linked.find(lp => (lp.tg_username || '').trim())
-    || linked.find(lp => (lp.phone || '').trim())
-    || null
-  if (!preferred) return null
-  const username = (preferred.tg_username || '').trim().replace(/^@+/, '')
-  const tgName = (preferred.tg_name || '').trim()
-  const fullNameRaw = (preferred.full_name || '').trim()
-  const fullName = isPlaceholderName(fullNameRaw) ? '' : fullNameRaw
-  const phone = (preferred.phone || '').trim()
-  return {
-    name: tgName || fullName || (username ? `@${username}` : phone),
-    subtitle: username ? `@${username}` : (phone || ''),
-  }
-}
-
-function resolveContactDisplay(contact?: {
-  full_name?: string
-  phone?: string
-  tg_name?: string
-  tg_username?: string
-  linked_phones?: { phone: string; full_name?: string; tg_name?: string; tg_username?: string }[]
-}) {
-  const fullNameRaw = (contact?.full_name || '').trim()
-  const phone = (contact?.phone || '').trim()
-  const tgNameRaw = (contact?.tg_name || '').trim()
-  const username = (contact?.tg_username || '').trim().replace(/^@+/, '')
-  const linked = resolveLinkedDisplay(contact?.linked_phones)
-  const fullName = isPlaceholderName(fullNameRaw) ? '' : fullNameRaw
-  const tgName = isPlaceholderName(tgNameRaw) ? '' : tgNameRaw
-  const placeholder = isPlaceholderPhone(phone) || isPlaceholderName(fullNameRaw) || isPlaceholderName(tgNameRaw)
-
-  if (placeholder && linked) {
-    return {
-      name: linked.name,
-      subtitle: linked.subtitle && linked.subtitle !== linked.name ? linked.subtitle : '',
-    }
-  }
-
-  const name = tgName || fullName || (username ? `@${username}` : (!isPlaceholderPhone(phone) ? phone : ''))
-  let subtitle = ''
-  if (username) subtitle = `@${username}`
-  else if (!isPlaceholderPhone(phone) && phone && phone !== name) subtitle = phone
-
-  return {
-    name: name || tgName || fullName || phone || 'Невідомий',
-    subtitle,
-  }
 }
 
 function resolveWsContactDisplay(message?: {
@@ -1260,18 +1180,6 @@ function resolveWsContactDisplay(message?: {
     tg_username: message?.tg_username || contact?.tg_username,
     linked_phones: contact?.linked_phones,
   })
-}
-
-function getMediaPreviewLabel(mediaType?: string) {
-  switch ((mediaType || '').toLowerCase()) {
-    case 'photo': return 'фото'
-    case 'video': return 'відео'
-    case 'voice': return 'голосове повідомлення'
-    case 'video_note': return 'відеокружечок'
-    case 'document': return 'документ'
-    case 'sticker': return 'стікер'
-    default: return 'медіаповідомлення'
-  }
 }
 
 function buildReactionTargetPreview(event: WsReactionEvent, sender: string, localMsg?: ChatMessage) {
@@ -1474,9 +1382,11 @@ function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([])
+  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([])
   const [usernameSearchResult, setUsernameSearchResult] = useState<any | null>(null)
   const globalSearchTimer = useRef<any>(null)
+  const pendingSearchOpenRef = useRef<{ clientId: string; accountId: string } | null>(null)
+  const pendingSearchJumpRef = useRef<{ messageDomId: string } | null>(null)
   const [contactCount, setContactCount] = useState(0)
   const [contactPage, setContactPage] = useState(1)
   const [loadingMoreContacts, setLoadingMoreContacts] = useState(false)
@@ -1718,6 +1628,8 @@ function App() {
 
   // Typing indicators: { clientId: timestamp }
   const [typingIndicators, setTypingIndicators] = useState<Record<string, number>>({})
+  const typingSentAtRef = useRef<Record<string, number>>({})
+  const typingClearTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   // Scroll positions: { clientId: scrollTop }
   const scrollPositionsRef = useRef<Map<string, number>>(new Map())
   // Presence: { tg_peer_id: { status, was_online } }
@@ -1778,7 +1690,12 @@ function App() {
   const [todoTitle, setTodoTitle] = useState('')
   const [todoItems, setTodoItems] = useState<string[]>(['', ''])
   const [showContactProfile, setShowContactProfile] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: number | string; tgMsgId: number; peerId: number } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    msgId: number | string
+    source: 'telegram' | 'whatsapp'
+    tgMsgId?: number
+    peerId?: number
+  } | null>(null)
   const [showCompose, setShowCompose] = useState(false)
   const [composeTo, setComposeTo] = useState('')
   const [composeSubject, setComposeSubject] = useState('')
@@ -2393,7 +2310,7 @@ function App() {
         setClientLinkedPhones(data.linked_phones || [])
         setIsPlaceholder(data.is_placeholder || false)
         if (msgs.length > 0) {
-          setReadTs(clientId, msgs[msgs.length - 1].message_date)
+          setReadTs(clientId, msgs[msgs.length - 1].message_date, selectedAccount)
         }
         if (scrollToEnd) {
           const savedPos = scrollPositionsRef.current.get(clientId)
@@ -2781,6 +2698,12 @@ function App() {
 
     // Edit mode — no files
     if (editingMsg && text && filesToSend.length === 0) {
+      if (editingMsg.source === 'whatsapp') {
+        setEditingMsg(null)
+        setSending(false)
+        alert('Редагування WhatsApp-повідомлень ще не підтримується')
+        return
+      }
       try {
         const resp = await authFetch(`${API_BASE}/telegram/edit-message/`, auth.token, {
           method: 'POST',
@@ -4102,13 +4025,15 @@ function App() {
   // Bulk delete selected sent messages
   const bulkDeleteMessages = useCallback(async () => {
     if (!auth?.token || !selectedAccount || selectedMsgIds.size === 0) return
-    const sentMsgs = messages.filter(m => selectedMsgIds.has(m.id) && m.direction === 'sent' && m.tg_message_id && m.tg_peer_id)
-    if (sentMsgs.length === 0) return
-    const ok = window.confirm(`Видалити ${sentMsgs.length} повідомлень?`)
+    const selectedSent = messages.filter(m => selectedMsgIds.has(m.id) && m.direction === 'sent')
+    const tgMsgs = selectedSent.filter(m => m.tg_message_id && m.tg_peer_id)
+    const waMsgs = selectedSent.filter(m => m.source === 'whatsapp')
+    if (tgMsgs.length === 0 && waMsgs.length === 0) return
+    const ok = window.confirm(`Видалити ${tgMsgs.length + waMsgs.length} повідомлень?`)
     if (!ok) return
     // Group by peer_id and delete in batches
     const byPeer = new Map<number, number[]>()
-    for (const msg of sentMsgs) {
+    for (const msg of tgMsgs) {
       const list = byPeer.get(msg.tg_peer_id!) || []
       list.push(msg.tg_message_id!)
       byPeer.set(msg.tg_peer_id!, list)
@@ -4119,6 +4044,15 @@ function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, message_ids: msgIds }),
+        })
+      } catch { /* continue */ }
+    }
+    for (const msg of waMsgs) {
+      try {
+        await authFetch(`${API_BASE}/whatsapp/delete-message/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: selectedAccount, message_id: String(msg.id) }),
         })
       } catch { /* continue */ }
     }
@@ -4157,7 +4091,7 @@ function App() {
   const ctxMenuEdit = useCallback(() => {
     if (!ctxMenu) return
     const msg = messages.find(m => m.id === ctxMenu.messageId)
-    if (msg && msg.direction === 'sent') {
+    if (msg && msg.direction === 'sent' && msg.source !== 'whatsapp') {
       setEditingMsg(msg)
       setMessageText(msg.text || '')
       ;(window as any).__replyTo = null
@@ -4244,24 +4178,29 @@ function App() {
   }, [auth?.token, selectedAccount, messages, contacts, selectedClient])
 
   // Delete message
-  const deleteMessage = useCallback(async (tgMsgId: number, peerId: number) => {
+  const deleteMessage = useCallback(async (target: { msgId: number | string; source: 'telegram' | 'whatsapp'; tgMsgId?: number; peerId?: number }) => {
     if (!auth?.token || !selectedAccount) return
     try {
-      const resp = await authFetch(`${API_BASE}/telegram/delete-message/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: selectedAccount,
-          peer_id: peerId,
-          message_ids: [tgMsgId],
-        }),
-      })
+      const isWhatsapp = target.source === 'whatsapp'
+      const resp = await authFetch(
+        `${API_BASE}/${isWhatsapp ? 'whatsapp/delete-message/' : 'telegram/delete-message/'}`,
+        auth.token,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            isWhatsapp
+              ? { account_id: selectedAccount, message_id: String(target.msgId) }
+              : { account_id: selectedAccount, peer_id: target.peerId, message_ids: [target.tgMsgId] }
+          ),
+        }
+      )
       const data = resp.ok ? await resp.json() : null
       const deletedBy = data?.deleted_by || auth.name || 'Ви'
       const deletedAt = data?.deleted_at || new Date().toISOString()
       // Optimistic update — message stays visible with deleted mark
       setMessages(prev => prev.map(m =>
-        m.tg_message_id === tgMsgId
+        (isWhatsapp ? String(m.id) === String(target.msgId) : m.tg_message_id === target.tgMsgId)
           ? { ...m, is_deleted: true, deleted_at: deletedAt, deleted_by_peer_name: deletedBy }
           : m
       ))
@@ -4367,15 +4306,77 @@ function App() {
   // Refs for stable WS callbacks (avoid reconnecting WS on every state change)
   const loadContactsRef = useRef(loadContacts)
   const loadMessagesRef = useRef(loadMessages)
-  const loadUpdatesRef = useRef(loadUpdates)
   const soundEnabledRef = useRef(soundEnabled)
+  const contactsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messagesRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingMessagesRefreshRef = useRef<{ clientId: string; scrollToEnd: boolean } | null>(null)
   const addToastRef = useRef<(clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => void>(() => {})
   useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
-  useEffect(() => { loadUpdatesRef.current = loadUpdates }, [loadUpdates])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
   const appSettingsRef = useRef(appSettings)
   useEffect(() => { appSettingsRef.current = appSettings }, [appSettings])
+
+  const scheduleContactsRefresh = useCallback((delay = 250) => {
+    if (contactsRefreshTimerRef.current) return
+    contactsRefreshTimerRef.current = setTimeout(() => {
+      contactsRefreshTimerRef.current = null
+      loadContactsRef.current()
+    }, delay)
+  }, [])
+
+  const scheduleMessagesRefresh = useCallback((clientId: string, scrollToEnd = false, delay = 120) => {
+    const pending = pendingMessagesRefreshRef.current
+    if (pending?.clientId === clientId) {
+      pending.scrollToEnd = pending.scrollToEnd || scrollToEnd
+    } else {
+      pendingMessagesRefreshRef.current = { clientId, scrollToEnd }
+    }
+    if (messagesRefreshTimerRef.current) return
+    messagesRefreshTimerRef.current = setTimeout(() => {
+      messagesRefreshTimerRef.current = null
+      const next = pendingMessagesRefreshRef.current
+      pendingMessagesRefreshRef.current = null
+      if (next) {
+        loadMessagesRef.current(next.clientId, next.scrollToEnd)
+      }
+    }, delay)
+  }, [])
+
+  const sendTypingIndicator = useCallback(() => {
+    if (!selectedClient || !selectedAccount) return
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const now = Date.now()
+    const key = `${selectedAccount}:${selectedClient}`
+    if (now - (typingSentAtRef.current[key] || 0) < 3000) return
+    typingSentAtRef.current[key] = now
+    try {
+      ws.send(JSON.stringify({
+        type: 'typing',
+        account_id: selectedAccount,
+        client_id: selectedClient,
+      }))
+    } catch {}
+  }, [selectedAccount, selectedClient])
+
+  useEffect(() => {
+    return () => {
+      if (contactsRefreshTimerRef.current) {
+        clearTimeout(contactsRefreshTimerRef.current)
+        contactsRefreshTimerRef.current = null
+      }
+      if (messagesRefreshTimerRef.current) {
+        clearTimeout(messagesRefreshTimerRef.current)
+        messagesRefreshTimerRef.current = null
+      }
+      for (const timer of Object.values(typingClearTimersRef.current)) {
+        clearTimeout(timer)
+      }
+      typingClearTimersRef.current = {}
+      pendingMessagesRefreshRef.current = null
+    }
+  }, [])
 
   // Helper: check if notifications/sound enabled for account
   const getAccountSettings = useCallback((accountId: string): AccountSettings => {
@@ -4496,8 +4497,8 @@ function App() {
             }
 
             if (isCurrentChat) {
-              // Current chat — reload messages (scroll only for new messages, not media updates)
-              loadMessagesRef.current(selectedClientId || clientId, !isMediaUpdate)
+              // Coalesce bursts of chat events into one message reload.
+              scheduleMessagesRefresh(selectedClientId || clientId, !isMediaUpdate)
             }
 
             // Notification for received messages only (not our own sent, not media updates, not dupes)
@@ -4540,13 +4541,13 @@ function App() {
               }
             }
 
-            // WS already carries the new_message event; only refresh contacts
-            // (for unread badges/last-message preview). Updates feed is redundant.
-            loadContactsRef.current()
+            // Coalesce bursts of WS events into one sidebar refresh instead of
+            // reloading contacts for every single message.
+            scheduleContactsRefresh()
           }
 
           if (data.type === 'contact_update') {
-            loadContactsRef.current()
+            scheduleContactsRefresh()
           }
 
           // --- New TG event types ---
@@ -4563,21 +4564,41 @@ function App() {
 
           if (data.type === 'delete_message') {
             // Mark as deleted visually (never remove from array)
+            const isWhatsappDelete = data.source === 'whatsapp'
+            const waMessageId = String(data.message_id || '')
+            const rawWaMessageId = waMessageId.startsWith('wa_') ? waMessageId.slice(3) : waMessageId
             setMessages(prev => prev.map(m =>
-              m.tg_message_id === data.tg_message_id
+              (
+                isWhatsappDelete
+                  ? (String(m.id) === waMessageId || String(m.id) === rawWaMessageId || `wa_${String(m.id)}` === waMessageId)
+                  : m.tg_message_id === data.tg_message_id
+              )
                 ? { ...m, is_deleted: true, deleted_at: data.deleted_at, deleted_by_peer_name: data.deleted_by || '' }
                 : m
             ))
           }
 
           if (data.type === 'reaction_update' || data.type === 'messenger_reaction_update') {
+            const isWhatsappReaction = data.source === 'whatsapp'
+            const waMessageId = String(data.message_id || '')
+            const rawWaMessageId = waMessageId.startsWith('wa_') ? waMessageId.slice(3) : waMessageId
+            const matchesReactionTarget = (m: ChatMessage) => {
+              if (isWhatsappReaction) {
+                return (
+                  String(m.id) === waMessageId ||
+                  String(m.id) === rawWaMessageId ||
+                  `wa_${String(m.id)}` === waMessageId
+                )
+              }
+              return m.tg_message_id === data.tg_message_id
+            }
             setMessages(prev => prev.map(m =>
-              m.tg_message_id === data.tg_message_id
+              matchesReactionTarget(m)
                 ? { ...m, reactions: data.reactions || [] }
                 : m
             ))
             // Dedup: same reaction arrives via multiple accounts in shared groups
-            const reactDedupKey = data.tg_message_id && data.tg_peer_id ? `react:${data.tg_message_id}:${data.tg_peer_id}` : ''
+            const reactDedupKey = !isWhatsappReaction && data.tg_message_id && data.tg_peer_id ? `react:${data.tg_message_id}:${data.tg_peer_id}` : ''
             const isReactDupe = reactDedupKey && wsDedup.current.has(reactDedupKey)
             if (reactDedupKey && !isReactDupe) {
               wsDedup.current.set(reactDedupKey, Date.now())
@@ -4597,7 +4618,7 @@ function App() {
                   phone: data.phone,
                 })
                 const sender = senderDisplay.name || 'Клієнт'
-                const reactedMsg = messagesRef.current.find(m => m.tg_message_id === data.tg_message_id)
+                const reactedMsg = messagesRef.current.find(matchesReactionTarget)
                 const { targetLabel, preview } = buildReactionTargetPreview(data, sender, reactedMsg)
 
                 const acctLabel = data.account_label || accounts.find(a => a.id === data.account_id)?.label || ''
@@ -4630,12 +4651,15 @@ function App() {
             }
           }
 
-          if (data.type === 'tg_typing') {
+          if (data.type === 'tg_typing' || data.type === 'typing') {
             const clientId = data.client_id
             if (clientId) {
               setTypingIndicators(prev => ({ ...prev, [clientId]: Date.now() }))
+              if (typingClearTimersRef.current[clientId]) {
+                clearTimeout(typingClearTimersRef.current[clientId])
+              }
               // Auto-clear after 6 seconds
-              setTimeout(() => {
+              typingClearTimersRef.current[clientId] = setTimeout(() => {
                 setTypingIndicators(prev => {
                   if (prev[clientId] && Date.now() - prev[clientId] > 5500) {
                     const next = { ...prev }
@@ -4644,6 +4668,7 @@ function App() {
                   }
                   return prev
                 })
+                delete typingClearTimersRef.current[clientId]
               }, 6000)
             }
           }
@@ -4722,7 +4747,7 @@ function App() {
       const wsAlive = Date.now() - wsLastActivityRef.current < 30000
       if (wsAlive) return
       if (selectedClientRef.current) {
-        loadMessagesRef.current(selectedClientRef.current, false)
+        scheduleMessagesRefresh(selectedClientRef.current, false, 0)
       }
       loadContactsRef.current()
     }, 10000)
@@ -4733,7 +4758,7 @@ function App() {
       clearInterval(pollTimer)
       ws?.close(1000)
     }
-  }, [auth?.authorized, auth?.token])
+  }, [auth?.authorized, auth?.token, scheduleMessagesRefresh])
 
   // Gmail polling — check for new emails every 60s
   const gmailLastCheckRef = useRef<string>(new Date().toISOString())
@@ -4791,7 +4816,8 @@ function App() {
   const isUnread = useCallback((contact: Contact) => {
     if (!contact.last_message_date || contact.last_message_direction !== 'received') return false
     const readTs = getReadTs()
-    const read = readTs[contact.client_id]
+    const routeKey = makeReadTsKey(contact.client_id, selectedAccount)
+    const read = readTs[routeKey] || readTs[contact.client_id]
     // Check server updates too
     const serverUpdate = updates[contact.client_id]
     const lastReceived = serverUpdate?.last_received
@@ -4960,7 +4986,7 @@ function App() {
   }, [messages])
 
   // Select client handler
-  const selectClient = useCallback((clientId: string) => {
+  const selectClient = useCallback((clientId: string, opts?: { accountId?: string; jumpToMessageId?: string | number }) => {
     // Save scroll position for current client
     if (selectedClient && chatContainerRef.current) {
       const el = chatContainerRef.current
@@ -4986,6 +5012,16 @@ function App() {
     else (window as any).__replyTo = null
     setEditingMsg(null)
 
+    const nextAccountId = (opts?.accountId || '').trim()
+    const accountChanged = !!nextAccountId && nextAccountId !== selectedAccount
+    if (opts?.jumpToMessageId !== undefined && opts?.jumpToMessageId !== null) {
+      pendingSearchJumpRef.current = { messageDomId: String(opts.jumpToMessageId) }
+    }
+    if (accountChanged) {
+      pendingSearchOpenRef.current = { clientId, accountId: nextAccountId }
+      setSelectedAccount(nextAccountId)
+    }
+
     setSelectedClient(clientId)
     setSelectedGmail(null)
     setGmailSelectedMsg(null)
@@ -4994,14 +5030,40 @@ function App() {
     setExpandedCallId(null)
     setCardData(null) // Reset card data for new client
     // Mark as read immediately
-    setReadTs(clientId, new Date().toISOString())
-    loadMessages(clientId)
+    setReadTs(clientId, new Date().toISOString(), nextAccountId || selectedAccount)
+    if (!accountChanged) {
+      loadMessages(clientId)
+    }
     loadClientNotes(clientId)
     // Pre-load card data only for non-employee contacts
     const contact = contacts.find(c => c.client_id === clientId)
     if (!contact?.is_employee) loadClientCard(clientId)
     telemetry.trackChatView(clientId, selectedAccount)
   }, [loadMessages, loadClientNotes, loadClientCard, selectedAccount, selectedClient, messageText])
+
+  useEffect(() => {
+    const pending = pendingSearchOpenRef.current
+    if (!pending || !selectedClient) return
+    if (selectedClient !== pending.clientId || selectedAccount !== pending.accountId) return
+    pendingSearchOpenRef.current = null
+    loadMessages(selectedClient)
+    loadClientNotes(selectedClient)
+  }, [selectedClient, selectedAccount, loadMessages, loadClientNotes])
+
+  useEffect(() => {
+    const pending = pendingSearchJumpRef.current
+    if (!pending) return
+    const hasTarget = messages.some(m => String(m.id) === pending.messageDomId)
+    if (!hasTarget) return
+    pendingSearchJumpRef.current = null
+    setTimeout(() => {
+      const msgEl = document.querySelector(`[data-msg-id="${pending.messageDomId}"]`) as HTMLElement | null
+      if (!msgEl) return
+      msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      msgEl.classList.add('search-active')
+      setTimeout(() => msgEl.classList.remove('search-active'), 2000)
+    }, 80)
+  }, [messages])
 
   const openClientChat = useCallback((clientId: string, phone?: string, name?: string) => {
     if (phone) setNewChatClient({ client_id: clientId, phone, full_name: name || '' })
@@ -5836,7 +5898,12 @@ function App() {
                         <div className="search-section-header">Повідомлення ({globalSearchResults.length})</div>
                         {globalSearchResults.map((r, i) => (
                           <div key={`sr-${i}`} className="contact search-result" onClick={() => {
-                            if (r.client_id) { selectClient(r.client_id); setSearch(''); setGlobalSearchResults([]) }
+                            if (r.client_id) {
+                              selectClient(r.client_id, { accountId: r.account_id || undefined, jumpToMessageId: r.id })
+                              setSearch('')
+                              setGlobalSearchResults([])
+                              setUsernameSearchResult(null)
+                            }
                           }}>
                             <div className="avatar"><UserIcon /></div>
                             <div className="contact-body">
@@ -5848,6 +5915,14 @@ function App() {
                                 <span className="contact-preview search-preview">
                                   {r.direction === 'sent' && <span className="preview-you">Ви: </span>}
                                   {r.text?.slice(0, 80)}
+                                </span>
+                              </div>
+                              <div className="contact-meta">
+                                <span className="contact-phone">{r.account_label || '—'}</span>
+                                <span className="contact-icons">
+                                  {r.source === 'telegram'
+                                    ? <TelegramIcon size={12} color="#2AABEE" />
+                                    : <WhatsAppIcon size={12} color="#25D366" />}
                                 </span>
                               </div>
                             </div>
@@ -6968,12 +7043,18 @@ function App() {
                             {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           {m.direction === 'sent' && (
-                            <span className={`msg-status-text ${m.is_read ? 'read' : m.is_read === false ? 'delivered' : 'sent'}`}>
+                            <span className={`msg-status-text ${
+                              m.source === 'whatsapp'
+                                ? (m.is_read ? 'read' : 'sent')
+                                : (m.is_read ? 'read' : m.is_read === false ? 'delivered' : 'sent')
+                            }`}>
                               {m.local_status === 'sending'
                                 ? 'Надсилання'
                                 : m.local_status === 'failed'
                                   ? 'Не відправлено'
-                                  : m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
+                                  : m.source === 'whatsapp'
+                                    ? (m.is_read ? 'Прочитано' : 'Надіслано')
+                                    : m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
                             </span>
                           )}
                         </div>
@@ -7038,7 +7119,7 @@ function App() {
                   <button className="forward-bar-btn" onClick={bulkCopyMessages} disabled={selectedMsgIds.size === 0} title="Копіювати">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
-                  {messages.some(m => selectedMsgIds.has(m.id) && m.direction === 'sent') && (
+                  {messages.some(m => selectedMsgIds.has(m.id) && m.direction === 'sent' && ((!!m.tg_message_id && !!m.tg_peer_id) || m.source === 'whatsapp')) && (
                     <button className="forward-bar-btn forward-bar-btn-danger" onClick={bulkDeleteMessages} disabled={selectedMsgIds.size === 0} title="Видалити">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
@@ -7269,6 +7350,7 @@ function App() {
                           setMessageText(e.target.value)
                           e.target.style.height = 'auto'
                           e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+                          sendTypingIndicator()
                         }}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                         onPaste={handlePaste}
@@ -8116,7 +8198,7 @@ function App() {
                 Повторити
               </button>
             )}
-            {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
+            {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && messages.find(m => m.id === ctxMenu.messageId)?.source !== 'whatsapp' && (
               <button className="ctx-menu-item" onClick={ctxMenuEdit}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Редагувати
@@ -8134,7 +8216,7 @@ function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
               Додати аналіз
             </button>
-            {selectedAccount && (
+            {selectedAccount && messages.find(m => m.id === ctxMenu.messageId)?.source !== 'whatsapp' && (
               <button className="ctx-menu-item" onClick={ctxMenuPin}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>
                 {messages.find(m => m.id === ctxMenu.messageId)?.is_pinned ? 'Відкріпити' : 'Закріпити'}
@@ -8143,7 +8225,14 @@ function App() {
             {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
               <button className="ctx-menu-item ctx-menu-item-danger" onClick={() => {
                 const msg = messages.find(m => m.id === ctxMenu.messageId)
-                if (msg) setDeleteConfirm({ msgId: msg.id, tgMsgId: msg.tg_message_id!, peerId: msg.tg_peer_id! })
+                if (msg) {
+                  setDeleteConfirm({
+                    msgId: msg.id,
+                    source: (msg.source || 'telegram') as 'telegram' | 'whatsapp',
+                    tgMsgId: msg.tg_message_id,
+                    peerId: msg.tg_peer_id,
+                  })
+                }
                 setCtxMenu(null)
               }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -8402,7 +8491,7 @@ function App() {
             <h3 className="delete-confirm-title">Видалити повідомлення?</h3>
             <p className="delete-confirm-text">Повідомлення буде видалено у співрозмовника, але залишиться у вас з позначкою.</p>
             <div className="delete-confirm-actions">
-              <button className="delete-confirm-btn delete-btn-revoke" onClick={() => deleteMessage(deleteConfirm.tgMsgId, deleteConfirm.peerId)}>
+              <button className="delete-confirm-btn delete-btn-revoke" onClick={() => deleteMessage(deleteConfirm)}>
                 Видалити у співрозмовника
               </button>
               <button className="delete-confirm-btn delete-btn-cancel" onClick={() => setDeleteConfirm(null)}>
