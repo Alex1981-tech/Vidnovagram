@@ -50,6 +50,7 @@ import { useGmailNotifications } from './hooks/useGmailNotifications'
 import { useAuthController } from './hooks/useAuthController'
 import { useVoipController } from './hooks/useVoipController'
 import { VoipOverlays } from './components/VoipOverlays'
+import { ToastsContainer } from './components/ToastsContainer'
 import { PhoneIcon, MicIcon } from './components/icons'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
@@ -7406,120 +7407,23 @@ function App() {
         </div>
       )}
 
-      {/* Toast notifications — bottom-right, grouped by sender→account */}
-      {toasts.length > 0 && (() => {
-        // Group toasts by clientId+accountId
-        const groupMap = new Map<string, typeof toasts>()
-        const groupOrder: string[] = []
-        for (const t of toasts) {
-          const gk = `${t.clientId}:${t.accountId}`
-          if (!groupMap.has(gk)) { groupMap.set(gk, []); groupOrder.push(gk) }
-          groupMap.get(gk)!.push(t)
-        }
-        return (
-          <div className="toast-container">
-            {toasts.length > 2 && (
-              <button className="toast-dismiss-all" onClick={dismissAll}>
-                Приховати всі
-              </button>
-            )}
-            {groupOrder.map(gk => {
-              const group = groupMap.get(gk)!
-              const latest = group[group.length - 1]
-              const isExpanded = expandedToastGroup === gk
-              const acctType = accounts.find(a => a.id === latest.accountId)?.type
-              const isGmail = gmailAccounts.some(g => g.id === latest.accountId)
-              const toastTypeClass = isGmail ? 'toast-gmail' : acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'
-              const avatarUrl = photoMap[latest.clientId]
-              const stackCount = group.length
-
-              const renderToast = (t: typeof latest, idx: number, isStack = false) => (
-                <div
-                  key={t.id}
-                  className={`toast-item ${toastTypeClass}${isStack ? ' toast-stack' : ''}`}
-                  style={isStack ? { '--stack-i': idx } as React.CSSProperties : undefined}
-                  onClick={() => {
-                    if (!isExpanded && stackCount > 1) {
-                      setExpandedToastGroup(gk)
-                    } else if (isGmail) {
-                      // Gmail toast click → open Gmail account and select email
-                      if (selectedGmail === t.accountId) {
-                        // Already on this account — just find the email
-                        const email = gmailEmails.find(e => e.id === t.clientId)
-                        if (email) setGmailSelectedMsg(email)
-                        else { pendingGmailMsgRef.current = t.clientId; loadGmailEmails(t.accountId, 1, '', '') }
-                      } else {
-                        pendingGmailMsgRef.current = t.clientId
-                        handleGmailAccountClick(t.accountId)
-                      }
-                      dismissToast(t.id)
-                      setExpandedToastGroup(null)
-                    } else {
-                      openToastChat(t.clientId, t.accountId, t.sender)
-                      dismissToast(t.id)
-                      setExpandedToastGroup(null)
-                    }
-                  }}
-                >
-                  <div className="toast-avatar">
-                    {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{(t.sender || '?')[0].toUpperCase()}</span>}
-                  </div>
-                  <div className="toast-content">
-                    <div className="toast-header">
-                      <span className="toast-sender">{t.sender}</span>
-                      {t.account && <><span className="toast-arrow">→</span><span className="toast-account">{t.account}</span></>}
-                      <span className="toast-time">{new Date(t.time).toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div className="toast-body">
-                      {t.hasMedia && !t.text && <span className="toast-media">
-                        {t.mediaType === 'photo' ? '🖼 Фото' : t.mediaType === 'video' ? '🎬 Відео' : t.mediaType === 'voice' ? '🎤 Голосове' : t.mediaType === 'sticker' ? '🏷 Стікер' : t.mediaType === 'document' ? '📄 Документ' : '📎 Медіа'}
-                      </span>}
-                      {t.hasMedia && t.text && <span className="toast-media-icon">
-                        {t.mediaType === 'photo' ? '🖼' : t.mediaType === 'video' ? '🎬' : t.mediaType === 'voice' ? '🎤' : '📎'}
-                        {' '}
-                      </span>}
-                      {t.text && <span className="toast-text">{t.text.slice(0, 120)}</span>}
-                    </div>
-                  </div>
-                  <button
-                    className="toast-close"
-                    onClick={e => {
-                      e.stopPropagation()
-                      // Close top = close entire group
-                      group.forEach(x => dismissToast(x.id))
-                      if (expandedToastGroup === gk) setExpandedToastGroup(null)
-                    }}
-                  >×</button>
-                  {!isStack && stackCount > 1 && !isExpanded && (
-                    <span className="toast-badge">{stackCount}</span>
-                  )}
-                </div>
-              )
-
-              if (stackCount === 1) {
-                return <div key={gk}>{renderToast(latest, 0)}</div>
-              }
-
-              if (isExpanded) {
-                return (
-                  <div key={gk} className="toast-group expanded">
-                    {group.map((t, i) => renderToast(t, i))}
-                  </div>
-                )
-              }
-
-              // Collapsed stack: show latest on top with shadow cards behind
-              return (
-                <div key={gk} className="toast-group collapsed">
-                  {group.slice(-3).reverse().map((t, i) =>
-                    i === 0 ? renderToast(t, 0) : renderToast(t, i, true)
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )
-      })()}
+      <ToastsContainer
+        toasts={toasts}
+        expandedToastGroup={expandedToastGroup}
+        setExpandedToastGroup={setExpandedToastGroup}
+        dismissAll={dismissAll}
+        dismissToast={dismissToast}
+        accounts={accounts}
+        gmailAccounts={gmailAccounts}
+        photoMap={photoMap}
+        selectedGmail={selectedGmail}
+        gmailEmails={gmailEmails}
+        pendingGmailMsgRef={pendingGmailMsgRef}
+        setGmailSelectedMsg={setGmailSelectedMsg}
+        loadGmailEmails={loadGmailEmails}
+        handleGmailAccountClick={handleGmailAccountClick}
+        openToastChat={openToastChat}
+      />
       {/* Background upload indicators */}
       {bgUploads.length > 0 && (
         <div className="bg-upload-container">

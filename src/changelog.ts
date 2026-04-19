@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.38': [
+    'Внутрішнє: винесено `<ToastsContainer/>` — згрупований toast-стек з expand/collapse і роутінгом кліків (TG/WA → чат, Gmail → лист). App.tsx 7560 → 7464',
+  ],
   '0.17.37': [
     'Внутрішнє: старт Етапу 10 (panels). Винесено `<VoipOverlays/>` — 3 VoIP-оверлеї (вхідний дзвінок, активна розмова, мінімізований pill) в один компонент. App.tsx 7670 → 7560',
   ],
