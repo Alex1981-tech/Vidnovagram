@@ -56,6 +56,8 @@ import { useAuthController } from './hooks/useAuthController'
 import { useVoipController, formatCallDuration } from './hooks/useVoipController'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
+import { useWaSettings } from './hooks/useWaSettings'
+import { useNotificationSound } from './hooks/useNotificationSound'
 import type {
   Account,
   Contact,
@@ -231,14 +233,7 @@ function App() {
   const [soundDropdownOpen, setSoundDropdownOpen] = useState<string | null>(null) // account ID
 
   // WhatsApp settings
-  interface WaAccount { id: string; label: string; phone: string; status: string; wa_name: string; error_message: string }
-  const [waSettingsAccounts, setWaSettingsAccounts] = useState<WaAccount[]>([])
-  const [waQrAccountId, setWaQrAccountId] = useState<string | null>(null)
-  const [waQrImage, setWaQrImage] = useState<string | null>(null)
-  const [waQrStatus, setWaQrStatus] = useState<string>('')
-  const [waCreating, setWaCreating] = useState(false)
-  const [waNewLabel, setWaNewLabel] = useState('')
-  const waQrPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // WhatsApp settings lives in useWaSettings() (declared later — this placeholder keeps state map readable).
 
   // Accounts
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -385,10 +380,7 @@ function App() {
   const [mediaLoading, setMediaLoading] = useState<Record<string, boolean>>({})
   const mediaLoadingRef = useRef<Set<string>>(new Set())
 
-  // Sound
-  const [soundEnabled, setSoundEnabled] = useState(() => {
-    try { return localStorage.getItem('messenger-sound') !== 'false' } catch { return true }
-  })
+  // soundEnabled + playNotifSound + isPopupEnabled all live in useNotificationSound()
 
   // Unread tracking
   const [updates, setUpdates] = useState<Record<string, { last_date: string; last_received: string }>>({})
@@ -403,7 +395,7 @@ function App() {
   const [accountUnreads, setAccountUnreads] = useState<Record<string, number>>({})
 
   // wsRef, wsLastActivityRef live in useMessengerWebSocket()
-  const notifAudioRef = useRef<HTMLAudioElement | null>(null)
+  // notifAudioRef moved into useNotificationSound()
 
   // VoIP state
   const voip = useVoipController({
@@ -664,19 +656,13 @@ function App() {
     }
   }, [])
 
-  // Sound toggle persist
-  useEffect(() => {
-    localStorage.setItem('messenger-sound', String(soundEnabled))
-  }, [soundEnabled])
-
-  // Initialize notification sound — rebuild when default sound changes
-  useEffect(() => {
-    const defaultSoundId = appSettings.accounts['__global']?.soundId || 'default'
-    const soundSrc = SOUND_OPTIONS.find(s => s.id === defaultSoundId)?.src || '/notification.mp3'
-    const audio = new Audio(soundSrc)
-    audio.volume = 0.5
-    notifAudioRef.current = audio
-  }, [appSettings.accounts['__global']?.soundId])
+  // Sound lifecycle + per-account settings live in useNotificationSound()
+  const {
+    soundEnabled,
+    setSoundEnabled,
+    playNotifSound,
+    isPopupEnabled,
+  } = useNotificationSound(appSettings)
 
   // Persist appSettings
   useEffect(() => { saveSettings(appSettings) }, [appSettings])
@@ -736,100 +722,27 @@ function App() {
     } catch (e) { console.error('Accounts:', e) }
   }, [auth?.token])
 
-  // ----- WhatsApp settings helpers -----
-  const loadWaSettings = useCallback(async () => {
-    if (!auth?.token) return
-    try {
-      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token)
-      if (resp.ok) {
-        const data = await resp.json()
-        const list = Array.isArray(data) ? data : data.results || []
-        setWaSettingsAccounts(list)
-      }
-    } catch (e) { console.error('WA settings load:', e) }
-  }, [auth?.token])
-
-  const waCreateAccount = useCallback(async () => {
-    if (!auth?.token || !waNewLabel.trim()) return
-    setWaCreating(true)
-    try {
-      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: waNewLabel.trim() }),
-      })
-      if (resp.ok) {
-        setWaNewLabel('')
-        await loadWaSettings()
-      }
-    } catch (e) { console.error('WA create:', e) }
-    finally { setWaCreating(false) }
-  }, [auth?.token, waNewLabel, loadWaSettings])
-
-  const waDeleteAccount = useCallback(async (id: string) => {
-    if (!auth?.token) return
-    try {
-      await authFetch(`${API_BASE}/whatsapp/accounts/${id}/`, auth.token, { method: 'DELETE' })
-      await loadWaSettings()
-      await loadAccounts()
-    } catch (e) { console.error('WA delete:', e) }
-  }, [auth?.token, loadWaSettings, loadAccounts])
-
-  const waStartQr = useCallback(async (accountId: string) => {
-    if (!auth?.token) return
-    setWaQrAccountId(accountId)
-    setWaQrImage(null)
-    setWaQrStatus('starting')
-    try {
-      const resp = await authFetch(`${API_BASE}/whatsapp/accounts/${accountId}/qr/`, auth.token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start' }),
-      })
-      if (resp.ok) {
-        const data = await resp.json()
-        setWaQrStatus(data.status || 'pending')
-        if (data.qr_image) setWaQrImage(data.qr_image)
-      }
-    } catch (e) { console.error('WA QR start:', e) }
-
-    // Poll for QR updates
-    if (waQrPollRef.current) clearInterval(waQrPollRef.current)
-    waQrPollRef.current = setInterval(async () => {
-      try {
-        const resp = await authFetch(`${API_BASE}/whatsapp/accounts/${accountId}/qr/`, auth!.token, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'check' }),
-        })
-        if (resp.ok) {
-          const data = await resp.json()
-          setWaQrStatus(data.status || 'pending')
-          if (data.qr_image) setWaQrImage(data.qr_image)
-          if (data.status === 'connected') {
-            if (waQrPollRef.current) clearInterval(waQrPollRef.current)
-            waQrPollRef.current = null
-            setWaQrAccountId(null)
-            await loadWaSettings()
-            await loadAccounts()
-          }
-        }
-      } catch { /* ignore poll errors */ }
-    }, 3000)
-  }, [auth?.token, loadWaSettings, loadAccounts])
-
-  const waStopQr = useCallback(() => {
-    if (waQrPollRef.current) { clearInterval(waQrPollRef.current); waQrPollRef.current = null }
-    setWaQrAccountId(null)
-    setWaQrImage(null)
-    setWaQrStatus('')
-  }, [])
-
-  // Cleanup QR polling on unmount
-  useEffect(() => () => { if (waQrPollRef.current) clearInterval(waQrPollRef.current) }, [])
-
-  // Load WA settings when tab opens
-  useEffect(() => { if (showSettingsModal && settingsTab === 'whatsapp') loadWaSettings() }, [showSettingsModal, settingsTab, loadWaSettings])
+  const waSettings = useWaSettings({
+    token: auth?.token,
+    onAccountsChanged: loadAccounts,
+  })
+  const {
+    accounts: waSettingsAccounts,
+    qrAccountId: waQrAccountId,
+    qrImage: waQrImage,
+    qrStatus: waQrStatus,
+    creating: waCreating,
+    newLabel: waNewLabel,
+    setNewLabel: setWaNewLabel,
+    load: loadWaSettings,
+    create: waCreateAccount,
+    remove: waDeleteAccount,
+    startQr: waStartQr,
+    stopQr: waStopQr,
+  } = waSettings
+  useEffect(() => {
+    if (showSettingsModal && settingsTab === 'whatsapp') loadWaSettings()
+  }, [showSettingsModal, settingsTab, loadWaSettings])
 
   // Load contacts (cache-first: show from IndexedDB, then refresh from server)
   const loadContacts = useCallback(async () => {
@@ -3084,36 +2997,7 @@ function App() {
     }
   }, [])
 
-  // Helper: check if notifications/sound enabled for account
-  const getAccountSettings = useCallback((accountId: string): AccountSettings => {
-    return appSettingsRef.current.accounts[accountId] || DEFAULT_ACCOUNT_SETTINGS
-  }, [])
-
-  // Play notification sound respecting per-account settings
-  const playNotifSound = useCallback((accountId?: string) => {
-    if (!soundEnabledRef.current) return
-    if (accountId) {
-      const acctSettings = getAccountSettings(accountId)
-      if (!acctSettings.soundEnabled) return
-      // Use per-account sound if set
-      if (acctSettings.soundId && acctSettings.soundId !== 'default') {
-        const src = SOUND_OPTIONS.find(s => s.id === acctSettings.soundId)?.src
-        if (src) {
-          const a = new Audio(src)
-          a.volume = 0.5
-          a.play().catch(() => {})
-          return
-        }
-      }
-    }
-    try { notifAudioRef.current?.play().catch(() => {}) } catch {}
-  }, [getAccountSettings])
-
-  // Check if popup notifications enabled for account
-  const isPopupEnabled = useCallback((accountId?: string): boolean => {
-    if (!accountId) return true
-    return getAccountSettings(accountId).popupEnabled
-  }, [getAccountSettings])
+  // getAccountSettings / playNotifSound / isPopupEnabled now come from useNotificationSound()
 
   // Chat search — find matching message IDs
   useEffect(() => {
