@@ -1,12 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { tempDir, join } from '@tauri-apps/api/path'
-import { showNotification } from './utils/notifications'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
-import type { VoIPCall } from './voip'
 import './App.css'
 import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
 import { formatContactDate, formatDateSeparator } from './utils/dateFormat'
@@ -14,12 +12,10 @@ import {
   isPlaceholderPhone,
   isPlaceholderName,
   resolveContactDisplay,
-  getMediaPreviewLabel,
 } from './utils/contactDisplay'
 import { formatPresence } from './utils/presence'
 import {
   API_BASE,
-  WS_BASE,
   SOUND_OPTIONS,
 } from './constants'
 import {
@@ -59,12 +55,12 @@ import { useGmailNotifications } from './hooks/useGmailNotifications'
 import { useAuthController } from './hooks/useAuthController'
 import { useVoipController, formatCallDuration } from './hooks/useVoipController'
 import { useToasts } from './hooks/useToasts'
+import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import type {
   Account,
   Contact,
   ChatMessage,
   AlbumGroup,
-  WsReactionEvent,
   GlobalSearchResult,
   ClientNote,
   TemplateCategory,
@@ -107,34 +103,6 @@ async function oggToWav(blob: Blob): Promise<Blob> {
   return new Blob([wavBuf], { type: 'audio/wav' })
 }
 
-function resolveWsContactDisplay(message?: {
-  client_name?: string
-  phone?: string
-  tg_name?: string
-  tg_username?: string
-}, contact?: Contact) {
-  return resolveContactDisplay({
-    full_name: message?.client_name || contact?.full_name,
-    phone: message?.phone || contact?.phone,
-    tg_name: message?.tg_name || contact?.tg_name,
-    tg_username: message?.tg_username || contact?.tg_username,
-    linked_phones: contact?.linked_phones,
-  })
-}
-
-function buildReactionTargetPreview(event: WsReactionEvent, sender: string, localMsg?: ChatMessage) {
-  const targetDirection = event.target_message_direction || localMsg?.direction || ''
-  const targetText = (event.target_message_text || localMsg?.text || '').trim()
-  const targetHasMedia = !!event.target_message_has_media || !!localMsg?.has_media
-  const targetMediaType = event.target_message_media_type || localMsg?.media_type || ''
-  const targetLabel = targetDirection === 'sent' ? 'ваше повідомлення' : `повідомлення ${sender}`
-  const preview = targetText
-    ? targetText.slice(0, 100)
-    : targetHasMedia
-      ? getMediaPreviewLabel(targetMediaType)
-      : 'повідомлення'
-  return { targetLabel, preview }
-}
 
 // ===== SVG Icons =====
 
@@ -434,7 +402,7 @@ function App() {
   // Per-account unread counts (from WS events)
   const [accountUnreads, setAccountUnreads] = useState<Record<string, number>>({})
 
-  const wsRef = useRef<WebSocket | null>(null)
+  // wsRef, wsLastActivityRef live in useMessengerWebSocket()
   const notifAudioRef = useRef<HTMLAudioElement | null>(null)
 
   // VoIP state
@@ -3178,284 +3146,30 @@ function App() {
 
   // addToastRef updated below after addToast is defined
 
-  // Tracks the last time any WS frame arrived; fallback polling is suppressed
-  // while WS looks alive to avoid redundant /messages/ + /updates/ traffic.
-  const wsLastActivityRef = useRef<number>(0)
+  // Messenger WebSocket ownership lives entirely in useMessengerWebSocket().
+  const { wsRef, wsLastActivityRef } = useMessengerWebSocket({
+    token: auth?.token,
+    authorized: !!auth?.authorized,
+    selectedClientRef,
+    contactsRef,
+    messagesRef,
+    wsDedupRef: wsDedup,
+    typingClearTimersRef,
+    loadContactsRef,
+    setMessages,
+    setTypingIndicators,
+    setPeerPresence,
+    setNewChatClient,
+    setAccountUnreads,
+    scheduleMessagesRefresh,
+    scheduleContactsRefresh,
+    addToast,
+    isPopupEnabled,
+    playNotifSound,
+    voipApplyWsEvent,
+    accounts,
+  })
 
-  // WebSocket — stable connection, only depends on auth.token
-  useEffect(() => {
-    if (!auth?.authorized || !auth.token) return
-    const url = `${WS_BASE}/messenger/?token=${auth.token}`
-    let ws: WebSocket
-    let reconnectTimer: ReturnType<typeof setTimeout>
-    let alive = true
-
-    function connect() {
-      if (!alive) return
-      ws = new WebSocket(url)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        console.log('[WS] connected')
-        wsLastActivityRef.current = Date.now()
-        // Subscribe to all allowed accounts (on-demand subscription model)
-        ws.send(JSON.stringify({ type: 'subscribe_all' }))
-      }
-
-      ws.onmessage = (event) => {
-        wsLastActivityRef.current = Date.now()
-        try {
-          const data: WsReactionEvent = JSON.parse(event.data)
-
-          if (data.type === 'new_message') {
-            const msg = data.message || {}
-            const clientId = data.client_id
-            const accountId = data.account_id
-            const isMediaUpdate = !!msg._media_update
-            const selectedClientId = selectedClientRef.current
-            const selectedContact = selectedClientId
-              ? contactsRef.current.find(c => c.client_id === selectedClientId)
-              : undefined
-            const selectedLinkedIds = new Set((selectedContact?.linked_phones || []).map(lp => lp.id))
-            const isCurrentChat = !!clientId && (
-              clientId === selectedClientId ||
-              selectedLinkedIds.has(clientId)
-            )
-
-            // Dedup: same group message arrives via multiple accounts — notify only once
-            const dedupKey = msg.tg_message_id && msg.tg_peer_id ? `msg:${msg.tg_message_id}:${msg.tg_peer_id}` : ''
-            const isDupe = dedupKey && wsDedup.current.has(dedupKey)
-            if (dedupKey && !isDupe) {
-              wsDedup.current.set(dedupKey, Date.now())
-              // Cleanup old entries every 100 inserts
-              if (wsDedup.current.size > 200) {
-                const cutoff = Date.now() - 30_000
-                for (const [k, t] of wsDedup.current) { if (t < cutoff) wsDedup.current.delete(k) }
-              }
-            }
-
-            if (isCurrentChat) {
-              // Coalesce bursts of chat events into one message reload.
-              scheduleMessagesRefresh(selectedClientId || clientId, !isMediaUpdate)
-            }
-
-            // Notification for received messages only (not our own sent, not media updates, not dupes)
-            if (msg.direction === 'received' && !isMediaUpdate && !isDupe) {
-              if (!isCurrentChat) {
-                const matchedContact = clientId ? contactsRef.current.find(c => c.client_id === clientId) : undefined
-                const senderDisplay = resolveWsContactDisplay(msg, matchedContact)
-                const sender = senderDisplay.name || 'Новий контакт'
-                const account = msg.account_label || ''
-                const body = msg.text?.slice(0, 120) || ''
-                // Windows notification (respects per-account popup toggle)
-                if (isPopupEnabled(accountId)) {
-                  showNotification(`${sender} → ${account}`, body || '📎 Медіа')
-                }
-                // In-app toast
-                addToastRef.current(clientId || '', accountId || '', sender, account, body, !!msg.has_media, msg.media_type || '')
-
-                // If the contact is not in the sidebar yet, keep enough local data
-                // so toast click can still open the chat immediately.
-                if (clientId && !matchedContact) {
-                  setNewChatClient(prev =>
-                    prev?.client_id === clientId
-                      ? prev
-                      : {
-                          client_id: clientId,
-                          phone: senderDisplay.subtitle || msg.phone || '',
-                          full_name: sender,
-                        }
-                  )
-                }
-
-                // Track per-account unread
-                if (accountId) {
-                  setAccountUnreads(prev => ({ ...prev, [accountId]: (prev[accountId] || 0) + 1 }))
-                }
-              }
-              // Play notification sound (respects per-account sound toggle)
-              if (!isCurrentChat) {
-                playNotifSound(accountId)
-              }
-            }
-
-            // Coalesce bursts of WS events into one sidebar refresh instead of
-            // reloading contacts for every single message.
-            scheduleContactsRefresh()
-          }
-
-          if (data.type === 'contact_update') {
-            scheduleContactsRefresh()
-          }
-
-          // --- New TG event types ---
-          if (data.type === 'edit_message') {
-            // Update message text in-place (+ poll/todo options if present)
-            setMessages(prev => prev.map(m => {
-              if (m.tg_message_id !== data.tg_message_id) return m
-              const upd: Partial<ChatMessage> = { text: data.new_text, is_edited: true, edited_at: data.edit_date, original_text: data.original_text || m.text }
-              if (data.poll_options) upd.poll_options = data.poll_options
-              if (data.poll_question) upd.poll_question = data.poll_question
-              return { ...m, ...upd }
-            }))
-          }
-
-          if (data.type === 'delete_message') {
-            // Mark as deleted visually (never remove from array)
-            const isWhatsappDelete = data.source === 'whatsapp'
-            const waMessageId = String(data.message_id || '')
-            const rawWaMessageId = waMessageId.startsWith('wa_') ? waMessageId.slice(3) : waMessageId
-            setMessages(prev => prev.map(m =>
-              (
-                isWhatsappDelete
-                  ? (String(m.id) === waMessageId || String(m.id) === rawWaMessageId || `wa_${String(m.id)}` === waMessageId)
-                  : m.tg_message_id === data.tg_message_id
-              )
-                ? { ...m, is_deleted: true, deleted_at: data.deleted_at, deleted_by_peer_name: data.deleted_by || '' }
-                : m
-            ))
-          }
-
-          if (data.type === 'reaction_update' || data.type === 'messenger_reaction_update') {
-            const isWhatsappReaction = data.source === 'whatsapp'
-            const waMessageId = String(data.message_id || '')
-            const rawWaMessageId = waMessageId.startsWith('wa_') ? waMessageId.slice(3) : waMessageId
-            const matchesReactionTarget = (m: ChatMessage) => {
-              if (isWhatsappReaction) {
-                return (
-                  String(m.id) === waMessageId ||
-                  String(m.id) === rawWaMessageId ||
-                  `wa_${String(m.id)}` === waMessageId
-                )
-              }
-              return m.tg_message_id === data.tg_message_id
-            }
-            setMessages(prev => prev.map(m =>
-              matchesReactionTarget(m)
-                ? { ...m, reactions: data.reactions || [] }
-                : m
-            ))
-            // Dedup: same reaction arrives via multiple accounts in shared groups
-            const reactDedupKey = !isWhatsappReaction && data.tg_message_id && data.tg_peer_id ? `react:${data.tg_message_id}:${data.tg_peer_id}` : ''
-            const isReactDupe = reactDedupKey && wsDedup.current.has(reactDedupKey)
-            if (reactDedupKey && !isReactDupe) {
-              wsDedup.current.set(reactDedupKey, Date.now())
-            }
-            // Notify only about peer reactions, not our own local reaction updates.
-            if (data.actor === 'peer' && data.client_id && !isReactDupe) {
-              const clientId = data.client_id
-              const isCurrentChat = clientId === selectedClientRef.current
-              if (!isCurrentChat) {
-                const peerReactions = (data.reactions || []).filter(r => !r.chosen)
-                const emoji = peerReactions.length > 0
-                  ? peerReactions.map(r => r.emoji).join(' ')
-                  : data.reactions?.[0]?.emoji || '👍'
-                const contact = contactsRef.current.find(c => c.client_id === clientId)
-                const senderDisplay = resolveContactDisplay(contact || {
-                  full_name: data.client_name,
-                  phone: data.phone,
-                })
-                const sender = senderDisplay.name || 'Клієнт'
-                const reactedMsg = messagesRef.current.find(matchesReactionTarget)
-                const { targetLabel, preview } = buildReactionTargetPreview(data, sender, reactedMsg)
-
-                const acctLabel = data.account_label || accounts.find(a => a.id === data.account_id)?.label || ''
-                if (isPopupEnabled(data.account_id)) {
-                  showNotification(`${sender} → ${acctLabel} відреагував(ла) ${emoji}`, `На ${targetLabel}: ${preview}`)
-                }
-                addToastRef.current(
-                  clientId,
-                  data.account_id || '',
-                  sender,
-                  acctLabel,
-                  `Відреагував(ла) ${emoji} · На ${targetLabel}: ${preview}`,
-                  false,
-                  ''
-                )
-                playNotifSound(data.account_id)
-              }
-            }
-          }
-
-          if (data.type === 'read_outbox') {
-            // Peer read our sent messages up to max_id — update is_read
-            const maxId = data.max_id
-            if (maxId) {
-              setMessages(prev => prev.map(m =>
-                m.direction === 'sent' && m.tg_message_id && m.tg_message_id <= maxId && !m.is_read
-                  ? { ...m, is_read: true }
-                  : m
-              ))
-            }
-          }
-
-          if (data.type === 'tg_typing' || data.type === 'typing') {
-            const clientId = data.client_id
-            if (clientId) {
-              setTypingIndicators(prev => ({ ...prev, [clientId]: Date.now() }))
-              if (typingClearTimersRef.current[clientId]) {
-                clearTimeout(typingClearTimersRef.current[clientId])
-              }
-              // Auto-clear after 6 seconds
-              typingClearTimersRef.current[clientId] = setTimeout(() => {
-                setTypingIndicators(prev => {
-                  if (prev[clientId] && Date.now() - prev[clientId] > 5500) {
-                    const next = { ...prev }
-                    delete next[clientId]
-                    return next
-                  }
-                  return prev
-                })
-                delete typingClearTimersRef.current[clientId]
-              }, 6000)
-            }
-          }
-
-          if (data.type === 'presence_update') {
-            const peerId = data.tg_peer_id
-            if (peerId) {
-              setPeerPresence(prev => ({
-                ...prev,
-                [peerId]: { status: data.status || 'unknown', was_online: data.was_online || null },
-              }))
-            }
-          }
-
-          // --- VoIP events ---
-          if (data.type === 'voip_incoming' || data.type === 'voip_state_change' || data.type === 'voip_ended') {
-            voipApplyWsEvent(data as { type: string; call?: VoIPCall; account_label?: string })
-          }
-        } catch { /* ignore */ }
-      }
-
-      ws.onerror = (e) => { console.log('[WS] error', e) }
-      ws.onclose = (e) => {
-        console.log('[WS] closed', e.code, e.reason)
-        wsRef.current = null
-        if (alive) reconnectTimer = setTimeout(connect, 3000)
-      }
-    }
-    connect()
-
-    // Polling fallback — runs every 10s but skips when WS has been active in
-    // the last 30s. If WS is healthy it already pushes new_message/updates
-    // events, so re-polling is pure waste.
-    const pollTimer = setInterval(() => {
-      const wsAlive = Date.now() - wsLastActivityRef.current < 30000
-      if (wsAlive) return
-      if (selectedClientRef.current) {
-        scheduleMessagesRefresh(selectedClientRef.current, false, 0)
-      }
-      loadContactsRef.current()
-    }, 10000)
-
-    return () => {
-      alive = false
-      clearTimeout(reconnectTimer)
-      clearInterval(pollTimer)
-      ws?.close(1000)
-    }
-  }, [auth?.authorized, auth?.token, scheduleMessagesRefresh])
 
   useGmailNotifications({
     authorized: !!auth?.authorized,

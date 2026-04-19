@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.31': [
+    'Внутрішнє: винесено WebSocket-шар месенджера в окремий hook `useMessengerWebSocket` (~280 рядків). App.tsx 8279 → 7993 (вперше < 8000). Поведінка повідомлень/реакцій/typing/presence/VoIP не змінюється',
+  ],
   '0.17.30': [
     'Внутрішнє: ще 3 controller hooks — `useAuthController` (login/logout + localStorage), `useVoipController` (весь VoIP lifecycle: state + AudioEngine + WS events), `useToasts` (toast-стек). App.tsx 8488 → 8279',
   ],
