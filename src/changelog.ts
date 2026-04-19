@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.34': [
+    'Внутрішнє: винесено `useContacts` — loadContacts + loadMoreContacts + cache-first + avatars/presence side-effects. photoMap читається через ref щоб не триґерити повторні загрузки при кожному аватарі. App.tsx 7877 → 7762',
+  ],
   '0.17.33': [
     'КРИТИЧНО: виправлено re-render loop через нестабільні callback-props (onLogout, onError, addToast) — спричиняв лавину запитів до /telegram/contacts/, /photos-map/, /presence/ і 429 Too Many Requests',
   ],

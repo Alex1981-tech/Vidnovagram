@@ -31,9 +31,7 @@ import { extractFirstUrl } from './utils/urlExtract'
 import { useTheme } from './utils/theme'
 import {
   THUMB_STORE,
-  AVATAR_STORE,
   MSG_STORE,
-  CONTACTS_STORE,
   getCached,
   putCache,
   getJsonCache,
@@ -58,6 +56,7 @@ import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
 import { useNotificationSound } from './hooks/useNotificationSound'
+import { useContacts } from './hooks/useContacts'
 import type {
   Account,
   Contact,
@@ -241,8 +240,7 @@ function App() {
   const [selectedAccount, setSelectedAccount] = useState<string>('')
   const hasMessengerAccounts = accounts.length > 0
 
-  // Contacts
-  const [contacts, setContacts] = useState<Contact[]>([])
+  // Contacts state lives in useContacts() (declared after auth/selectedAccount/photoMap below)
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([])
@@ -250,10 +248,6 @@ function App() {
   const globalSearchTimer = useRef<any>(null)
   const pendingSearchOpenRef = useRef<{ clientId: string; accountId: string } | null>(null)
   const pendingSearchJumpRef = useRef<{ messageDomId: string } | null>(null)
-  const [contactCount, setContactCount] = useState(0)
-  const [contactPage, setContactPage] = useState(1)
-  const [loadingMoreContacts, setLoadingMoreContacts] = useState(false)
-  const [hasMoreContacts, setHasMoreContacts] = useState(false)
 
   // Messages
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -505,6 +499,27 @@ function App() {
   const scrollPositionsRef = useRef<Map<string, number>>(new Map())
   // Presence: { tg_peer_id: { status, was_online } }
   const [peerPresence, setPeerPresence] = useState<Record<number, { status: string; was_online: number | null }>>({})
+
+  // Contacts list + loader — co-located here because `contacts` is read by
+  // the refs useEffect just below.
+  const contactsCtrl = useContacts({
+    token: auth?.token,
+    account: selectedAccount,
+    search,
+    onUnauthorized: logout,
+    photoMap,
+    setPhotoMap,
+    setPeerPresence,
+  })
+  const {
+    contacts,
+    setContacts,
+    contactCount,
+    loadingMore: loadingMoreContacts,
+    loadContacts,
+    loadMoreContacts,
+  } = contactsCtrl
+
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
   // Drafts: save text per client when switching chats (persisted to localStorage)
@@ -747,143 +762,6 @@ function App() {
   useEffect(() => {
     if (showSettingsModal && settingsTab === 'whatsapp') loadWaSettings()
   }, [showSettingsModal, settingsTab, loadWaSettings])
-
-  // Load contacts (cache-first: show from IndexedDB, then refresh from server)
-  const loadContacts = useCallback(async () => {
-    if (!auth?.token) return
-    const cacheKey = `${selectedAccount || 'all'}_${search || ''}`
-
-    // Phase 0: instant load from cache (only for no-search default view)
-    if (!search) {
-      const cached = await getJsonCache<{ contacts: Contact[]; count: number }>(CONTACTS_STORE, cacheKey)
-      if (cached) {
-        setContacts(cached.contacts)
-        setContactCount(cached.count)
-      }
-    }
-
-    try {
-      const params = new URLSearchParams({ per_page: '50' })
-      if (search) params.set('search', search)
-      if (selectedAccount) params.set('account', selectedAccount)
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
-      if (resp.status === 401) { logout(); return }
-      if (resp.ok) {
-        const data = await resp.json()
-        const list = data.results || []
-        setContacts(list)
-        setContactCount(data.count || 0)
-        setContactPage(1)
-        setHasMoreContacts(list.length >= (data.per_page || 50) && list.length < (data.count || 0))
-
-        if (search) {
-          telemetry.trackSearch(search.length, data.count || 0)
-        }
-
-        // Save to cache (only default view without search)
-        if (!search) {
-          putJsonCache(CONTACTS_STORE, cacheKey, { contacts: list, count: data.count || 0 })
-        }
-
-        // Load avatar photos: IndexedDB cache first, then server
-        const ids = list.map((c: Contact) => c.client_id).join(',')
-        if (ids) {
-          // Phase 1: load from local cache instantly
-          for (const c of list) {
-            if (photoMap[c.client_id]) continue
-            getCached(AVATAR_STORE, c.client_id).then(url => {
-              if (url) setPhotoMap(prev => prev[c.client_id] ? prev : { ...prev, [c.client_id]: url })
-            })
-          }
-          // Phase 2: fetch from server, update cache
-          try {
-            const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
-            if (pr.ok) {
-              const pm: Record<string, string> = await pr.json()
-              for (const [cid, path] of Object.entries(pm)) {
-                if (photoMap[cid]) continue
-                authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
-                  .then(r => r.ok ? r.blob() : null)
-                  .then(blob => {
-                    if (blob) {
-                      putCache(AVATAR_STORE, cid, blob)
-                      setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) }))
-                    }
-                  })
-                  .catch(() => {})
-              }
-            }
-          } catch { /* ignore */ }
-        }
-
-        // Fetch presence for all contacts with tg_peer_id
-        const peerIds = list.filter((c: Contact) => c.tg_peer_id).map((c: Contact) => c.tg_peer_id)
-        if (peerIds.length > 0 && selectedAccount) {
-          try {
-            const presResp = await authFetch(`${API_BASE}/telegram/presence/?account_id=${selectedAccount}&peer_ids=${peerIds.join(',')}`, auth.token)
-            if (presResp.ok) {
-              const presData = await presResp.json()
-              if (Array.isArray(presData) && presData.length > 0) {
-                setPeerPresence(prev => {
-                  const next = { ...prev }
-                  for (const p of presData) {
-                    next[p.tg_peer_id] = {
-                      status: p.status || 'unknown',
-                      was_online: p.last_seen_at ? Math.floor(new Date(p.last_seen_at).getTime() / 1000) : null,
-                    }
-                  }
-                  return next
-                })
-              }
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch (e) { console.error('Contacts:', e) }
-  }, [auth?.token, search, selectedAccount, logout])
-
-  // Load more contacts (infinite scroll)
-  const loadMoreContacts = useCallback(async () => {
-    if (!auth?.token || loadingMoreContacts || !hasMoreContacts) return
-    const nextPage = contactPage + 1
-    setLoadingMoreContacts(true)
-    try {
-      const params = new URLSearchParams({ per_page: '50', page: String(nextPage) })
-      if (search) params.set('search', search)
-      if (selectedAccount) params.set('account', selectedAccount)
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, auth.token)
-      if (resp.ok) {
-        const data = await resp.json()
-        const list = data.results || []
-        setContacts(prev => [...prev, ...list])
-        setContactPage(nextPage)
-        setHasMoreContacts(list.length >= (data.per_page || 50))
-
-        // Load avatars for new contacts
-        const ids = list.map((c: Contact) => c.client_id).join(',')
-        if (ids) {
-          try {
-            const pr = await authFetch(`${API_BASE}/telegram/photos-map/?ids=${ids}`, auth.token)
-            if (pr.ok) {
-              const pm: Record<string, string> = await pr.json()
-              for (const [cid, path] of Object.entries(pm)) {
-                if (photoMap[cid]) continue
-                authFetch(`${API_BASE.replace('/api', '')}${path}`, auth.token)
-                  .then(r => r.ok ? r.blob() : null)
-                  .then(blob => {
-                    if (blob) {
-                      putCache(AVATAR_STORE, cid, blob)
-                      setPhotoMap(prev => ({ ...prev, [cid]: URL.createObjectURL(blob) }))
-                    }
-                  })
-              }
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch (e) { console.error('Load more contacts:', e) }
-    finally { setLoadingMoreContacts(false) }
-  }, [auth?.token, loadingMoreContacts, hasMoreContacts, contactPage, search, selectedAccount, photoMap])
 
   // Load messages (cache-first: show from IndexedDB, then refresh from server)
   const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
