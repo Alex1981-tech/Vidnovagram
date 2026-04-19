@@ -51,6 +51,8 @@ import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon } f
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
+import { AddToAccountModal } from './components/AddToAccountModal'
+import { AddContactModal } from './components/AddContactModal'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -6067,55 +6069,17 @@ function App() {
       )}
 
       {/* Add to Account Modal */}
-      {addToAcctModal && (
-        <div className="modal-overlay" onClick={() => setAddToAcctModal(null)}>
-          <div className="add-acct-modal" onClick={e => e.stopPropagation()}>
-            <div className="lab-send-header">
-              <h3>Додати в акаунт</h3>
-              <button className="modal-close-btn" onClick={() => setAddToAcctModal(null)}>×</button>
-            </div>
-            <div className="lab-send-patient">
-              <div className="lab-patient-avatar"><span>{(addToAcctModal.name || addToAcctModal.phone || '?')[0].toUpperCase()}</span></div>
-              <div className="lab-send-patient-info">
-                <span className="lab-send-patient-name">{addToAcctModal.name || 'Невідомий'}</span>
-                <span className="lab-send-patient-phone">{addToAcctModal.phone}</span>
-              </div>
-            </div>
-            <div className="add-acct-check">
-              {addToAcctChecking ? (
-                <div className="add-acct-checking"><div className="spinner-sm" /> Перевірка месенджерів...</div>
-              ) : addToAcctResult ? (
-                <div className="add-acct-status">
-                  <span className={`add-acct-badge${addToAcctResult.telegram ? ' found' : ''}`}>
-                    <TelegramIcon size={14} color={addToAcctResult.telegram ? '#2AABEE' : 'var(--muted-foreground)'} />
-                    {addToAcctResult.telegram ? 'Є в Telegram' : 'Немає в TG'}
-                  </span>
-                  <span className={`add-acct-badge${addToAcctResult.whatsapp ? ' found' : ''}`}>
-                    <WhatsAppIcon size={14} color={addToAcctResult.whatsapp ? '#25D366' : 'var(--muted-foreground)'} />
-                    {addToAcctResult.whatsapp ? 'Є в WhatsApp' : 'Немає в WA'}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-            <div className="add-acct-list">
-              <div className="rp-cd-section-title">Оберіть акаунт:</div>
-              {accounts.map(a => (
-                <label key={a.id} className={`add-acct-item${addToAcctSelected === a.id ? ' selected' : ''}`}>
-                  <input type="radio" name="acct" checked={addToAcctSelected === a.id} onChange={() => setAddToAcctSelected(a.id)} />
-                  {a.type === 'whatsapp' ? <WhatsAppIcon size={14} color="#25D366" /> : <TelegramIcon size={14} color="#2AABEE" />}
-                  <span>{a.label || a.phone}</span>
-                </label>
-              ))}
-            </div>
-            <div className="lab-send-footer">
-              <button className="lab-send-cancel" onClick={() => setAddToAcctModal(null)}>Скасувати</button>
-              <button className="lab-send-submit" disabled={!addToAcctSelected || addToAcctAdding} onClick={addContactToAccount}>
-                {addToAcctAdding ? 'Додавання...' : 'Додати і відкрити чат'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddToAccountModal
+        state={addToAcctModal}
+        checking={addToAcctChecking}
+        result={addToAcctResult}
+        selected={addToAcctSelected}
+        setSelected={setAddToAcctSelected}
+        adding={addToAcctAdding}
+        onClose={() => setAddToAcctModal(null)}
+        onAdd={addContactToAccount}
+        accounts={accounts}
+      />
 
       {/* Confirm Delete Template/Category */}
       {confirmDelete && (
@@ -6470,103 +6434,30 @@ function App() {
       )}
 
       {/* New Chat / Add Contact Modal */}
-      {showAddContact && (
-        <div className="modal-overlay" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null) }}>
-          <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 380 }}>
-            <h3>Новий чат</h3>
-            <select
-              className="forward-modal-search"
-              value={addContactAccount || selectedAccount}
-              onChange={e => setAddContactAccount(e.target.value)}
-              style={{ marginBottom: 8 }}
-            >
-              <option value="">-- Оберіть акаунт --</option>
-              {accounts.filter(a => a.status === 'active' || a.status === 'connected').map(a => (
-                <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
-              ))}
-            </select>
-            <div style={{ position: 'relative' }}>
-              <input
-                className="forward-modal-search"
-                placeholder="Пошук за ім'ям або телефоном..."
-                value={addContactName}
-                onChange={e => {
-                  setAddContactName(e.target.value)
-                  searchAddContactSuggestions(e.target.value)
-                }}
-                onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
-                autoFocus
-              />
-              <div style={{ position: 'relative' }}>
-                <input
-                  className="forward-modal-search"
-                  placeholder="Номер телефону"
-                  value={addContactPhone}
-                  onChange={e => {
-                    setAddContactPhone(e.target.value)
-                    setAddContactAvail(null)
-                    checkPhoneAvail(e.target.value)
-                    if (e.target.value.length >= 2) searchAddContactSuggestions(e.target.value)
-                  }}
-                  onFocus={() => addContactSuggestions.length > 0 && setAddContactShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setAddContactShowSuggestions(false), 200)}
-                  style={{ marginTop: 8, paddingRight: 60 }}
-                />
-                {addContactAvail && (
-                  <div className="phone-avail-badges">
-                    {addContactAvail.telegram && <span className="avail-badge tg" title="Telegram">TG</span>}
-                    {addContactAvail.whatsapp && <span className="avail-badge wa" title="WhatsApp">WA</span>}
-                    {!addContactAvail.telegram && !addContactAvail.whatsapp && <span className="avail-badge none" title="Не знайдено">—</span>}
-                  </div>
-                )}
-              </div>
-              {addContactShowSuggestions && addContactSuggestions.length > 0 && (
-                <div className="add-contact-suggestions">
-                  {addContactSuggestions.map(s => (
-                    <div key={s.client_id} className="add-contact-suggestion-item"
-                      onMouseDown={() => {
-                        setAddContactName(s.full_name)
-                        setAddContactPhone(s.phone)
-                        setAddContactShowSuggestions(false)
-                        setAddContactSuggestions([])
-                        checkPhoneAvail(s.phone)
-                      }}
-                    >
-                      <span className="suggestion-name">{s.full_name || '—'}</span>
-                      <span className="suggestion-phone">{s.phone}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            {addContactResult && (
-              <div className={`add-contact-result ${addContactResult.includes('Помилка') ? 'warn' : 'ok'}`}>
-                {addContactResult}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                className="tpl-btn-primary"
-                onClick={startNewChat}
-                disabled={addContactLoading || !addContactPhone.trim() || !(addContactAccount || selectedAccount)}
-              >
-                {addContactLoading ? 'Зачекайте...' : 'Написати'}
-              </button>
-              <button
-                className="tpl-btn-secondary"
-                onClick={addContact}
-                disabled={addContactLoading || !addContactPhone.trim() || !(addContactAccount || selectedAccount)}
-              >
-                Додати в акаунт
-              </button>
-              <button className="tpl-btn-secondary" onClick={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null) }}>
-                Скасувати
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddContactModal
+        open={showAddContact}
+        onClose={() => { setShowAddContact(false); setAddContactResult(''); setAddContactSuggestions([]); setAddContactShowSuggestions(false); setAddContactAvail(null) }}
+        accounts={accounts}
+        selectedAccount={selectedAccount}
+        addContactAccount={addContactAccount}
+        setAddContactAccount={setAddContactAccount}
+        addContactName={addContactName}
+        setAddContactName={setAddContactName}
+        addContactPhone={addContactPhone}
+        setAddContactPhone={setAddContactPhone}
+        addContactLoading={addContactLoading}
+        addContactResult={addContactResult}
+        addContactAvail={addContactAvail}
+        setAddContactAvail={setAddContactAvail}
+        addContactSuggestions={addContactSuggestions}
+        setAddContactSuggestions={setAddContactSuggestions}
+        addContactShowSuggestions={addContactShowSuggestions}
+        setAddContactShowSuggestions={setAddContactShowSuggestions}
+        searchAddContactSuggestions={searchAddContactSuggestions}
+        checkPhoneAvail={checkPhoneAvail}
+        startNewChat={startNewChat}
+        addContact={addContact}
+      />
 
       {/* Add Category Modal */}
       {showCatModal && (
