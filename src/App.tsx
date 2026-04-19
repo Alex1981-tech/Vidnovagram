@@ -90,6 +90,11 @@ interface Wallpaper {
 
 // Changelog — shown after update
 const CHANGELOG: Record<string, string[]> = {
+  '0.17.24': [
+    'VoIP: голосовий плеєр та мікрофон переведено на AudioWorklet (стабільніший звук, менше затримок)',
+    'Менше мережевого навантаження: fallback-polling вимикається коли WebSocket активний (економить ~60 запитів/хв)',
+    'Прибрано подвійний запит оновлень при кожному новому повідомленні — WS-івент вже містить дані',
+  ],
   '0.17.23': [
     'Виправлено "поламані картинки" в альбомах — Canon RAW (CR2/ARW/NEF) та інші дублі документів приховуються коли в альбомі вже є photo-версія',
   ],
@@ -4347,11 +4352,15 @@ function App() {
     return () => clearTimeout(searchTimerRef.current)
   }, [search, selectedAccount, auth?.authorized, loadContacts])
 
-  // Poll updates every 15s
+  // Poll updates every 30s, but only when WS is stale (>30s without activity).
+  // Initial call runs once so startup state is populated before WS connects.
   useEffect(() => {
     if (!auth?.authorized) return
     loadUpdates()
-    const iv = setInterval(loadUpdates, 15000)
+    const iv = setInterval(() => {
+      const wsStale = Date.now() - wsLastActivityRef.current >= 30000
+      if (wsStale) loadUpdates()
+    }, 30000)
     return () => clearInterval(iv)
   }, [auth?.authorized, loadUpdates])
 
@@ -4430,6 +4439,10 @@ function App() {
 
   // addToastRef updated below after addToast is defined
 
+  // Tracks the last time any WS frame arrived; fallback polling is suppressed
+  // while WS looks alive to avoid redundant /messages/ + /updates/ traffic.
+  const wsLastActivityRef = useRef<number>(0)
+
   // WebSocket — stable connection, only depends on auth.token
   useEffect(() => {
     if (!auth?.authorized || !auth.token) return
@@ -4445,11 +4458,13 @@ function App() {
 
       ws.onopen = () => {
         console.log('[WS] connected')
+        wsLastActivityRef.current = Date.now()
         // Subscribe to all allowed accounts (on-demand subscription model)
         ws.send(JSON.stringify({ type: 'subscribe_all' }))
       }
 
       ws.onmessage = (event) => {
+        wsLastActivityRef.current = Date.now()
         try {
           const data: WsReactionEvent = JSON.parse(event.data)
 
@@ -4525,8 +4540,9 @@ function App() {
               }
             }
 
+            // WS already carries the new_message event; only refresh contacts
+            // (for unread badges/last-message preview). Updates feed is redundant.
             loadContactsRef.current()
-            loadUpdatesRef.current()
           }
 
           if (data.type === 'contact_update') {
@@ -4699,8 +4715,12 @@ function App() {
     }
     connect()
 
-    // Polling fallback: refresh current chat every 10s in case WS missed events
+    // Polling fallback — runs every 10s but skips when WS has been active in
+    // the last 30s. If WS is healthy it already pushes new_message/updates
+    // events, so re-polling is pure waste.
     const pollTimer = setInterval(() => {
+      const wsAlive = Date.now() - wsLastActivityRef.current < 30000
+      if (wsAlive) return
       if (selectedClientRef.current) {
         loadMessagesRef.current(selectedClientRef.current, false)
       }

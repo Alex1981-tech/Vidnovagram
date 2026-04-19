@@ -9,12 +9,8 @@ const API_BASE = 'https://cc.vidnova.app'
 const VOIP_WS_BASE = 'wss://cc.vidnova.app/ws/voip-audio/'
 const AUDIO_SAMPLE_RATE = 48_000
 const AUDIO_CHANNELS = 1
-const PLAYBACK_BUFFER_SIZE = 4096
-const CAPTURE_BUFFER_SIZE = 4096
 const AUDIO_FRAME_MAGIC = 0x56444e41
 const AUDIO_FRAME_HEADER_BYTES = 16
-const INITIAL_JITTER_PACKETS = 3
-const MAX_JITTER_PACKETS = 24
 const RECONNECT_DELAYS_MS = [750, 1500, 3000, 5000]
 
 export interface VoIPCall {
@@ -46,12 +42,6 @@ interface AudioEngineStartOptions {
 }
 
 interface DecodedAudioFrame {
-  pcm: Float32Array
-  seq: number
-  timestampMs: number
-}
-
-interface PlaybackPacket {
   pcm: Float32Array
   seq: number
   timestampMs: number
@@ -115,22 +105,20 @@ export class AudioEngine {
   private audioContext: AudioContext | null = null
   private mediaStream: MediaStream | null = null
   private mediaSourceNode: MediaStreamAudioSourceNode | null = null
-  private captureNode: ScriptProcessorNode | null = null
-  private playbackNode: ScriptProcessorNode | null = null
+  private captureNode: AudioWorkletNode | null = null
+  private playbackNode: AudioWorkletNode | null = null
   private ws: WebSocket | null = null
   private muted = false
   private stopped = true
   private currentCallId: string | number | null = null
-  private readonly playbackQueue: PlaybackPacket[] = []
-  private playbackOffset = 0
-  private playbackReady = false
-  private sendSeq = 1
   private receiveSeq = 0
+  private sendSeq = 1
   private captureStartedAtMs = 0
   private reconnectAttempt = 0
   private reconnectTimer: number | null = null
   private currentToken = ''
   private currentMpCallId = ''
+  private workletLoaded = false
   private readonly onStateChange?: (state: AudioEngineState, error?: string) => void
 
   constructor(onStateChange?: (state: AudioEngineState, error?: string) => void) {
@@ -157,9 +145,6 @@ export class AudioEngine {
     this.currentCallId = callId
     this.currentToken = token
     this.currentMpCallId = mpCallId || ''
-    this.playbackQueue.length = 0
-    this.playbackOffset = 0
-    this.playbackReady = false
     this.sendSeq = 1
     this.receiveSeq = 0
     this.captureStartedAtMs = 0
@@ -188,14 +173,29 @@ export class AudioEngine {
         await this.audioContext.resume()
       }
 
-      this.mediaSourceNode = this.audioContext.createMediaStreamSource(stream)
-      this.captureNode = this.audioContext.createScriptProcessor(CAPTURE_BUFFER_SIZE, AUDIO_CHANNELS, AUDIO_CHANNELS)
-      this.playbackNode = this.audioContext.createScriptProcessor(PLAYBACK_BUFFER_SIZE, AUDIO_CHANNELS, AUDIO_CHANNELS)
+      if (!this.workletLoaded) {
+        await this.audioContext.audioWorklet.addModule('/voip-capture-worklet.js')
+        await this.audioContext.audioWorklet.addModule('/voip-playback-worklet.js')
+        this.workletLoaded = true
+      }
 
-      this.captureNode.onaudioprocess = event => {
+      this.mediaSourceNode = this.audioContext.createMediaStreamSource(stream)
+      this.captureNode = new AudioWorkletNode(this.audioContext, 'voip-capture', {
+        numberOfInputs: 1,
+        numberOfOutputs: 0,
+        channelCount: AUDIO_CHANNELS,
+      })
+      this.playbackNode = new AudioWorkletNode(this.audioContext, 'voip-playback', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [AUDIO_CHANNELS],
+      })
+
+      this.captureNode.port.onmessage = (event) => {
         if (this.stopped || this.muted) return
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-        const channel = event.inputBuffer.getChannelData(0)
+        const channel = event.data as Float32Array
+        if (!channel || channel.length === 0) return
         if (!this.captureStartedAtMs) this.captureStartedAtMs = performance.now()
         const timestampMs = Math.round(performance.now() - this.captureStartedAtMs)
         const frame = encodeAudioFrame(channel, this.sendSeq, timestampMs)
@@ -205,32 +205,7 @@ export class AudioEngine {
         }
       }
 
-      this.playbackNode.onaudioprocess = event => {
-        const output = event.outputBuffer.getChannelData(0)
-        output.fill(0)
-
-        if (!this.playbackReady) {
-          if (this.playbackQueue.length < INITIAL_JITTER_PACKETS) return
-          this.playbackReady = true
-        }
-
-        let writeOffset = 0
-        while (writeOffset < output.length && this.playbackQueue.length > 0) {
-          const chunk = this.playbackQueue[0]
-          const remaining = chunk.pcm.length - this.playbackOffset
-          const toCopy = Math.min(remaining, output.length - writeOffset)
-          output.set(chunk.pcm.subarray(this.playbackOffset, this.playbackOffset + toCopy), writeOffset)
-          writeOffset += toCopy
-          this.playbackOffset += toCopy
-          if (this.playbackOffset >= chunk.pcm.length) {
-            this.playbackQueue.shift()
-            this.playbackOffset = 0
-          }
-        }
-      }
-
       this.mediaSourceNode.connect(this.captureNode)
-      this.captureNode.connect(this.audioContext.destination)
       this.playbackNode.connect(this.audioContext.destination)
       this.openWebSocket()
     } catch (error: any) {
@@ -254,9 +229,6 @@ export class AudioEngine {
     this.currentCallId = null
     this.currentToken = ''
     this.currentMpCallId = ''
-    this.playbackQueue.length = 0
-    this.playbackOffset = 0
-    this.playbackReady = false
     this.sendSeq = 1
     this.receiveSeq = 0
     this.captureStartedAtMs = 0
@@ -274,13 +246,14 @@ export class AudioEngine {
     }
 
     if (this.captureNode) {
-      this.captureNode.onaudioprocess = null
+      try { this.captureNode.port.close() } catch {}
       try { this.captureNode.disconnect() } catch {}
       this.captureNode = null
     }
 
     if (this.playbackNode) {
-      this.playbackNode.onaudioprocess = null
+      try { this.playbackNode.port.postMessage({ type: 'clear' }) } catch {}
+      try { this.playbackNode.port.close() } catch {}
       try { this.playbackNode.disconnect() } catch {}
       this.playbackNode = null
     }
@@ -371,16 +344,14 @@ export class AudioEngine {
   private enqueuePlayback(frame: DecodedAudioFrame): void {
     const seq = frame.seq || (this.receiveSeq + 1)
     this.receiveSeq = Math.max(this.receiveSeq, seq)
-
-    this.playbackQueue.push({
-      pcm: frame.pcm,
-      seq,
-      timestampMs: frame.timestampMs,
-    })
-    this.playbackQueue.sort((a, b) => a.seq - b.seq || a.timestampMs - b.timestampMs)
-
-    if (this.playbackQueue.length > MAX_JITTER_PACKETS) {
-      this.playbackQueue.splice(MAX_JITTER_PACKETS)
+    // Jitter buffering + reorder live inside the playback worklet. We just
+    // hand off Float32 chunks; the worklet handles the rest.
+    if (this.playbackNode) {
+      // Transfer the underlying buffer to avoid a copy.
+      this.playbackNode.port.postMessage(
+        { type: 'push', pcm: frame.pcm },
+        [frame.pcm.buffer],
+      )
     }
   }
 }
