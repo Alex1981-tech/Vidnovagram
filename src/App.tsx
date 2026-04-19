@@ -25,7 +25,6 @@ import {
   loadSettings,
   saveSettings,
 } from './settings'
-import { CHANGELOG } from './changelog'
 import { authFetch } from './utils/authFetch'
 import { extractFirstUrl } from './utils/urlExtract'
 import { useTheme } from './utils/theme'
@@ -51,6 +50,8 @@ import { useAuthController } from './hooks/useAuthController'
 import { useVoipController } from './hooks/useVoipController'
 import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
+import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
+import { WhatsNewModal } from './components/WhatsNewModal'
 import { PhoneIcon, MicIcon } from './components/icons'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
@@ -412,22 +413,6 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Background upload queue — persists across chat switches
-  interface BgUpload {
-    id: string
-    clientId: string
-    accountId: string
-    accountLabel: string
-    status: 'uploading' | 'done' | 'error'
-    fileName: string
-    fileCount: number
-    errorMsg?: string
-    files?: (File | Blob)[]
-    mediaType?: string
-    caption?: string
-    forceDoc?: boolean
-    replyMsgId?: string | number
-    directFile?: boolean
-  }
   const [bgUploads, setBgUploads] = useState<BgUpload[]>([])
   const bgUploadIdRef = useRef(0)
 
@@ -7362,32 +7347,11 @@ function App() {
       )}
 
       {/* What's New modal */}
-      {showWhatsNew && (
-        <div className="modal-overlay" onClick={() => setShowWhatsNew(false)}>
-          <div className="whats-new-modal" onClick={e => e.stopPropagation()}>
-            <div className="whats-new-header">
-              <h2>Vidnovagram v{currentVersion}</h2>
-              <button className="icon-btn" onClick={() => setShowWhatsNew(false)}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-            <div className="whats-new-body">
-              {CHANGELOG[currentVersion] ? (
-                <ul className="whats-new-list">
-                  {CHANGELOG[currentVersion].map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>Оновлено до нової версії.</p>
-              )}
-            </div>
-            <div className="whats-new-footer">
-              <button className="whats-new-btn" onClick={() => setShowWhatsNew(false)}>Зрозуміло</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WhatsNewModal
+        open={showWhatsNew}
+        version={currentVersion}
+        onClose={() => setShowWhatsNew(false)}
+      />
 
       {/* Delete note confirmation modal */}
       {deleteNoteConfirm && (
@@ -7424,36 +7388,11 @@ function App() {
         handleGmailAccountClick={handleGmailAccountClick}
         openToastChat={openToastChat}
       />
-      {/* Background upload indicators */}
-      {bgUploads.length > 0 && (
-        <div className="bg-upload-container">
-          {bgUploads.map(u => (
-            <div key={u.id} className={`bg-upload-item bg-upload-${u.status}`}>
-              <div className="bg-upload-icon">
-                {u.status === 'uploading' && <div className="spinner-sm" />}
-                {u.status === 'done' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-                {u.status === 'error' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>}
-              </div>
-              <div className="bg-upload-info">
-                <span className="bg-upload-name">{u.fileName}</span>
-                <span className="bg-upload-status">
-                  {u.status === 'uploading' && 'Надсилання…'}
-                  {u.status === 'done' && 'Надіслано'}
-                  {u.status === 'error' && (u.errorMsg || 'Помилка')}
-                </span>
-              </div>
-              {u.status === 'error' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button className="ctx-menu-item" style={{ padding: '6px 8px', fontSize: 12 }} onClick={() => retryBgUpload(u.id)}>
-                    Повторити
-                  </button>
-                  <button className="bg-upload-dismiss" onClick={() => setBgUploads(prev => prev.filter(x => x.id !== u.id))}>×</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <BgUploadsContainer
+        uploads={bgUploads}
+        onRetry={retryBgUpload}
+        onDismiss={(id) => setBgUploads(prev => prev.filter(x => x.id !== id))}
+      />
     </div>
   )
 }

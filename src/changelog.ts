@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.39': [
+    'Внутрішнє: ще 2 panels винесено — `<BgUploadsContainer/>` (індикатори фонового завантаження файлів) і `<WhatsNewModal/>` (модалка "Що нового"). App.tsx 7464 → 7403',
+  ],
   '0.17.38': [
     'Внутрішнє: винесено `<ToastsContainer/>` — згрупований toast-стек з expand/collapse і роутінгом кліків (TG/WA → чат, Gmail → лист). App.tsx 7560 → 7464',
   ],
