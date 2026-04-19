@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.40': [
+    'Внутрішнє: винесено `<SettingsModal/>` — вкладки Сповіщення/WhatsApp/Фон чату, звукові превʼю, QR-налаштування WA. App.tsx 7403 → 6978. Бренд-іконки (TelegramIcon/WhatsAppIcon/GmailIcon) переїхали у `components/icons.tsx`',
+  ],
   '0.17.39': [
     'Внутрішнє: ще 2 panels винесено — `<BgUploadsContainer/>` (індикатори фонового завантаження файлів) і `<WhatsNewModal/>` (модалка "Що нового"). App.tsx 7464 → 7403',
   ],
