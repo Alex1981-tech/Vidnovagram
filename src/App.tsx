@@ -48,7 +48,9 @@ import { usePanelResize } from './hooks/usePanelResize'
 import { useWallpapers } from './hooks/useWallpapers'
 import { useGmailNotifications } from './hooks/useGmailNotifications'
 import { useAuthController } from './hooks/useAuthController'
-import { useVoipController, formatCallDuration } from './hooks/useVoipController'
+import { useVoipController } from './hooks/useVoipController'
+import { VoipOverlays } from './components/VoipOverlays'
+import { PhoneIcon, MicIcon } from './components/icons'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -162,11 +164,6 @@ const PaperclipIcon = () => (
     <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
   </svg>
 )
-const MicIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>
-  </svg>
-)
 const VideoIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>
@@ -180,24 +177,6 @@ const ForwardIcon = () => (
 const XIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-  </svg>
-)
-const PhoneIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-  </svg>
-)
-const PhoneOffIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67"/>
-    <path d="M14.118 7.813a2 2 0 0 1-.45 2.11L12.4 11.2"/>
-    <path d="M2.3 2.3a2 2 0 0 1 1.81-1.3h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81"/>
-    <line x1="2" x2="22" y1="2" y2="22"/>
-  </svg>
-)
-const MicOffIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>
   </svg>
 )
 // ===== Main App =====
@@ -389,20 +368,11 @@ function App() {
     token: auth?.token,
     onError: onVoipError,
   })
+  // `voip` is passed whole to <VoipOverlays/>. Only the pieces that are still
+  // needed in App-level logic are destructured here.
   const {
-    incomingCall,
     activeCall,
-    callDuration,
-    callMuted,
-    callMinimized,
-    callAudioState,
-    callAudioError,
     startCall: voipStartCall,
-    answer: voipAnswerCall,
-    hangup: voipHangupCall,
-    decline: voipDeclineCall,
-    toggleMute: voipToggleMute,
-    setMinimized: voipSetMinimized,
     applyWsEvent: voipApplyWsEvent,
   } = voip
   // Link preview cache now lives inside ./components/LinkPreviewCard.tsx
@@ -3321,87 +3291,7 @@ function App() {
 
   return (
     <div className="app">
-      {/* === VoIP Incoming Call Overlay === */}
-      {incomingCall && !activeCall && (
-        <div className="voip-incoming-overlay">
-          <div className="voip-incoming-card">
-            <div className="voip-incoming-icon">📞</div>
-            <div className="voip-incoming-info">
-              <div className="voip-incoming-name">{incomingCall.peer_name || incomingCall.peer_phone || 'Невідомий'}</div>
-              {incomingCall.peer_phone && <div className="voip-incoming-phone">{incomingCall.peer_phone}</div>}
-              <div className="voip-incoming-account">{incomingCall.account_label || ''}</div>
-            </div>
-            <div className="voip-incoming-actions">
-              <button className="voip-btn voip-btn-accept" onClick={voipAnswerCall} title="Прийняти">
-                <PhoneIcon />
-              </button>
-              <button className="voip-btn voip-btn-decline" onClick={voipDeclineCall} title="Відхилити">
-                <PhoneOffIcon />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* === VoIP Active Call Overlay === */}
-      {activeCall && !callMinimized && (
-        <div className="voip-active-overlay">
-          <div className="voip-active-card">
-            <div className="voip-active-status">
-              {activeCall.state === 'media_live'
-                ? 'Аудіо підключено'
-                : activeCall.state === 'media_connecting'
-                  ? 'Підключення аудіо...'
-                  : activeCall.state === 'media_failed'
-                    ? 'Помилка аудіо'
-                : activeCall.state === 'connected'
-                ? callAudioState === 'streaming'
-                  ? 'Розмова'
-                  : callAudioState === 'connecting'
-                    ? 'Підключення аудіо...'
-                    : callAudioState === 'error'
-                      ? 'Помилка аудіо'
-                      : 'Розмова'
-                : activeCall.state === 'ringing'
-                  ? 'Дзвонить...'
-                  : activeCall.state === 'connecting'
-                    ? "З'єднання..."
-                    : activeCall.state}
-            </div>
-            <div className="voip-active-name">{activeCall.peer_name || activeCall.peer_phone || 'Абонент'}</div>
-            {activeCall.peer_phone && <div className="voip-active-phone">{activeCall.peer_phone}</div>}
-            {(callAudioError || activeCall.media_error) && <div className="voip-active-phone">{callAudioError || activeCall.media_error}</div>}
-            <div className="voip-active-timer">{formatCallDuration(callDuration)}</div>
-            <div className="voip-active-actions">
-              <button
-                className={`voip-btn voip-btn-mute ${callMuted ? 'voip-btn-muted' : ''}`}
-                onClick={voipToggleMute}
-                title={callMuted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
-              >
-                {callMuted ? <MicOffIcon /> : <MicIcon />}
-              </button>
-              <button className="voip-btn voip-btn-hangup" onClick={voipHangupCall} title="Завершити">
-                <PhoneOffIcon />
-              </button>
-              <button className="voip-btn voip-btn-minimize" onClick={() => voipSetMinimized(true)} title="Мінімізувати">
-                ▼
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* === VoIP Minimized Call Pill === */}
-      {activeCall && callMinimized && (
-        <div className="voip-pill" onClick={() => voipSetMinimized(false)}>
-          <span className="voip-pill-dot" />
-          <span className="voip-pill-name">{activeCall.peer_name || activeCall.peer_phone || 'Дзвінок'}</span>
-          <span className="voip-pill-timer">{formatCallDuration(callDuration)}</span>
-          <button className="voip-pill-hangup" onClick={e => { e.stopPropagation(); voipHangupCall() }}>
-            <PhoneOffIcon />
-          </button>
-        </div>
-      )}
+      <VoipOverlays voip={voip} />
 
       {/* Compact Top Bar */}
       <div className="top-bar">

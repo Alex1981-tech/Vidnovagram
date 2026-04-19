@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.37': [
+    'Внутрішнє: старт Етапу 10 (panels). Винесено `<VoipOverlays/>` — 3 VoIP-оверлеї (вхідний дзвінок, активна розмова, мінімізований pill) в один компонент. App.tsx 7670 → 7560',
+  ],
   '0.17.36': [
     'Збірка: lottie-web (~307 KB) та pako (~47 KB) тепер lazy-chunks, завантажуються тільки коли треба анімований стікер',
     'Збірка: прибрано попередження про dynamic/static конфлікт `@tauri-apps/api/app` — getVersion тепер dynamic',
