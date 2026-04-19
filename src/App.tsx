@@ -6,7 +6,7 @@ import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
-import { AudioEngine, voipCall, voipAnswer, voipHangup, type AudioEngineState, type VoIPCall } from './voip'
+import type { VoIPCall } from './voip'
 import './App.css'
 import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
 import { formatContactDate, formatDateSeparator } from './utils/dateFormat'
@@ -20,7 +20,6 @@ import { formatPresence } from './utils/presence'
 import {
   API_BASE,
   WS_BASE,
-  AUTH_KEY,
   SOUND_OPTIONS,
 } from './constants'
 import {
@@ -57,8 +56,10 @@ import { useTauriUpdater } from './hooks/useTauriUpdater'
 import { usePanelResize } from './hooks/usePanelResize'
 import { useWallpapers } from './hooks/useWallpapers'
 import { useGmailNotifications } from './hooks/useGmailNotifications'
+import { useAuthController } from './hooks/useAuthController'
+import { useVoipController, formatCallDuration } from './hooks/useVoipController'
+import { useToasts } from './hooks/useToasts'
 import type {
-  AuthState,
   Account,
   Contact,
   ChatMessage,
@@ -236,15 +237,14 @@ const MicOffIcon = () => (
 
 function App() {
   const { theme, setTheme } = useTheme()
-  const [auth, setAuth] = useState<AuthState | null>(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY)
-      if (saved) return JSON.parse(saved)
-    } catch { /* ignore */ }
-    return null
+  const { auth, authLoading, authError, login, logout } = useAuthController({
+    onLogout: () => {
+      setContacts([])
+      setMessages([])
+      setSelectedClient(null)
+      setAccounts([])
+    },
   })
-  const [authLoading, setAuthLoading] = useState(false)
-  const [authError, setAuthError] = useState('')
   const {
     currentVersion,
     showWhatsNew,
@@ -426,11 +426,10 @@ function App() {
   const [updates, setUpdates] = useState<Record<string, { last_date: string; last_received: string }>>({})
 
   // In-app toast notifications
-  const [toasts, setToasts] = useState<{ id: number; clientId: string; accountId: string; sender: string; account: string; text: string; hasMedia: boolean; mediaType: string; time: number }[]>([])
-  const toastIdRef = useRef(0)
+  const { toasts, expandedToastGroup, setExpandedToastGroup, addToast, dismissToast, dismissAll } = useToasts()
   // Dedup group messages/reactions: same tg_message_id+tg_peer_id arrives once per account
   const wsDedup = useRef(new Map<string, number>())
-  const [expandedToastGroup, setExpandedToastGroup] = useState<string | null>(null)
+  // expandedToastGroup lives in useToasts()
 
   // Per-account unread counts (from WS events)
   const [accountUnreads, setAccountUnreads] = useState<Record<string, number>>({})
@@ -439,16 +438,26 @@ function App() {
   const notifAudioRef = useRef<HTMLAudioElement | null>(null)
 
   // VoIP state
-  const [incomingCall, setIncomingCall] = useState<(VoIPCall & { account_label?: string }) | null>(null)
-  const [activeCall, setActiveCall] = useState<VoIPCall | null>(null)
-  const [callDuration, setCallDuration] = useState(0)
-  const [callMuted, setCallMuted] = useState(false)
-  const [callMinimized, setCallMinimized] = useState(false)
-  const [callAudioState, setCallAudioState] = useState<AudioEngineState>('idle')
-  const [callAudioError, setCallAudioError] = useState('')
-  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const ringtoneRef = useRef<HTMLAudioElement | null>(null)
-  const audioEngineRef = useRef<AudioEngine | null>(null)
+  const voip = useVoipController({
+    token: auth?.token,
+    onError: (msg) => addToastRef.current('', '', '', '', msg, false, ''),
+  })
+  const {
+    incomingCall,
+    activeCall,
+    callDuration,
+    callMuted,
+    callMinimized,
+    callAudioState,
+    callAudioError,
+    startCall: voipStartCall,
+    answer: voipAnswerCall,
+    hangup: voipHangupCall,
+    decline: voipDeclineCall,
+    toggleMute: voipToggleMute,
+    setMinimized: voipSetMinimized,
+    applyWsEvent: voipApplyWsEvent,
+  } = voip
   // Link preview cache now lives inside ./components/LinkPreviewCard.tsx
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
@@ -606,14 +615,7 @@ function App() {
   // Panel drag-resize lives in usePanelResize()
   const { sidebarWidth, rightPanelWidth, startResize } = usePanelResize()
 
-  // Persist auth
-  useEffect(() => {
-    if (auth?.authorized) {
-      localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
-    } else {
-      localStorage.removeItem(AUTH_KEY)
-    }
-  }, [auth])
+  // auth persistence lives in useAuthController()
 
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
   useEffect(() => { contactsRef.current = contacts }, [contacts])
@@ -719,41 +721,7 @@ function App() {
 
   // Tauri updater lifecycle lives in useTauriUpdater() above.
 
-  const logout = useCallback(() => {
-    setAuth(null)
-    localStorage.removeItem(AUTH_KEY)
-    setContacts([])
-    setMessages([])
-    setSelectedClient(null)
-    setAccounts([])
-  }, [])
-
-  const login = useCallback(async (username: string, password: string) => {
-    setAuthLoading(true)
-    setAuthError('')
-    try {
-      const resp = await fetch(`${API_BASE}/vidnovagram/login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      })
-      const data = await resp.json()
-      if (data.status === 'ok' && data.token) {
-        setAuth({
-          authorized: true,
-          name: data.name || username,
-          token: data.token,
-          isAdmin: data.is_admin || false,
-        })
-      } else {
-        setAuthError(data.error || 'Невірний логін або пароль')
-      }
-    } catch {
-      setAuthError("Помилка з'єднання з сервером")
-    } finally {
-      setAuthLoading(false)
-    }
-  }, [])
+  // login/logout live in useAuthController() above
 
   // Load accounts (TG + WA + Gmail)
   const loadAccounts = useCallback(async () => {
@@ -3454,49 +3422,8 @@ function App() {
           }
 
           // --- VoIP events ---
-          if (data.type === 'voip_incoming') {
-            const call = data.call as VoIPCall
-            setIncomingCall({ ...call, account_label: data.account_label || '' })
-            // Play ringtone
-            try {
-              if (!ringtoneRef.current) {
-                ringtoneRef.current = new Audio('/sounds/ringtone.mp3')
-                ringtoneRef.current.loop = true
-              }
-              ringtoneRef.current.play().catch(() => {})
-            } catch {}
-            // Auto-dismiss after 30s
-            setTimeout(() => {
-              setIncomingCall(prev => prev?.id === call.id ? null : prev)
-              ringtoneRef.current?.pause()
-            }, 30000)
-          }
-
-          if (data.type === 'voip_state_change') {
-            const call = data.call as VoIPCall
-            setActiveCall(prev => prev?.id === call.id ? { ...prev, ...call } : prev)
-            if (call.state === 'connected') {
-              setCallDuration(0)
-              if (callTimerRef.current) clearInterval(callTimerRef.current)
-              callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
-            }
-          }
-
-          if (data.type === 'voip_ended') {
-            audioEngineRef.current?.stop().catch(() => {})
-            audioEngineRef.current = null
-            if (callTimerRef.current) {
-              clearInterval(callTimerRef.current)
-              callTimerRef.current = null
-            }
-            setActiveCall(null)
-            setIncomingCall(null)
-            setCallDuration(0)
-            setCallMuted(false)
-            setCallMinimized(false)
-            setCallAudioState('idle')
-            setCallAudioError('')
-            ringtoneRef.current?.pause()
+          if (data.type === 'voip_incoming' || data.type === 'voip_state_change' || data.type === 'voip_ended') {
+            voipApplyWsEvent(data as { type: string; call?: VoIPCall; account_label?: string })
           }
         } catch { /* ignore */ }
       }
@@ -3557,10 +3484,6 @@ function App() {
   const unreadCount = useMemo(() => contacts.filter(c => isUnread(c)).length, [contacts, isUnread])
 
   // Add in-app toast
-  const addToast = useCallback((clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => {
-    const id = ++toastIdRef.current
-    setToasts(prev => [...prev.slice(-8), { id, clientId, accountId, sender, account, text, hasMedia, mediaType, time: Date.now() }])
-  }, [])
   useEffect(() => { addToastRef.current = addToast }, [addToast])
 
   // Get selected contact info (fallback to newChatClient for contacts without messages)
@@ -3979,10 +3902,6 @@ function App() {
   }, [])
 
   // VoIP handlers
-  const makeVoipAuthFetch = useCallback(() => {
-    return (url: string, opts?: RequestInit) => authFetch(url, auth?.token || '', opts)
-  }, [auth?.token])
-
   const toggleMuteChat = useCallback(async () => {
     const peerId = (chatContact as any)?.tg_peer_id
     if (!peerId || !selectedAccount || !auth?.token || muteLoading) return
@@ -3998,139 +3917,12 @@ function App() {
     setMuteLoading(false)
   }, [chatContact, selectedAccount, auth, chatMuted, muteLoading])
 
-  const handleVoipCall = useCallback(async (accountId: string, peerId: number) => {
-    // Optimistic: show overlay immediately with ringing state
-    const optimistic: VoIPCall = {
-      id: 0,
-      tg_account_id: accountId,
-      direction: 'outgoing',
-      state: 'ringing',
-      tg_peer_id: peerId,
-      peer_phone: (chatContact as any)?.phone || '',
-      peer_name: (chatContact as any)?.full_name || (chatContact as any)?.name || '',
-      mp_call_id: '',
-      started_at: new Date().toISOString(),
-      answered_at: null,
-      ended_at: null,
-      end_reason: '',
-      recording_duration_seconds: null,
-    }
-    setActiveCall(optimistic)
-    try {
-      const af = makeVoipAuthFetch()
-      const call = await voipCall(af, accountId, peerId)
-      setActiveCall(call)
-    } catch (e: any) {
-      console.error('[VoIP] Call failed:', e.message)
-      setActiveCall(null)
-      addToastRef.current('', accountId, '', '', `Дзвінок не вдався: ${e.message || 'невідома помилка'}`, false, '')
-    }
-  }, [makeVoipAuthFetch, chatContact])
-
-  const handleVoipAnswer = useCallback(async () => {
-    if (!incomingCall) return
-    try {
-      ringtoneRef.current?.pause()
-      const af = makeVoipAuthFetch()
-      const call = await voipAnswer(af, incomingCall.id)
-      setActiveCall(call)
-      setIncomingCall(null)
-    } catch (e: any) {
-      console.error('[VoIP] Answer failed:', e.message)
-    }
-  }, [incomingCall, makeVoipAuthFetch])
-
-  const handleVoipHangup = useCallback(async () => {
-    const call = activeCall || incomingCall
-    if (!call) return
-    try {
-      ringtoneRef.current?.pause()
-      const af = makeVoipAuthFetch()
-      await voipHangup(af, call.id)
-    } catch (e: any) {
-      console.error('[VoIP] Hangup failed:', e.message)
-    }
-    audioEngineRef.current?.stop().catch(() => {})
-    audioEngineRef.current = null
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current)
-      callTimerRef.current = null
-    }
-    setActiveCall(null)
-    setIncomingCall(null)
-    setCallDuration(0)
-    setCallMuted(false)
-    setCallMinimized(false)
-    setCallAudioState('idle')
-    setCallAudioError('')
-  }, [activeCall, incomingCall, makeVoipAuthFetch])
-
-  const handleVoipDecline = useCallback(async () => {
-    if (!incomingCall) return
-    try {
-      ringtoneRef.current?.pause()
-      const af = makeVoipAuthFetch()
-      await voipHangup(af, incomingCall.id)
-    } catch (e: any) {
-      console.error('[VoIP] Decline failed:', e.message)
-    }
-    setIncomingCall(null)
-  }, [incomingCall, makeVoipAuthFetch])
-
-  const handleVoipToggleMute = useCallback(() => {
-    setCallMuted(prev => {
-      const next = !prev
-      if (next) audioEngineRef.current?.mute()
-      else audioEngineRef.current?.unmute()
-      return next
-    })
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      audioEngineRef.current?.stop().catch(() => {})
-      audioEngineRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!activeCall || !['connected', 'media_connecting', 'media_live'].includes(activeCall.state) || !auth?.token) return
-    if (audioEngineRef.current?.callId === activeCall.id && audioEngineRef.current.isActive) return
-
-    const engine = new AudioEngine((state, error) => {
-      setCallAudioState(state)
-      setCallAudioError(error || '')
-    })
-    audioEngineRef.current = engine
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        await engine.start({
-          callId: activeCall.id,
-          mpCallId: activeCall.mp_call_id,
-          token: auth.token,
-        })
-        if (cancelled) {
-          await engine.stop()
-          return
-        }
-        if (callMuted) engine.mute()
-      } catch (e: any) {
-        console.error('[VoIP] Audio engine failed:', e?.message || e)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeCall, auth?.token, callMuted])
-
-  const formatCallDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return `${m}:${s.toString().padStart(2, '0')}`
-  }
+  // Adapter: pass chatContact into voipStartCall from single call-site in JSX.
+  const handleVoipCall = useCallback((accountId: string, peerId: number) => {
+    const phone = (chatContact as any)?.phone || ''
+    const name = (chatContact as any)?.full_name || (chatContact as any)?.name || ''
+    return voipStartCall(accountId, peerId, phone, name)
+  }, [voipStartCall, chatContact])
 
   if (!auth?.authorized) {
     return <LoginScreen onLogin={login} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
@@ -4149,10 +3941,10 @@ function App() {
               <div className="voip-incoming-account">{incomingCall.account_label || ''}</div>
             </div>
             <div className="voip-incoming-actions">
-              <button className="voip-btn voip-btn-accept" onClick={handleVoipAnswer} title="Прийняти">
+              <button className="voip-btn voip-btn-accept" onClick={voipAnswerCall} title="Прийняти">
                 <PhoneIcon />
               </button>
-              <button className="voip-btn voip-btn-decline" onClick={handleVoipDecline} title="Відхилити">
+              <button className="voip-btn voip-btn-decline" onClick={voipDeclineCall} title="Відхилити">
                 <PhoneOffIcon />
               </button>
             </div>
@@ -4192,15 +3984,15 @@ function App() {
             <div className="voip-active-actions">
               <button
                 className={`voip-btn voip-btn-mute ${callMuted ? 'voip-btn-muted' : ''}`}
-                onClick={handleVoipToggleMute}
+                onClick={voipToggleMute}
                 title={callMuted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
               >
                 {callMuted ? <MicOffIcon /> : <MicIcon />}
               </button>
-              <button className="voip-btn voip-btn-hangup" onClick={handleVoipHangup} title="Завершити">
+              <button className="voip-btn voip-btn-hangup" onClick={voipHangupCall} title="Завершити">
                 <PhoneOffIcon />
               </button>
-              <button className="voip-btn voip-btn-minimize" onClick={() => setCallMinimized(true)} title="Мінімізувати">
+              <button className="voip-btn voip-btn-minimize" onClick={() => voipSetMinimized(true)} title="Мінімізувати">
                 ▼
               </button>
             </div>
@@ -4210,11 +4002,11 @@ function App() {
 
       {/* === VoIP Minimized Call Pill === */}
       {activeCall && callMinimized && (
-        <div className="voip-pill" onClick={() => setCallMinimized(false)}>
+        <div className="voip-pill" onClick={() => voipSetMinimized(false)}>
           <span className="voip-pill-dot" />
           <span className="voip-pill-name">{activeCall.peer_name || activeCall.peer_phone || 'Дзвінок'}</span>
           <span className="voip-pill-timer">{formatCallDuration(callDuration)}</span>
-          <button className="voip-pill-hangup" onClick={e => { e.stopPropagation(); handleVoipHangup() }}>
+          <button className="voip-pill-hangup" onClick={e => { e.stopPropagation(); voipHangupCall() }}>
             <PhoneOffIcon />
           </button>
         </div>
@@ -8346,7 +8138,7 @@ function App() {
         return (
           <div className="toast-container">
             {toasts.length > 2 && (
-              <button className="toast-dismiss-all" onClick={() => { setToasts([]); setExpandedToastGroup(null) }}>
+              <button className="toast-dismiss-all" onClick={dismissAll}>
                 Приховати всі
               </button>
             )}
@@ -8379,11 +8171,11 @@ function App() {
                         pendingGmailMsgRef.current = t.clientId
                         handleGmailAccountClick(t.accountId)
                       }
-                      setToasts(prev => prev.filter(x => x.id !== t.id))
+                      dismissToast(t.id)
                       setExpandedToastGroup(null)
                     } else {
                       openToastChat(t.clientId, t.accountId, t.sender)
-                      setToasts(prev => prev.filter(x => x.id !== t.id))
+                      dismissToast(t.id)
                       setExpandedToastGroup(null)
                     }
                   }}
@@ -8413,8 +8205,7 @@ function App() {
                     onClick={e => {
                       e.stopPropagation()
                       // Close top = close entire group
-                      const groupIds = group.map(x => x.id)
-                      setToasts(prev => prev.filter(x => !groupIds.includes(x.id)))
+                      group.forEach(x => dismissToast(x.id))
                       if (expandedToastGroup === gk) setExpandedToastGroup(null)
                     }}
                   >×</button>
