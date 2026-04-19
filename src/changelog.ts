@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.28': [
+    'Внутрішнє: перші controller hooks (Етап 9). Винесено `useTauriUpdater` (auto-update lifecycle) та `usePanelResize` (drag ширини панелей) в `src/hooks/`. App.tsx 8672 → 8590',
+  ],
   '0.17.27': [
     'Внутрішнє: велика хвиля розбиття App.tsx (9178 → 8672 рядків, −506). Винесено IndexedDB cache layer, 8 leaf-компонентів (AuthMedia, VoicePlayer, LottieSticker, PollCard, Linkify, LinkPreviewCard, ContactName, ThemeToggle), icons, LoginScreen',
   ],

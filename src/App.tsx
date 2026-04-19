@@ -1,7 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { getVersion } from '@tauri-apps/api/app'
 import { tempDir, join } from '@tauri-apps/api/path'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
@@ -23,7 +21,6 @@ import {
   API_BASE,
   WS_BASE,
   AUTH_KEY,
-  LAST_VERSION_KEY,
   SOUND_OPTIONS,
 } from './constants'
 import {
@@ -56,6 +53,8 @@ import { LinkPreviewCard } from './components/LinkPreviewCard'
 import { ContactName } from './components/ContactName'
 import { ThemeToggle } from './components/ThemeToggle'
 import { LoginScreen } from './screens/LoginScreen'
+import { useTauriUpdater } from './hooks/useTauriUpdater'
+import { usePanelResize } from './hooks/usePanelResize'
 import type {
   AuthState,
   Wallpaper,
@@ -261,10 +260,13 @@ function App() {
   })
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
-  const [updateReady, setUpdateReady] = useState(false)
-  const [updateProgress, setUpdateProgress] = useState('')
-  const [showWhatsNew, setShowWhatsNew] = useState(false)
-  const [currentVersion, setCurrentVersion] = useState('')
+  const {
+    currentVersion,
+    showWhatsNew,
+    setShowWhatsNew,
+    updateReady,
+    updateProgress,
+  } = useTauriUpdater()
   const [railExpanded, setRailExpanded] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [appSettings, setAppSettings] = useState<AppSettings>(loadSettings)
@@ -616,40 +618,8 @@ function App() {
   const composeFileRef = useRef<HTMLInputElement>(null)
   const gmailSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Resizable panels (persist widths in localStorage)
-  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('vg_sidebar_w')) || 320)
-  const [rightPanelWidth, setRightPanelWidth] = useState(() => Number(localStorage.getItem('vg_rpanel_w')) || 300)
-  const resizingRef = useRef<'sidebar' | 'right' | null>(null)
-  const startXRef = useRef(0)
-  const startWidthRef = useRef(0)
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return
-      const dx = e.clientX - startXRef.current
-      if (resizingRef.current === 'sidebar') {
-        setSidebarWidth(Math.max(220, Math.min(500, startWidthRef.current + dx)))
-      } else {
-        setRightPanelWidth(Math.max(200, Math.min(500, startWidthRef.current - dx)))
-      }
-    }
-    const onMouseUp = () => {
-      if (resizingRef.current === 'sidebar') localStorage.setItem('vg_sidebar_w', String(Math.round(document.querySelector('.sidebar')?.getBoundingClientRect().width ?? 320)))
-      if (resizingRef.current === 'right') localStorage.setItem('vg_rpanel_w', String(Math.round(document.querySelector('.right-panel')?.getBoundingClientRect().width ?? 300)))
-      resizingRef.current = null; document.body.style.cursor = ''; document.body.style.userSelect = ''
-    }
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
-    return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp) }
-  }, [])
-
-  const startResize = (panel: 'sidebar' | 'right', e: React.MouseEvent) => {
-    resizingRef.current = panel
-    startXRef.current = e.clientX
-    startWidthRef.current = panel === 'sidebar' ? sidebarWidth : rightPanelWidth
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
+  // Panel drag-resize lives in usePanelResize()
+  const { sidebarWidth, rightPanelWidth, startResize } = usePanelResize()
 
   // Persist auth
   useEffect(() => {
@@ -806,59 +776,7 @@ function App() {
     }
   }, [showSettingsModal])
 
-  // Check for updates on startup + show "What's New" after update
-  useEffect(() => {
-    // Show changelog if version changed
-    (async () => {
-      try {
-        const ver = await getVersion()
-        setCurrentVersion(ver)
-        const lastVer = localStorage.getItem(LAST_VERSION_KEY)
-        if (lastVer && lastVer !== ver) {
-          setShowWhatsNew(true)
-        }
-        localStorage.setItem(LAST_VERSION_KEY, ver)
-      } catch { /* ignore */ }
-    })()
-
-    // Silent background update check
-    const doUpdateCheck = async () => {
-      try {
-        const update = await check()
-        if (update) {
-          console.log('Update available:', update.version)
-          setUpdateProgress('downloading')
-          await update.downloadAndInstall((ev) => {
-            console.log('Update event:', JSON.stringify(ev))
-          })
-          setUpdateProgress('')
-          setUpdateReady(true)
-          // Auto-relaunch after 5 seconds if user is idle (no mouse/key activity in last 60s)
-          let lastActivity = Date.now()
-          const trackActivity = () => { lastActivity = Date.now() }
-          window.addEventListener('mousemove', trackActivity)
-          window.addEventListener('keydown', trackActivity)
-          const tryRelaunch = setInterval(async () => {
-            if (Date.now() - lastActivity > 60_000) {
-              clearInterval(tryRelaunch)
-              window.removeEventListener('mousemove', trackActivity)
-              window.removeEventListener('keydown', trackActivity)
-              await relaunch()
-            }
-          }, 5_000)
-        }
-      } catch (e: any) {
-        console.error('Update failed:', e?.message || e)
-        setUpdateProgress(String(e?.message || 'Помилка оновлення').substring(0, 80))
-        setTimeout(() => setUpdateProgress(''), 10_000)
-      }
-    }
-
-    // Check immediately + every 30 min
-    const delay = setTimeout(doUpdateCheck, 3_000) // 3s delay after startup
-    const interval = setInterval(doUpdateCheck, 30 * 60 * 1000)
-    return () => { clearTimeout(delay); clearInterval(interval) }
-  }, [])
+  // Tauri updater lifecycle lives in useTauriUpdater() above.
 
   const logout = useCallback(() => {
     setAuth(null)
