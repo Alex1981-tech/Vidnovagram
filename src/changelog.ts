@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.33': [
+    'КРИТИЧНО: виправлено re-render loop через нестабільні callback-props (onLogout, onError, addToast) — спричиняв лавину запитів до /telegram/contacts/, /photos-map/, /presence/ і 429 Too Many Requests',
+  ],
   '0.17.32': [
     'Внутрішнє: ще 2 controller hooks — `useWaSettings` (WA settings tab: CRUD акаунтів + QR login polling) і `useNotificationSound` (soundEnabled + playNotifSound + isPopupEnabled + per-account налаштування). App.tsx 7993 → 7877',
   ],

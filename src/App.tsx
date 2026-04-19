@@ -207,13 +207,14 @@ const MicOffIcon = () => (
 
 function App() {
   const { theme, setTheme } = useTheme()
+  const onLogoutReset = useCallback(() => {
+    setContacts([])
+    setMessages([])
+    setSelectedClient(null)
+    setAccounts([])
+  }, [])
   const { auth, authLoading, authError, login, logout } = useAuthController({
-    onLogout: () => {
-      setContacts([])
-      setMessages([])
-      setSelectedClient(null)
-      setAccounts([])
-    },
+    onLogout: onLogoutReset,
   })
   const {
     currentVersion,
@@ -398,9 +399,12 @@ function App() {
   // notifAudioRef moved into useNotificationSound()
 
   // VoIP state
+  const onVoipError = useCallback((msg: string) => {
+    addToastRef.current('', '', '', '', msg, false, '')
+  }, [])
   const voip = useVoipController({
     token: auth?.token,
-    onError: (msg) => addToastRef.current('', '', '', '', msg, false, ''),
+    onError: onVoipError,
   })
   const {
     incomingCall,
@@ -3055,13 +3059,16 @@ function App() {
   })
 
 
+  const addToastViaRef = useCallback<(...args: Parameters<typeof addToast>) => void>((...args) => {
+    addToastRef.current(...args)
+  }, [])
   useGmailNotifications({
     authorized: !!auth?.authorized,
     token: auth?.token,
     gmailAccounts,
     isPopupEnabled,
     playNotifSound,
-    addToast: (...args) => addToastRef.current(...args),
+    addToast: addToastViaRef,
   })
 
   // Compute unread (uses updates for external change detection)
