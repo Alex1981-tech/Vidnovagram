@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.44': [
+    'Внутрішнє: початок розбиття Sidebar. Винесено `<AccountRail/>` (вузька ліва панель з іконками акаунтів, розгортається при hover) і `<ActiveAccountCard/>` (заголовок з активним акаунтом). App.tsx 6791 → 6694',
+  ],
   '0.17.43': [
     'Внутрішнє: винесено `<AddContactModal/>` (Новий чат: пошук+створення) і `<AddToAccountModal/>` (додавання контакту в конкретний акаунт з перевіркою TG/WA). App.tsx 6900 → 6791',
   ],

@@ -53,6 +53,8 @@ import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
 import { AddToAccountModal } from './components/AddToAccountModal'
 import { AddContactModal } from './components/AddContactModal'
+import { AccountRail } from './components/AccountRail'
+import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3267,133 +3269,34 @@ function App() {
       {/* Main content */}
       <div className="main-content">
         {/* Account rail — expands on hover */}
-        <div
-          className={`account-rail ${railExpanded ? 'expanded' : ''}`}
-          onMouseEnter={() => setRailExpanded(true)}
-          onMouseLeave={() => setRailExpanded(false)}
-        >
-          {/* Accounts list */}
-          <div className="rail-accounts">
-            {/* "All" button */}
-            <button
-              className={`rail-item ${!selectedAccount ? 'active' : ''}`}
-              onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
-              title="Усі месенджери"
-            >
-              <span className="rail-item-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                {unreadCount > 0 && <span className="rail-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-              </span>
-              {railExpanded && <span className="rail-item-label">Усі месенджери</span>}
-            </button>
-            {/* Account items */}
-            {accounts.map(acc => (
-              <button
-                key={acc.id}
-                className={`rail-item ${selectedAccount === acc.id ? 'active' : ''}`}
-                onClick={() => handleAccountClick(acc.id)}
-                title={`${acc.label} ${acc.phone}`}
-              >
-                <span className="rail-item-icon">
-                  {acc.type === 'telegram'
-                    ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
-                    : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
-                  }
-                  {accountUnreads[acc.id] > 0 && <span className="rail-badge">{accountUnreads[acc.id] > 99 ? '99+' : accountUnreads[acc.id]}</span>}
-                  <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
-                </span>
-                {railExpanded && (
-                  <span className="rail-item-text">
-                    <span className="rail-item-name">{acc.label}</span>
-                    <span className="rail-item-phone">{acc.phone}</span>
-                  </span>
-                )}
-              </button>
-            ))}
-            {/* Gmail accounts */}
-            {gmailAccounts.length > 0 && <div className="rail-divider" />}
-            {gmailAccounts.map(gm => (
-              <button
-                key={gm.id}
-                className={`rail-item ${selectedGmail === gm.id ? 'active' : ''}`}
-                onClick={() => handleGmailAccountClick(gm.id)}
-                title={`${gm.label} — ${gm.email}`}
-              >
-                <span className="rail-item-icon">
-                  <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
-                  <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
-                </span>
-                {railExpanded && (
-                  <span className="rail-item-text">
-                    <span className="rail-item-name">{gm.label}</span>
-                    <span className="rail-item-phone">{gm.email}</span>
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-          {/* Bottom: settings + version */}
-          <div className="rail-bottom">
-            <button className="rail-item rail-settings-btn" onClick={() => setShowSettingsModal(true)} title="Налаштування">
-              <span className="rail-item-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-              </span>
-              {railExpanded && <span className="rail-item-label">Налаштування</span>}
-            </button>
-            {railExpanded && currentVersion && (
-              <div className="rail-version">
-                <span>v{currentVersion}</span>
-              </div>
-            )}
-          </div>
-        </div>
+        <AccountRail
+          expanded={railExpanded}
+          setExpanded={setRailExpanded}
+          selectedAccount={selectedAccount}
+          setSelectedAccount={setSelectedAccount}
+          setSelectedClient={setSelectedClient}
+          setMessages={setMessages}
+          selectedGmail={selectedGmail}
+          accounts={accounts}
+          gmailAccounts={gmailAccounts}
+          unreadCount={unreadCount}
+          accountUnreads={accountUnreads}
+          onAccountClick={handleAccountClick}
+          onGmailClick={handleGmailAccountClick}
+          onOpenSettings={() => setShowSettingsModal(true)}
+          currentVersion={currentVersion}
+        />
         {/* Sidebar with contacts */}
         <div className="sidebar" style={{ width: sidebarWidth }}>
           <div className="resize-handle" onMouseDown={e => startResize('sidebar', e)} />
-          {/* Active account card */}
-          {(() => {
-            if (selectedGmail) {
-              const gm = gmailAccounts.find(g => g.id === selectedGmail)
-              return (
-                <div className="active-account-card">
-                  <GmailIcon size={16} color="#EA4335" />
-                  <span className="active-account-name">{gm?.label || 'Gmail'}</span>
-                  <span className="active-account-phone">{gm?.email}</span>
-                  <span className={`status-dot ${gm?.status === 'active' ? 'online' : ''}`} />
-                </div>
-              )
-            }
-            const acc = selectedAccount ? accounts.find(a => a.id === selectedAccount) : null
-            return (
-              <div className="active-account-card">
-                {acc ? (
-                  <>
-                    {acc.type === 'telegram'
-                      ? <TelegramIcon size={16} color="#2AABEE" />
-                      : <WhatsAppIcon size={16} color="#25D366" />
-                    }
-                    <span className="active-account-name">{acc.label}</span>
-                    <span className="active-account-phone">{acc.phone}</span>
-                    <span className={`status-dot ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
-                  </>
-                ) : (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    <span className="active-account-name">{hasMessengerAccounts ? 'Усі месенджери' : 'Немає доступних акаунтів'}</span>
-                    <span className="active-account-phone">
-                      {hasMessengerAccounts ? `${contacts.length} контактів` : 'Зверніться до адміністратора'}
-                    </span>
-                  </>
-                )}
-              </div>
-            )
-          })()}
+          <ActiveAccountCard
+            selectedGmail={selectedGmail}
+            gmailAccounts={gmailAccounts}
+            selectedAccount={selectedAccount}
+            accounts={accounts}
+            hasMessengerAccounts={hasMessengerAccounts}
+            contacts={contacts}
+          />
           {/* Search */}
           <div className="sidebar-search">
             <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
