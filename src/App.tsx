@@ -31,11 +31,8 @@ import { extractFirstUrl } from './utils/urlExtract'
 import { useTheme } from './utils/theme'
 import {
   THUMB_STORE,
-  MSG_STORE,
   getCached,
   putCache,
-  getJsonCache,
-  putJsonCache,
 } from './cache'
 import { AuthMedia } from './components/AuthMedia'
 import { VoicePlayer } from './components/VoicePlayer'
@@ -57,6 +54,7 @@ import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
 import { useNotificationSound } from './hooks/useNotificationSound'
 import { useContacts } from './hooks/useContacts'
+import { useMessages } from './hooks/useMessages'
 import type {
   Account,
   Contact,
@@ -249,17 +247,8 @@ function App() {
   const pendingSearchOpenRef = useRef<{ clientId: string; accountId: string } | null>(null)
   const pendingSearchJumpRef = useRef<{ messageDomId: string } | null>(null)
 
-  // Messages
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Messages state lives in useMessages() below (after chatEndRef/chatContainerRef/scrollPositionsRef)
   const [messageText, setMessageText] = useState('')
-  const [msgCount, setMsgCount] = useState(0)
-  const [msgCursor, setMsgCursor] = useState<string | null>(null)
-  const [hasOlderMessages, setHasOlderMessages] = useState(false)
-  const [loadingOlder, setLoadingOlder] = useState(false)
-  const [clientName, setClientName] = useState('')
-  const [clientPhone, setClientPhone] = useState('')
-  const [clientLinkedPhones, setClientLinkedPhones] = useState<{ id: string; phone: string }[]>([])
-  const [isPlaceholder, setIsPlaceholder] = useState(false)
   const [groupInfo, setGroupInfo] = useState<{ participants_count?: number; online_count?: number; about?: string; username?: string; is_broadcast?: boolean; linked_chat_id?: number } | null>(null)
   const [chatMuted, setChatMuted] = useState(false)
   const [muteLoading, setMuteLoading] = useState(false)
@@ -520,6 +509,33 @@ function App() {
     loadMoreContacts,
   } = contactsCtrl
 
+  // Current-chat messages + paging (see src/hooks/useMessages.ts)
+  const messagesCtrl = useMessages({
+    token: auth?.token,
+    account: selectedAccount,
+    onUnauthorized: logout,
+    chatContainerRef,
+    chatEndRef,
+    scrollPositionsRef,
+  })
+  const {
+    messages,
+    setMessages,
+    msgCount,
+    msgCursor,
+    hasOlder: hasOlderMessages,
+    loadingOlder,
+    clientName,
+    clientPhone,
+    clientLinkedPhones,
+    isPlaceholder,
+    setIsPlaceholder,
+    setHasOlder: setHasOlderMessages,
+    setMsgCursor,
+    loadMessages,
+    loadOlderMessages,
+  } = messagesCtrl
+
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
   // Drafts: save text per client when switching chats (persisted to localStorage)
@@ -763,80 +779,7 @@ function App() {
     if (showSettingsModal && settingsTab === 'whatsapp') loadWaSettings()
   }, [showSettingsModal, settingsTab, loadWaSettings])
 
-  // Load messages (cache-first: show from IndexedDB, then refresh from server)
-  const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
-    if (!auth?.token) return
-    const cacheKey = `${clientId}_${selectedAccount || 'all'}`
-
-    // Phase 0: instant load from cache (only on first open — scrollToEnd=true)
-    if (scrollToEnd) {
-      const cached = await getJsonCache<{ messages: ChatMessage[]; count: number; client_name: string; client_phone: string; next_cursor?: string | null }>(MSG_STORE, cacheKey)
-      if (cached && cached.messages.length > 0) {
-        setMessages(cached.messages)
-        setMsgCount(cached.count)
-        setMsgCursor(cached.next_cursor ?? null)
-        setHasOlderMessages(!!cached.next_cursor)
-        setClientName(cached.client_name || '')
-        setClientPhone(cached.client_phone || '')
-        // Check for saved scroll position (Feature 8: scroll restore)
-        const savedPos = scrollPositionsRef.current.get(clientId)
-        if (savedPos !== undefined) {
-          setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 30)
-        } else {
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30)
-        }
-      }
-    }
-
-    try {
-      const params = new URLSearchParams({ per_page: '200' })
-      if (selectedAccount) params.set('account', selectedAccount)
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, auth.token)
-      if (resp.status === 401) { logout(); return }
-      if (resp.ok) {
-        const data = await resp.json()
-        const msgs = data.results || []
-        setMessages(prev => {
-          // Only update if message count changed (avoid unnecessary re-renders during poll)
-          if (!scrollToEnd && prev.length === msgs.length && prev.length > 0 && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
-            return prev
-          }
-          return msgs
-        })
-        setMsgCount(data.count || msgs.length)
-        setMsgCursor(data.next_cursor ?? null)
-        setHasOlderMessages(!!data.next_cursor || (!!data.has_more))
-        setClientName(data.client_name || '')
-        setClientPhone(data.client_phone || '')
-        setClientLinkedPhones(data.linked_phones || [])
-        setIsPlaceholder(data.is_placeholder || false)
-        if (msgs.length > 0) {
-          setReadTs(clientId, msgs[msgs.length - 1].message_date, selectedAccount)
-        }
-        if (scrollToEnd) {
-          const savedPos = scrollPositionsRef.current.get(clientId)
-          if (savedPos !== undefined) {
-            scrollPositionsRef.current.delete(clientId)
-            setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 50)
-            setTimeout(() => { if (chatContainerRef.current) chatContainerRef.current.scrollTop = savedPos }, 300)
-          } else {
-            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50)
-            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 300)
-          }
-        }
-        // Save to cache
-        putJsonCache(MSG_STORE, cacheKey, {
-          messages: msgs,
-          count: data.count || msgs.length,
-          client_name: data.client_name || '',
-          client_phone: data.client_phone || '',
-          next_cursor: data.next_cursor ?? null,
-        })
-      }
-    } catch (e) { console.error('Messages:', e) }
-  }, [auth?.token, selectedAccount, logout])
-
-  // Link placeholder to real client
+  // Link placeholder to real client (search for clients + link)
   const searchClientsForLink = useCallback(async (q: string) => {
     if (!auth?.token || q.length < 2) { setLinkResults([]); return }
     try {
@@ -866,46 +809,11 @@ function App() {
         setSelectedClient(data.target_id)
         setIsPlaceholder(false)
         loadMessages(data.target_id)
-        // Reload contacts
         loadContacts()
       }
     } catch (e) { console.error('Link client:', e) }
     setLinkLoading(false)
-  }, [auth?.token, selectedClient, loadMessages])
-
-  const loadOlderMessages = useCallback(async () => {
-    if (!auth?.token || !selectedClient || loadingOlder || !hasOlderMessages || !msgCursor) return
-    setLoadingOlder(true)
-    try {
-      const params = new URLSearchParams({ per_page: '100', before: msgCursor })
-      if (selectedAccount) params.set('account', selectedAccount)
-      const resp = await authFetch(`${API_BASE}/telegram/contacts/${selectedClient}/messages/?${params}`, auth.token)
-      if (resp.ok) {
-        const data = await resp.json()
-        const older = data.results || []
-        if (older.length > 0) {
-          // Preserve scroll position: remember distance from bottom before prepend
-          const el = chatContainerRef.current
-          const prevScrollHeight = el ? el.scrollHeight : 0
-          const prevScrollTop = el ? el.scrollTop : 0
-          setMessages(prev => [...older, ...prev])
-          setMsgCursor(data.next_cursor ?? null)
-          setHasOlderMessages(!!data.next_cursor || !!data.has_more)
-          // After React renders prepended messages, restore scroll so user stays in place
-          requestAnimationFrame(() => {
-            if (el) {
-              const newScrollHeight = el.scrollHeight
-              el.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight)
-            }
-          })
-        } else {
-          setHasOlderMessages(false)
-          setMsgCursor(null)
-        }
-      }
-    } catch (e) { console.error('Older messages:', e) }
-    setLoadingOlder(false)
-  }, [auth?.token, selectedClient, selectedAccount, msgCursor, loadingOlder, hasOlderMessages])
+  }, [auth?.token, selectedClient, loadMessages, loadContacts, setIsPlaceholder])
 
   // Auto-load older messages when scrolling to top (IntersectionObserver)
   useEffect(() => {
@@ -913,8 +821,8 @@ function App() {
     if (!sentinel) return
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && hasOlderMessages && !loadingOlder && msgCursor) {
-          loadOlderMessages()
+        if (entries[0]?.isIntersecting && hasOlderMessages && !loadingOlder && msgCursor && selectedClient) {
+          loadOlderMessages(selectedClient)
         }
       },
       { root: chatContainerRef.current, rootMargin: '200px 0px 0px 0px', threshold: 0 }

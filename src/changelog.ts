@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.35': [
+    'Внутрішнє: винесено `useMessages` — messages state + loadMessages + loadOlderMessages + paging + scroll-restore. Plus clientName/Phone/LinkedPhones/isPlaceholder метадані чату. App.tsx 7762 → 7670',
+  ],
   '0.17.34': [
     'Внутрішнє: винесено `useContacts` — loadContacts + loadMoreContacts + cache-first + avatars/presence side-effects. photoMap читається через ref щоб не триґерити повторні загрузки при кожному аватарі. App.tsx 7877 → 7762',
   ],
