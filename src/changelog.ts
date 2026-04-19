@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.42': [
+    'Внутрішнє: винесено `<FileUploadModal/>` — модалка підтвердження перед відправкою файлів (preview сітка, підпис, чекбокс "як документ"). SendIcon переїхав в `components/icons.tsx`. App.tsx 6948 → 6900',
+  ],
   '0.17.41': [
     'Внутрішнє: винесено `<LightboxOverlay/>` — повноекранний перегляд з zoom/pan/double-click. Весь drag-state (scale/translate refs) тепер інкапсульовано в компоненті. App.tsx 6978 → 6948',
   ],

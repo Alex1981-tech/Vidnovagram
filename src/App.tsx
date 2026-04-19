@@ -47,9 +47,10 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon } from './components/icons'
+import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
+import { FileUploadModal } from './components/FileUploadModal'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -106,11 +107,6 @@ async function oggToWav(blob: Blob): Promise<Blob> {
 
 // ===== SVG Icons =====
 
-const SendIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
-  </svg>
-)
 const UserIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -4940,65 +4936,21 @@ function App() {
                     </div>
                   )}
                   {/* File upload modal (multi-file) */}
-                  {showFileModal && attachedFiles.length > 0 && (
-                    <div className="file-modal-overlay" onClick={clearAttachment}>
-                      <div className="file-modal" onClick={e => e.stopPropagation()}>
-                        <div className="file-modal-header">
-                          <span className="file-modal-title">
-                            {attachedFiles.length === 1 ? 'Надіслати файл' : `Надіслати ${attachedFiles.length} файлів`}
-                          </span>
-                          <button className="file-modal-close" onClick={clearAttachment}>✕</button>
-                        </div>
-                        <div className={`file-modal-preview${attachedFiles.length > 1 ? ' file-modal-grid' : ''}`}>
-                          {attachedFiles.map((f, i) => (
-                            <div key={i} className="file-modal-item">
-                              {attachedFiles.length > 1 && (
-                                <button className="file-modal-item-remove" onClick={() => {
-                                  removeAttachedFile(i)
-                                  if (attachedFiles.length <= 1) setShowFileModal(false)
-                                }}>✕</button>
-                              )}
-                              {attachedPreviews[i] && f.type.startsWith('image/') ? (
-                                <img src={attachedPreviews[i]} alt="" className="file-modal-img" />
-                              ) : attachedPreviews[i] && f.type.startsWith('video/') ? (
-                                <video src={attachedPreviews[i]} className="file-modal-video" />
-                              ) : (
-                                <div className="file-modal-doc">
-                                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                  <span className="file-modal-doc-name">{f.name}</span>
-                                  <span className="file-modal-doc-size">{(f.size / 1024).toFixed(0)} KB</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          <button className="file-modal-add" onClick={() => fileInputRef.current?.click()}>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                          </button>
-                        </div>
-                        <div className="file-modal-caption">
-                          <textarea
-                            value={fileCaption}
-                            onChange={e => setFileCaption(e.target.value)}
-                            placeholder="Підпис (необов'язково)…"
-                            rows={1}
-                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                          />
-                          {attachedFiles.some(f => f.type.startsWith('image/')) && (
-                            <label className="file-modal-checkbox">
-                              <input type="checkbox" checked={forceDocument} onChange={e => setForceDocument(e.target.checked)} />
-                              Надіслати як файл (без стиснення)
-                            </label>
-                          )}
-                        </div>
-                        <div className="file-modal-actions">
-                          <button className="file-modal-send" onClick={() => sendMessage()} disabled={sending}>
-                            {sending ? <div className="spinner-sm" /> : <SendIcon />}
-                            Надіслати{attachedFiles.length > 1 ? ` (${attachedFiles.length})` : ''}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <FileUploadModal
+                    open={showFileModal}
+                    files={attachedFiles}
+                    previews={attachedPreviews}
+                    caption={fileCaption}
+                    setCaption={setFileCaption}
+                    forceDocument={forceDocument}
+                    setForceDocument={setForceDocument}
+                    sending={sending}
+                    onSend={() => sendMessage()}
+                    onClear={clearAttachment}
+                    onRemoveFile={removeAttachedFile}
+                    onAddMore={() => fileInputRef.current?.click()}
+                    onCloseEmpty={() => setShowFileModal(false)}
+                  />
                   {/* Attachment indicator (fallback when modal closed) */}
                   {attachedFiles.length > 0 && !showFileModal && (
                     <div className="attached-preview">
