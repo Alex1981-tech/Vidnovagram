@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.29': [
+    'Внутрішнє: ще 2 controller hooks — `useWallpapers` (шпалери + фоновий blob) та `useGmailNotifications` (polling нових email + toast + звук). Винесено `utils/notifications.ts`. App.tsx 8590 → 8488',
+  ],
   '0.17.28': [
     'Внутрішнє: перші controller hooks (Етап 9). Винесено `useTauriUpdater` (auto-update lifecycle) та `usePanelResize` (drag ширини панелей) в `src/hooks/`. App.tsx 8672 → 8590',
   ],

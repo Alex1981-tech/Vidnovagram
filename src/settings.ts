@@ -6,6 +6,7 @@ export interface AccountSettings {
   soundId: string // 'default' | '1'..'26'
 }
 
+
 export interface ChatBackground {
   type: 'default' | 'color' | 'wallpaper'
   value: string // hex color or wallpaper URL

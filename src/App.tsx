@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { tempDir, join } from '@tauri-apps/api/path'
-import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
+import { showNotification } from './utils/notifications'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
@@ -55,9 +55,10 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { LoginScreen } from './screens/LoginScreen'
 import { useTauriUpdater } from './hooks/useTauriUpdater'
 import { usePanelResize } from './hooks/usePanelResize'
+import { useWallpapers } from './hooks/useWallpapers'
+import { useGmailNotifications } from './hooks/useGmailNotifications'
 import type {
   AuthState,
-  Wallpaper,
   Account,
   Contact,
   ChatMessage,
@@ -231,22 +232,6 @@ const MicOffIcon = () => (
     <line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>
   </svg>
 )
-// Notification helper
-async function showNotification(title: string, body: string) {
-  try {
-    let granted = await isPermissionGranted()
-    if (!granted) {
-      const perm = await requestPermission()
-      granted = perm === 'granted'
-    }
-    if (granted) {
-      sendNotification({ title, body })
-    }
-  } catch (e) {
-    console.log('Notification error:', e)
-  }
-}
-
 // ===== Main App =====
 
 function App() {
@@ -270,11 +255,11 @@ function App() {
   const [railExpanded, setRailExpanded] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [appSettings, setAppSettings] = useState<AppSettings>(loadSettings)
-  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([])
+  // wallpapers state lives in useWallpapers() below
   const [settingsTab, setSettingsTab] = useState<'notifications' | 'background' | 'whatsapp'>('notifications')
   const [previewSound, setPreviewSound] = useState<string | null>(null)
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
-  const [wallpaperBlobUrl, setWallpaperBlobUrl] = useState('')
+  // wallpaperBlobUrl lives in useWallpapers() below
   const [soundDropdownOpen, setSoundDropdownOpen] = useState<string | null>(null) // account ID
 
   // WhatsApp settings
@@ -726,55 +711,11 @@ function App() {
   // Persist appSettings
   useEffect(() => { saveSettings(appSettings) }, [appSettings])
 
-  // Load wallpaper blob when wallpaper background is active
-  useEffect(() => {
-    if (appSettings.chatBackground.type === 'wallpaper' && appSettings.chatBackground.value && auth?.token) {
-      const fullUrl = `${API_BASE.replace('/api', '')}${appSettings.chatBackground.value}`
-      authFetch(fullUrl, auth.token).then(async resp => {
-        if (resp.ok) {
-          const blob = await resp.blob()
-          setWallpaperBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-        }
-      }).catch(() => {})
-    } else {
-      setWallpaperBlobUrl('')
-    }
-  }, [appSettings.chatBackground.type, appSettings.chatBackground.value, auth?.token])
-
-  // Load wallpapers when settings modal opens — fetch thumbnails as blobs (auth required)
-  const wallpapersLoaded = useRef(false)
-  useEffect(() => {
-    if (showSettingsModal && wallpapers.length === 0 && !wallpapersLoaded.current && auth?.token) {
-      wallpapersLoaded.current = true
-      fetch(`${API_BASE}/vidnovagram/wallpapers/`, { headers: { 'Authorization': `Token ${auth.token}` } })
-        .then(r => r.ok ? r.json() : [])
-        .then(async (wps: Wallpaper[]) => {
-          // Show placeholders immediately, then load thumbs in batches of 8
-          const result = wps.map(wp => ({ ...wp, _thumbBlob: '' }))
-          setWallpapers([...result])
-          const BATCH = 8
-          for (let i = 0; i < wps.length; i += BATCH) {
-            const batch = wps.slice(i, i + BATCH)
-            const loaded = await Promise.all(batch.map(async (wp, j) => {
-              try {
-                const thumbUrl = `${API_BASE.replace('/api', '')}${wp.thumb}`
-                const resp = await authFetch(thumbUrl, auth!.token)
-                if (resp.ok) {
-                  const blob = await resp.blob()
-                  return { idx: i + j, blob: URL.createObjectURL(blob) }
-                }
-              } catch {}
-              return { idx: i + j, blob: '' }
-            }))
-            for (const item of loaded) {
-              result[item.idx]._thumbBlob = item.blob
-            }
-            setWallpapers([...result])
-          }
-        })
-        .catch(() => {})
-    }
-  }, [showSettingsModal])
+  const { wallpapers, wallpaperBlobUrl } = useWallpapers({
+    showSettingsModal,
+    chatBackground: appSettings.chatBackground,
+    token: auth?.token,
+  })
 
   // Tauri updater lifecycle lives in useTauriUpdater() above.
 
@@ -3589,57 +3530,14 @@ function App() {
     }
   }, [auth?.authorized, auth?.token, scheduleMessagesRefresh])
 
-  // Gmail polling — check for new emails every 60s
-  const gmailLastCheckRef = useRef<string>(new Date().toISOString())
-  const gmailSeenRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!auth?.authorized || !auth?.token || gmailAccounts.length === 0) return
-    let alive = true
-
-    const checkGmail = async () => {
-      try {
-        const since = gmailLastCheckRef.current
-        const resp = await authFetch(`${API_BASE}/mail/new-messages/?since=${encodeURIComponent(since)}`, auth.token)
-        if (!resp.ok || !alive) return
-        const data: { results: { id: string; account_id: string; account_label: string; subject: string; sender: string; snippet: string; date: string; has_attachments: boolean }[] } = await resp.json()
-        if (!data.results.length) return
-
-        gmailLastCheckRef.current = data.results[0].date
-
-        for (const msg of data.results) {
-          if (gmailSeenRef.current.has(msg.id)) continue
-          gmailSeenRef.current.add(msg.id)
-
-          const senderName = msg.sender.replace(/<[^>]+>/g, '').trim() || msg.sender
-          const body = msg.subject || msg.snippet?.slice(0, 100) || ''
-
-          // Desktop notification (respects per-account popup toggle)
-          if (isPopupEnabled(msg.account_id)) {
-            showNotification(`📧 ${senderName}`, body)
-          }
-          // In-app toast (use msg.id as clientId for grouping, account_id for account)
-          addToastRef.current(msg.id, msg.account_id, senderName, msg.account_label || 'Gmail', body, msg.has_attachments, msg.has_attachments ? 'document' : '')
-
-          playNotifSound(msg.account_id)
-        }
-
-        // Bound seen set
-        if (gmailSeenRef.current.size > 200) {
-          const arr = [...gmailSeenRef.current]
-          gmailSeenRef.current = new Set(arr.slice(-100))
-        }
-      } catch { /* ignore */ }
-    }
-
-    const initTimer = setTimeout(checkGmail, 5000)
-    const pollTimer = setInterval(checkGmail, 60_000)
-
-    return () => {
-      alive = false
-      clearTimeout(initTimer)
-      clearInterval(pollTimer)
-    }
-  }, [auth?.authorized, auth?.token, gmailAccounts.length, isPopupEnabled, playNotifSound])
+  useGmailNotifications({
+    authorized: !!auth?.authorized,
+    token: auth?.token,
+    gmailAccounts,
+    isPopupEnabled,
+    playNotifSound,
+    addToast: (...args) => addToastRef.current(...args),
+  })
 
   // Compute unread (uses updates for external change detection)
   const isUnread = useCallback((contact: Contact) => {
