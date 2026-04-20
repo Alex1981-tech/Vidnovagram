@@ -5,6 +5,9 @@ import { authFetch } from '../utils/authFetch'
 import { AVATAR_STORE, CONTACTS_STORE, getCached, getJsonCache, putCache, putJsonCache } from '../cache'
 import type { Contact } from '../types'
 
+// Monotonic request id so stale responses from earlier accounts are dropped.
+let contactsReqSeq = 0
+
 export interface UseContactsOptions {
   token: string | undefined
   account: string
@@ -83,11 +86,15 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
   const loadContacts = useCallback(async () => {
     if (!token) return
     const cacheKey = `${account || 'all'}_${search || ''}`
+    // Tag this request; any response whose tag is not the latest is a stale
+    // fetch from a previous account/search and must be dropped.
+    const reqId = ++contactsReqSeq
+    const requestedAccount = account
 
     // Phase 0: instant load from cache (only for no-search default view)
     if (!search) {
       const cached = await getJsonCache<{ contacts: Contact[]; count: number }>(CONTACTS_STORE, cacheKey)
-      if (cached) {
+      if (cached && reqId === contactsReqSeq) {
         setContacts(cached.contacts)
         setContactCount(cached.count)
       }
@@ -98,6 +105,7 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
       if (search) params.set('search', search)
       if (account) params.set('account', account)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, token)
+      if (reqId !== contactsReqSeq) return  // stale
       if (resp.status === 401) {
         onUnauthorized()
         return
@@ -105,6 +113,9 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
       if (!resp.ok) return
 
       const data = await resp.json()
+      if (reqId !== contactsReqSeq) return  // stale after json parse
+      // Double-check account hasn't changed under us (defensive)
+      if (requestedAccount !== account) return
       const list: Contact[] = data.results || []
       setContacts(list)
       setContactCount(data.count || 0)
@@ -166,13 +177,17 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
     if (!token || loadingMore || !hasMore) return
     const nextPage = contactPage + 1
     setLoadingMore(true)
+    const reqId = ++contactsReqSeq
+    const requestedAccount = account
     try {
       const params = new URLSearchParams({ per_page: '50', page: String(nextPage) })
       if (search) params.set('search', search)
       if (account) params.set('account', account)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/?${params}`, token)
+      if (reqId !== contactsReqSeq || requestedAccount !== account) return
       if (resp.ok) {
         const data = await resp.json()
+        if (reqId !== contactsReqSeq || requestedAccount !== account) return
         const list: Contact[] = data.results || []
         setContacts(prev => [...prev, ...list])
         setContactPage(nextPage)

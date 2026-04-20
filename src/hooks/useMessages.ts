@@ -5,6 +5,10 @@ import { MSG_STORE, getJsonCache, putJsonCache } from '../cache'
 import { setReadTs } from '../utils/readTs'
 import type { ChatMessage } from '../types'
 
+// Monotonic request id so stale responses for a previously-selected client
+// don't clobber the current chat state.
+let messagesReqSeq = 0
+
 export interface UseMessagesOptions {
   token: string | undefined
   account: string
@@ -58,6 +62,9 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
   const loadMessages = useCallback(async (clientId: string, scrollToEnd = true) => {
     if (!token) return
     const cacheKey = `${clientId}_${account || 'all'}`
+    const reqId = ++messagesReqSeq
+    const requestedClient = clientId
+    const requestedAccount = account
 
     // Phase 0: instant cache for the initial open.
     if (scrollToEnd) {
@@ -68,7 +75,7 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
         client_phone: string
         next_cursor?: string | null
       }>(MSG_STORE, cacheKey)
-      if (cached && cached.messages.length > 0) {
+      if (cached && cached.messages.length > 0 && reqId === messagesReqSeq) {
         setMessages(cached.messages)
         setMsgCount(cached.count)
         setMsgCursor(cached.next_cursor ?? null)
@@ -90,6 +97,7 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
       const params = new URLSearchParams({ per_page: '200' })
       if (account) params.set('account', account)
       const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, token)
+      if (reqId !== messagesReqSeq || requestedClient !== clientId || requestedAccount !== account) return
       if (resp.status === 401) {
         onUnauthorized()
         return
@@ -97,6 +105,7 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
       if (!resp.ok) return
 
       const data = await resp.json()
+      if (reqId !== messagesReqSeq || requestedClient !== clientId || requestedAccount !== account) return
       const msgs: ChatMessage[] = data.results || []
       setMessages(prev => {
         // Avoid an unnecessary rerender during polling when the tail ID matches.

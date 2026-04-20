@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.82': [
+    'Фікс: коли швидко перемикаєшся між акаунтами, іноді підтягувалися контакти попереднього (race condition — старий fetch повертався пізніше за новий і перезаписував список). Додано monotonic request-sequence в useContacts і useMessages — відповіді з застарілим тегом відкидаються. Плюс захист від зміни account під час запиту',
+  ],
   '0.17.81': [
     'Стабілізація Viber-чату: коли активний бізнес-акаунт, TG/WA fetch більше не викликається — раніше useMessages тягнув TG endpoint (500/пусте) і перемішував повідомлення. Тепер loadMessages повертає no-op у business-режимі, а WS нові-повідомлення від TG/WA не потрапляють у business messages state',
     'Polling business чату збільшено з 10с до 15с (для messages) і 30с (для contacts) — менше rerender-скоку. Додано diff-перевірку на id першого/останнього повідомлення: якщо список не змінився — не оновлюємо state',
