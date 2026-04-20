@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.73': [
+    'Read-state після reconnect: коли WebSocket переконектується (після мережевого розриву або сну компʼютера), Vidnovagram одразу re-fetch unread counters, список контактів і повідомлення відкритого чату. Раніше badge міг залишатися з застарілим значенням до 30с (чекав stale-poll)',
+  ],
   '0.17.72': [
     'Чат більше не "стрибає" при завантаженні фото. Для кожного зображення зарезервовано місце в макеті ще до того як blob догрузиться: при першому перегляді — дефолтна пропорція 4:3 з підбарвленим фоном, при наступних — точна aspect-ratio (natural dimensions кешуються при першому onLoad у модулі). Працює для фото в бабли, альбомів, стікерів, reply-thumbnails',
   ],

@@ -48,6 +48,13 @@ export interface MessengerWebSocketOptions {
   isPopupEnabled: (accountId: string) => boolean
   playNotifSound: (accountId: string) => void
   voipApplyWsEvent: (event: VoipEvent) => void
+  /**
+   * Called after a successful WS reconnect (NOT the first connect).
+   * App refreshes `updates` + `contacts` + currently-open chat messages so
+   * unread counters and message lists are consistent with what the server
+   * knows after the disconnect window.
+   */
+  onReconnect?: () => void
 
   // Read-only data.
   accounts: Account[]
@@ -113,6 +120,10 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout>
     let alive = true
+    // Track whether this is the first connect or a reconnect — App's initial
+    // mount already fetches updates/contacts, so we only fire onReconnect for
+    // subsequent connects after a close.
+    let hasConnectedBefore = false
 
     function connect() {
       if (!alive) return
@@ -123,6 +134,13 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
         console.log('[WS] connected')
         wsLastActivityRef.current = Date.now()
         ws.send(JSON.stringify({ type: 'subscribe_all' }))
+        if (hasConnectedBefore) {
+          // Reconnect — tell App to re-fetch state that may have drifted
+          // during the disconnect window (unread counters, new contacts,
+          // chat messages).
+          try { optsRef.current.onReconnect?.() } catch (e) { console.warn('[WS] onReconnect failed', e) }
+        }
+        hasConnectedBefore = true
       }
 
       ws.onmessage = (event) => {

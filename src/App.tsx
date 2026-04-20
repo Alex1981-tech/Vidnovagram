@@ -2860,6 +2860,16 @@ function App() {
     playNotifSound,
     voipApplyWsEvent,
     accounts,
+    // On WS reconnect (after any disconnect), re-sync state that may have
+    // drifted: unread/presence counters, contact list, and the currently open
+    // chat's messages. Without this, unread badges can stick to stale values
+    // until the 30s stale-poll catches up.
+    onReconnect: () => {
+      loadUpdates()
+      loadContactsRef.current?.()
+      const openClient = selectedClientRef.current
+      if (openClient) scheduleMessagesRefresh(openClient, false, 300)
+    },
   })
 
 
