@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.80': [
+    'Facebook Messenger і Instagram Direct — інтеграція в секцію "Бізнес". Нові іконки FB (синя) та IG (градієнт) у rail; відправка через `/api/business/send/` маршрутизується за provider (Viber / FB / IG / WA). Бекенд має unified webhook `POST /api/business/meta/webhook/` з SHA256-signature verify і диспатчингом за object (page / instagram / whatsapp_business_account). Підтримка: текст, фото, quick replies, reactions, read-watermark, story reply/mention (IG). Треба налаштування Meta App → Webhook URL + Page Access Token — і створити BusinessAccount запис',
+  ],
   '0.17.79': [
     'Фікс: підписи "Бізнес" і "Месенджери" в rail тепер видно і в згорнутому, і в розгорнутому вигляді (в collapsed — скорочено "Б"/"М"). Додано розділювач і кращий контраст',
     'Фікс: перемикання на Viber-акаунт більше не зникає через секунду. Раніше будь-яка WebSocket-подія або scheduled-refresh перезавантажував TG-контакти й затирав business-список. Тепер reload поважає активне джерело (business vs TG/WA) і вантажить правильні контакти',

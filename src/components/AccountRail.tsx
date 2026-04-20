@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { TelegramIcon, WhatsAppIcon, GmailIcon, ViberIcon } from './icons'
+import { TelegramIcon, WhatsAppIcon, GmailIcon, ViberIcon, FacebookIcon, InstagramIcon } from './icons'
 import type { Account, ChatMessage, GmailAccount } from '../types'
 
 export interface BusinessAccountSummary {
@@ -86,9 +86,10 @@ export function AccountRail({
                 title={`${b.label} — ${b.sender_name}`}
               >
                 <span className="rail-item-icon">
-                  {b.provider === 'viber_turbosms'
-                    ? <ViberIcon size={18} />
-                    : <span>?</span>}
+                  {b.provider === 'viber_turbosms' && <ViberIcon size={18} />}
+                  {b.provider === 'facebook_messenger' && <FacebookIcon size={18} />}
+                  {b.provider === 'instagram_direct' && <InstagramIcon size={18} />}
+                  {b.provider === 'whatsapp_cloud' && <WhatsAppIcon size={18} color="#25D366" />}
                   {businessUnreads[b.id] > 0 && <span className="rail-badge">{businessUnreads[b.id] > 99 ? '99+' : businessUnreads[b.id]}</span>}
                   <span className={`rail-status ${b.status === 'active' ? 'online' : ''}`} />
                 </span>

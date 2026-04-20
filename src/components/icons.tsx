@@ -111,6 +111,35 @@ export const GmailIcon = ({ size = 20 }: { size?: number; color?: string }) => (
   </svg>
 )
 
+// Facebook Messenger bubble.
+export const FacebookIcon = ({ size = 20 }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <path
+      fill="#0084FF"
+      d="M12 2C6.48 2 2 6.14 2 11.24c0 2.91 1.42 5.52 3.66 7.24v3.52l3.36-1.84c.89.25 1.84.38 2.98.38 5.52 0 10-4.14 10-9.3S17.52 2 12 2zm1.02 12.55l-2.57-2.75-5.02 2.75 5.52-5.87 2.64 2.75 4.96-2.75-5.53 5.87z"
+    />
+  </svg>
+)
+
+// Instagram brand gradient.
+export const InstagramIcon = ({ size = 20 }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <defs>
+      <linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#FED576" />
+        <stop offset="26%" stopColor="#F47133" />
+        <stop offset="61%" stopColor="#BC3081" />
+        <stop offset="100%" stopColor="#4C63D2" />
+      </linearGradient>
+    </defs>
+    <rect width="24" height="24" rx="6" fill="url(#igGrad)" />
+    <path
+      fill="#fff"
+      d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8.2a3.2 3.2 0 1 1 0-6.4 3.2 3.2 0 0 1 0 6.4zm5.3-8.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"
+    />
+  </svg>
+)
+
 // Viber official purple brand mark (simplified).
 export const ViberIcon = ({ size = 20 }: { size?: number; color?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24">
