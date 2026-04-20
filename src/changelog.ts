@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.48': [
+    'Внутрішнє: винесено `<QuickRepliesTab/>` — категорії з шаблонами, drag-reorder, inline-edit назви/кольору, CRUD (~85 рядків JSX). App.tsx 6456 → 6405',
+  ],
   '0.17.47': [
     'Внутрішнє: старт розбиття RightPanel. Винесено `<RightPanelTabs/>` (вертикальний селектор вкладок з drag-reorder) і `<NotesTab/>` (найпростіший таб — список нотаток). App.tsx 6517 → 6456',
   ],
