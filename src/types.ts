@@ -53,6 +53,9 @@ export interface Contact {
     tg_name?: string
     tg_username?: string
   }[]
+  // Business / bot contacts
+  tg_photo_url?: string
+  is_new_patient?: boolean
 }
 
 export interface ChatMessage {

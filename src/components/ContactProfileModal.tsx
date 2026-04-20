@@ -3,6 +3,7 @@ import { formatPresence } from '../utils/presence'
 import { SharedMediaPanel } from './SharedMediaPanel'
 import { GroupMembersPanel } from './GroupMembersPanel'
 import { ForumTopicsPanel } from './ForumTopicsPanel'
+import { BusinessContactCard } from './BusinessContactCard'
 import type { ChatMessage, Contact } from '../types'
 
 interface Presence {
@@ -103,6 +104,8 @@ export function ContactProfileModal({
   const isPrivate = !ct || ct === 'private'
   const isChannel = ct === 'channel'
   const isGroup = ct === 'group' || ct === 'supergroup'
+  const contactSource = (chatContact as unknown as { source?: string }).source || ''
+  const isBusiness = ['viber', 'telegram_bot', 'facebook_messenger', 'instagram_direct', 'whatsapp_cloud'].includes(contactSource)
   const peerId = (chatContact as unknown as { tg_peer_id?: number | string }).tg_peer_id
   const pr = peerId != null ? peerPresence[peerId] : undefined
   const { text: presText, isOnline: presOnline } = formatPresence(pr)
@@ -204,6 +207,14 @@ export function ContactProfileModal({
               </div>
             )}
             {!isPrivate && groupInfo?.about && <p className="contact-profile-about">{groupInfo.about}</p>}
+            {isBusiness && accountId && (
+              <BusinessContactCard
+                open={open}
+                clientId={selectedClient}
+                accountId={accountId}
+                token={token}
+              />
+            )}
             {isGroup && peerId != null && accountId && (
               <>
                 <GroupMembersPanel

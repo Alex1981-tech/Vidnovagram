@@ -5002,6 +5002,98 @@ body {
   border-radius: 50%;
   object-fit: cover;
 }
+.badge-new-patient {
+  font-size: 11px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* Business contact rich profile card */
+.business-profile {
+  width: 100%;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.business-profile-empty {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 8px;
+}
+.business-profile-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.badge-new-patient-big {
+  background: color-mix(in oklch, oklch(70% 0.15 30) 25%, transparent);
+  color: oklch(55% 0.18 30);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-card {
+  background: color-mix(in oklch, var(--accent) 15%, transparent);
+  color: var(--accent);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.badge-bonus {
+  background: color-mix(in oklch, oklch(72% 0.15 140) 22%, transparent);
+  color: oklch(50% 0.18 140);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.business-profile-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.business-profile-row .label {
+  color: var(--muted);
+  min-width: 80px;
+}
+.business-profile-section {
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.business-profile-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  opacity: 0.85;
+}
+.business-appt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--fg) 4%, transparent);
+  font-size: 12px;
+}
+.business-appt.business-appt-past {
+  opacity: 0.75;
+}
+.business-appt-date {
+  font-weight: 600;
+  color: var(--fg);
+}
+.business-appt-info {
+  color: var(--muted);
+}
 .rail-section-label {
   font-size: 11px;
   font-weight: 700;

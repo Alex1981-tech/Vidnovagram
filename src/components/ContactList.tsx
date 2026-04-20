@@ -94,6 +94,9 @@ export function ContactList({
                     <div className="contact-row">
                       <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
                         <ContactName name={display.name} isEmployee={c.is_employee} />
+                        {c.is_new_patient && (
+                          <span className="badge-new-patient" title="Новий клієнт">🆕</span>
+                        )}
                       </span>
                       {isUnread(c) && <span className="unread-dot" />}
                       <span className="contact-time">

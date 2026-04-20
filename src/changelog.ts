@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.85': [
+    'У бізнес-чатах (Viber / Telegram-бот / Meta) у списку контактів тепер показується фото клієнта з Telegram (якщо є) + бейдж "🆕" поряд з іменем для нових пацієнтів. Картка профілю контакту відкриває розширену панель з BAF-карткою, бонусним балансом та найближчими прийомами (читає `GET /api/business/contacts/{id}/profile/`)',
+  ],
   '0.17.84': [
     'Rail тепер показує реальний аватар бізнес-акаунта (з Telegram, Meta, тощо) замість brand-іконки коли `profile_picture_url` встановлений на backend. Для Viber/Meta буде автоматично, коли додамо fetch. Для `VidnovaClinicBot` — підтягується з Telegram `getMe` + `getUserProfilePhotos` при першому створенні акаунта',
     'Backend готовий передавати `tg_photo_url` клієнтів бота і `is_new_patient` badge у `/api/business/contacts/` — операторський UI отримує дані про новачків одразу у списку',

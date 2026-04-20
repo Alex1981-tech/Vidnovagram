@@ -2789,17 +2789,32 @@ function App() {
       const list = (data.contacts || []) as Array<{
         client_id: string; account_id: string; account_label: string; phone: string;
         full_name: string; last_message: string; last_message_date: string; unread: number;
+        tg_photo_url?: string; is_new_patient?: boolean; source?: string;
       }>
       const mapped: Contact[] = list.map(c => ({
         client_id: c.client_id,
         phone: c.phone,
         full_name: c.full_name,
-        last_message: c.last_message,
+        last_message_text: c.last_message,
         last_message_date: c.last_message_date,
-        unread: c.unread,
-        source: 'viber' as const,
+        tg_photo_url: c.tg_photo_url,
+        is_new_patient: c.is_new_patient,
+        source: (c.source || 'viber'),
       } as unknown as Contact))
       setContacts(mapped)
+      // Prime photoMap with business avatars so ContactList's <img src={photoMap[id]}>
+      // picks them up without an extra round-trip.
+      const avatarUpdates: Record<string, string> = {}
+      for (const c of list) {
+        if (c.tg_photo_url) {
+          avatarUpdates[c.client_id] = c.tg_photo_url.startsWith('http')
+            ? c.tg_photo_url
+            : `${API_BASE.replace('/api', '')}${c.tg_photo_url}`
+        }
+      }
+      if (Object.keys(avatarUpdates).length > 0) {
+        setPhotoMap(prev => ({ ...prev, ...avatarUpdates }))
+      }
     } catch (e) { console.error('business contacts:', e) }
   }, [auth?.token, setContacts])
 
