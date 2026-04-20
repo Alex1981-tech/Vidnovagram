@@ -711,7 +711,7 @@ function App() {
 
       // Business accounts (Viber Business, ...)
       try {
-        const bizResp = await authFetch(`${API_BASE}/api/business/accounts/public/`, auth.token)
+        const bizResp = await authFetch(`${API_BASE}/business/accounts/public/`, auth.token)
         if (bizResp.ok) {
           const bizData = await bizResp.json()
           setBusinessAccounts(Array.isArray(bizData.accounts) ? bizData.accounts : [])
@@ -1053,7 +1053,7 @@ function App() {
       if (!text) return
       setSending(true)
       try {
-        const r = await authFetch(`${API_BASE}/api/business/send/`, auth.token, {
+        const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2764,7 +2764,7 @@ function App() {
   const loadBusinessContacts = useCallback(async (accountId: string) => {
     if (!auth?.token || !accountId) return
     try {
-      const r = await authFetch(`${API_BASE}/api/business/contacts/?account_id=${accountId}`, auth.token)
+      const r = await authFetch(`${API_BASE}/business/contacts/?account_id=${accountId}`, auth.token)
       if (!r.ok) return
       const data = await r.json()
       const list = (data.contacts || []) as Array<{
@@ -2787,7 +2787,7 @@ function App() {
   const loadBusinessMessages = useCallback(async (accountId: string, clientId: string) => {
     if (!auth?.token || !accountId || !clientId) return
     try {
-      const r = await authFetch(`${API_BASE}/api/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
+      const r = await authFetch(`${API_BASE}/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
       if (!r.ok) return
       const data = await r.json()
       const list = (data.messages || []) as ChatMessage[]

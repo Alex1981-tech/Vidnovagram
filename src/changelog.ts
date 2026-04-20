@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.78': [
+    'Hotfix: дубльований префікс `/api/api/` в запитах до бізнес-акаунтів (через що секція "Бізнес" не зʼявлялась у rail — endpoint повертав 404). Виправлено всі 4 Viber-запити (accounts/public, contacts, messages, send)',
+  ],
   '0.17.77': [
     'Viber Business (TurboSMS): повноцінний чат у Vidnovagram. При виборі бізнес-акаунту в rail — підтягуються контакти переписок, клік по контакту відкриває історію повідомлень, відправка працює через `POST /api/business/send/`. 10-секундний polling підхоплює нові вхідні (WebSocket-інтеграцію додамо після активації chat-сесій у TurboSMS). Перемикання між Бізнес/Месенджери очищає поточний чат і підвантажує правильний список',
     'Backend: виправлено TurboSMS request-shape (nested `viber` object замість плоских полів), nормалізація 0XX → 380XX, коректна обробка response_code 801 SUCCESS_MESSAGE_SENT (раніше вважалося помилкою)',
