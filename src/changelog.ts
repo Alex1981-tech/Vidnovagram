@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.59': [
+    'Внутрішнє: винесено `<PollBubble/>` (wraps PollCard, 2 джерела — native TG poll/todo + legacy 📊/📋 text), `<ContactBubble/>` (👤+📞 картка з avatar lookup + add-to-account), `<GeoBubble/>` (OSM 2×2 tile preview з pin). App.tsx 5471 → 5387 (−84)',
+  ],
   '0.17.58': [
     'Внутрішнє: винесено `<LabResultStrip/>` (3-стан: linked/unlinked/unclassified для аналізів) і `<StickerBubble/>` (animated TGS/static image/emoji-only). App.tsx 5530 → 5471 (−59)',
   ],

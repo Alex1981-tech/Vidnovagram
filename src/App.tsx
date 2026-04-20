@@ -30,7 +30,6 @@ import {
 } from './cache'
 import { AuthMedia } from './components/AuthMedia'
 import { VoicePlayer } from './components/VoicePlayer'
-import { PollCard } from './components/PollCard'
 import { Linkify } from './components/Linkify'
 import { LinkPreviewCard } from './components/LinkPreviewCard'
 import { ThemeToggle } from './components/ThemeToggle'
@@ -79,6 +78,9 @@ import { ReplyQuote } from './components/ReplyQuote'
 import { MessageFooter } from './components/MessageFooter'
 import { LabResultStrip } from './components/LabResultStrip'
 import { StickerBubble } from './components/StickerBubble'
+import { PollBubble } from './components/PollBubble'
+import { ContactBubble } from './components/ContactBubble'
+import { GeoBubble } from './components/GeoBubble'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3970,116 +3972,30 @@ function App() {
                           </div>
                         )}
                         {/* Contact card */}
-                        {m.media_type === 'contact' && (() => {
-                          // Use dedicated API fields, fallback to text parsing
-                          let name = '', phone = ''
-                          if (m.contact_first_name || m.contact_last_name || m.contact_phone) {
-                            name = [m.contact_first_name, m.contact_last_name].filter(Boolean).join(' ')
-                            phone = (m.contact_phone || '').replace(/\D/g, '')
-                          } else {
-                            const lines = (m.text || '').split('\n')
-                            for (const l of lines) {
-                              const lt = l.trim()
-                              if (lt.startsWith('👤')) name = lt.slice(2).trim()
-                              else if (lt.startsWith('📞')) phone = lt.slice(2).trim().replace(/\D/g, '')
-                            }
-                          }
-                          if (!name && !phone) name = m.text || 'Контакт'
-                          const normPhone = phone.startsWith('380') ? '0' + phone.slice(3) : phone
-                          // Find avatar from contacts photoMap
-                          const matchedContact = normPhone ? contacts.find(c => c.phone === normPhone || c.phone === phone) : null
-                          const avatarUrl = matchedContact ? photoMap[matchedContact.client_id] : null
-                          return (
-                            <div className="msg-contact-card" onClick={() => {
-                              if (normPhone) {
-                                setAddToAcctModal({ phone: normPhone, name, clientId: matchedContact?.client_id || '' })
-                                checkPhoneMessengers(normPhone)
-                              }
-                            }}>
-                              <div className="msg-contact-avatar">
-                                {avatarUrl ? <img src={avatarUrl} alt="" /> : (name || phone || '?')[0].toUpperCase()}
-                              </div>
-                              <div className="msg-contact-info">
-                                {name && <div className="msg-contact-name">{name}</div>}
-                                {phone && <div className="msg-contact-phone">{phone.startsWith('380') ? '+' + phone : phone}</div>}
-                              </div>
-                            </div>
-                          )
-                        })()}
+                        {m.media_type === 'contact' && (
+                          <ContactBubble
+                            message={m}
+                            contacts={contacts}
+                            photoMap={photoMap}
+                            onAddToAccount={(state) => {
+                              setAddToAcctModal(state)
+                              checkPhoneMessengers(state.phone)
+                            }}
+                          />
+                        )}
                         {/* Poll/checklist/ToDo card */}
-                        {m.media_type === 'poll' && (() => {
-                          const onUpdate = (msgId: number | string, newText: string) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))
-                          const syncProps = { accountId: m.account_id || selectedAccount, peerId: m.tg_peer_id, tgMessageId: m.tg_message_id, fullText: m.text, authToken: auth?.token, onTextUpdate: onUpdate }
-                          // Dedicated API fields (poll_question present)
-                          if (m.poll_question) {
-                            const opts = (m.poll_options || []).map(o => typeof o === 'string' ? o : o.text)
-                            // Detect ToDo: options already have ☐/☑ markers
-                            const isTodo = opts.some(o => o.startsWith('☐ ') || o.startsWith('☑ '))
-                            const normalizedOpts = isTodo ? opts : opts.map(o => `☐ ${o}`)
-                            return <PollCard question={m.poll_question} options={normalizedOpts} messageId={m.id}
-                              totalVoters={m.poll_total_voters} isClosed={m.poll_is_closed}
-                              isTodo={isTodo} {...syncProps} />
-                          }
-                          // Text-based fallback (📊 or 📋 prefix)
-                          if (m.text && (m.text.startsWith('📊') || m.text.startsWith('📋'))) {
-                            const lines = m.text.split('\n')
-                            const isTodo = m.text.startsWith('📋')
-                            const question = lines[0]?.replace(/^[📊📋]\s*/, '') || 'Опитування'
-                            const options = lines.slice(1).filter(l => l.startsWith('☐') || l.startsWith('☑'))
-                            return <PollCard question={question} options={options} messageId={m.id}
-                              isTodo={isTodo} {...syncProps} />
-                          }
-                          return null
-                        })()}
+                        {m.media_type === 'poll' && (
+                          <PollBubble
+                            message={m}
+                            selectedAccount={selectedAccount}
+                            authToken={auth?.token || ''}
+                            onTextUpdate={(msgId, newText) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))}
+                          />
+                        )}
                         {/* Geo location card */}
-                        {m.media_type === 'geo' && (() => {
-                          // Use dedicated API fields, fallback to text parsing
-                          let title = '', address = '', mapUrl = '', isLive = false
-                          if (m.location_lat != null && m.location_lng != null) {
-                            title = m.location_title || 'Геолокація'
-                            address = m.location_address || ''
-                            mapUrl = `https://maps.google.com/maps?q=${m.location_lat},${m.location_lng}`
-                          } else if (m.text && m.text.includes('📍')) {
-                            const lines = (m.text || '').split('\n')
-                            title = lines[0]?.replace('📍 ', '') || 'Геолокація'
-                            mapUrl = lines.find(l => l.startsWith('https://maps.google.com')) || ''
-                            address = lines.length > 2 ? lines.slice(1, -1).join(', ') : ''
-                            isLive = title.startsWith('Маячок')
-                          } else {
-                            return null
-                          }
-                          const lat = m.location_lat ?? parseFloat((mapUrl.match(/q=([-\d.]+)/) || [])[1] || '0')
-                          const lng = m.location_lng ?? parseFloat((mapUrl.match(/,([-\d.]+)/) || [])[1] || '0')
-                          const hasCoords = lat !== 0 || lng !== 0
-                          // Build 2x2 tile grid from OSM for map preview
-                          const zoom = isLive ? 14 : 15
-                          const n = Math.pow(2, zoom)
-                          const xTile = (lng + 180) / 360 * n
-                          const yTile = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n
-                          const tx = Math.floor(xTile), ty = Math.floor(yTile)
-                          // Fractional position within tile for pin offset
-                          const fracX = xTile - tx, fracY = yTile - ty
-                          const tileBase = `https://tile.openstreetmap.org/${zoom}`
-                          return (
-                            <div className="msg-geo-card" onClick={() => mapUrl && shellOpen(mapUrl)}>
-                              {hasCoords && (
-                                <div className="msg-geo-map">
-                                  <div className="msg-geo-tiles" style={{ transform: `translate(${-(fracX * 256)}px, ${-(fracY * 256)}px)` }}>
-                                    <img src={`${tileBase}/${tx}/${ty}.png`} alt="" loading="lazy" />
-                                    <img src={`${tileBase}/${tx + 1}/${ty}.png`} alt="" loading="lazy" />
-                                    <img src={`${tileBase}/${tx}/${ty + 1}.png`} alt="" loading="lazy" />
-                                    <img src={`${tileBase}/${tx + 1}/${ty + 1}.png`} alt="" loading="lazy" />
-                                  </div>
-                                  <div className="msg-geo-pin">{isLive ? '📡' : '📍'}</div>
-                                </div>
-                              )}
-                              <div className="msg-geo-info-bottom">
-                                <span className="msg-geo-title">{title}</span>
-                                {address && <span className="msg-geo-address">{address}</span>}
-                              </div>
-                            </div>
-                          )
-                        })()}
+                        {m.media_type === 'geo' && (
+                          <GeoBubble message={m} shellOpen={shellOpen} />
+                        )}
                         {/* Message text — always shown, even for deleted */}
                         {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊') || m.text.startsWith('📋'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && m.media_type !== 'geo' && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
