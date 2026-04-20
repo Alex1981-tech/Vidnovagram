@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.56': [
+    'Внутрішнє: винесено `<CallCardBubble/>` (Binotel-дзвінок у стрічці з inline-audio плеєром) і `<ServiceMessage/>` (сервісні повідомлення груп: joins/leaves/pins/topic). App.tsx 5680 → 5596 (−84)',
+  ],
   '0.17.55': [
     'Внутрішнє: старт розбиття MessageList. Винесено 3 leaf-рендерери: `<DateSeparator/>`, `<NoteItem/>` (інлайн-нотатка), `<AlbumBubble/>` (медіа-альбом 2×2 grid). App.tsx 5757 → 5680 (−77)',
   ],

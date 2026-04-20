@@ -73,6 +73,8 @@ import { ReplyEditBar } from './components/ReplyEditBar'
 import { DateSeparator } from './components/DateSeparator'
 import { NoteItem } from './components/NoteItem'
 import { AlbumBubble } from './components/AlbumBubble'
+import { CallCardBubble } from './components/CallCardBubble'
+import { ServiceMessage } from './components/ServiceMessage'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3745,107 +3747,21 @@ function App() {
                   }
                   const m = item as ChatMessage
                   if (m.type === 'call') {
-                    const dur = m.duration_seconds || 0
-                    const mm = String(Math.floor(dur / 60)).padStart(2, '0')
-                    const ss = String(dur % 60).padStart(2, '0')
-                    const isIncoming = m.direction === 'incoming' || m.direction === 'received'
-                    const isExpanded = expandedCallId === m.call_id
-                    const canPlay = m.has_media && m.media_file
                     return (
-                      <div key={m.id} className="call-card-wrapper">
-                        <div
-                          className={`call-card${isExpanded ? ' has-audio-open' : ''}`}
-                          onClick={() => {
-                            if (canPlay) {
-                              loadCallAudio(m.call_id!, m.media_file)
-                            }
-                          }}
-                        >
-                          <div className="call-card-icon">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isIncoming ? '#22c55e' : '#3b82f6'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
-                            </svg>
-                          </div>
-                          <div className="call-card-body">
-                            <div className="call-card-header">
-                              <span className="call-card-label">Бінотел</span>
-                              <span className="call-card-time">
-                                {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                            <div className="call-card-details">
-                              <span className="call-card-direction">{isIncoming ? 'Вхідний' : 'Вихідний'}</span>
-                              {m.operator_name && <span className="call-card-operator">{m.operator_name}</span>}
-                              <span className="call-card-duration">{mm}:{ss}</span>
-                              {m.disposition && m.disposition !== 'ANSWER' && (
-                                <span className="call-card-missed">Пропущений</span>
-                              )}
-                            </div>
-                            {canPlay && !isExpanded && (
-                              <div className="call-card-audio-wrap">
-                                <button
-                                  className="call-card-play-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    loadCallAudio(m.call_id!, m.media_file)
-                                  }}
-                                  disabled={audioLoading[m.call_id!]}
-                                >
-                                  {audioLoading[m.call_id!] ? (
-                                    <div className="spinner-sm" />
-                                  ) : (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                  )}
-                                  <span>Прослухати</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {isExpanded && audioBlobMap[m.call_id!] && (
-                          <div className="call-card-audio-expanded">
-                            <audio
-                              controls
-                              autoPlay
-                              preload="auto"
-                              src={audioBlobMap[m.call_id!]}
-                              onEnded={() => setExpandedCallId(null)}
-                            />
-                            <button className="call-card-close-btn" onClick={(e) => { e.stopPropagation(); setExpandedCallId(null) }}>✕</button>
-                          </div>
-                        )}
-                      </div>
+                      <CallCardBubble
+                        key={m.id}
+                        message={m}
+                        expandedCallId={expandedCallId}
+                        setExpandedCallId={setExpandedCallId}
+                        audioLoading={audioLoading}
+                        audioBlobMap={audioBlobMap}
+                        loadCallAudio={loadCallAudio}
+                      />
                     )
                   }
-                  {/* Service messages — centered text, no bubble */}
+                  /* Service messages — centered text, no bubble */
                   if (m.is_service) {
-                    const svcText = (() => {
-                      const sd = m.service_data || {}
-                      const names = (sd.user_names || []).join(', ')
-                      switch (m.service_type) {
-                        case 'chat_add_user': return `${m.sender_name || 'Хтось'} додав ${names || 'учасника'}`
-                        case 'chat_delete_user': return `${m.sender_name || 'Хтось'} видалив ${names || 'учасника'}`
-                        case 'chat_joined_by_link': return `${m.sender_name || 'Хтось'} приєднався за посиланням`
-                        case 'chat_joined_by_request': return `${m.sender_name || 'Хтось'} приєднався за запитом`
-                        case 'chat_edit_title': return `${m.sender_name || 'Хтось'} змінив назву на «${sd.title || ''}»`
-                        case 'chat_edit_photo': return `${m.sender_name || 'Хтось'} змінив фото групи`
-                        case 'chat_delete_photo': return `${m.sender_name || 'Хтось'} видалив фото групи`
-                        case 'chat_create': return `${m.sender_name || 'Хтось'} створив групу`
-                        case 'channel_create': return `Канал створено`
-                        case 'pin_message': return `${m.sender_name || 'Хтось'} закріпив повідомлення`
-                        case 'phone_call': return `📞 Дзвінок`
-                        case 'group_call': return `📞 Груповий дзвінок`
-                        case 'set_ttl': return `Встановлено автовидалення повідомлень`
-                        case 'topic_create': return `Тему створено: ${sd.title || ''}`
-                        case 'topic_edit': return `Тему змінено`
-                        default: return m.service_type || 'Сервісне повідомлення'
-                      }
-                    })()
-                    return (
-                      <div key={m.id} className="msg-service">
-                        <span className="msg-service-text">{svcText}</span>
-                      </div>
-                    )
+                    return <ServiceMessage key={m.id} message={m} />
                   }
                   return (
                     <div key={m.id} data-msg-id={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}${chatSearchResults.includes(m.id as number) ? ' search-highlight' : ''}${chatSearchResults[chatSearchIdx] === m.id ? ' search-active' : ''}`}
