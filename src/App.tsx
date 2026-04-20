@@ -58,6 +58,8 @@ import { SidebarSearch } from './components/SidebarSearch'
 import { GmailSidebarFilter } from './components/GmailSidebarFilter'
 import { GmailEmailList } from './components/GmailEmailList'
 import { ContactList } from './components/ContactList'
+import { RightPanelTabs, type RpTab } from './components/RightPanelTabs'
+import { NotesTab } from './components/NotesTab'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -211,7 +213,6 @@ function App() {
   const [sending, setSending] = useState(false)
 
   // Right panel
-  type RpTab = 'notes' | 'quick' | 'lab' | 'clients' | 'card'
   const [rightTabs, setRightTabs] = useState<RpTab[]>(() => {
     try { const s = localStorage.getItem('rp-tab-order'); if (s) { const a = JSON.parse(s); if (!a.includes('lab')) a.push('lab'); if (!a.includes('clients')) a.push('clients'); if (!a.includes('card')) a.push('card'); return a } } catch {}
     return ['notes', 'quick', 'lab', 'clients', 'card']
@@ -258,7 +259,7 @@ function App() {
   const [rpPlayingCall, setRpPlayingCall] = useState<string | null>(null)
   const rpAudioRef = useRef<HTMLAudioElement | null>(null)
   const dragCatRef = useRef<string | null>(null)
-  const dragTabRef = useRef<string | null>(null)
+  const dragTabRef = useRef<RpTab | null>(null)
   const [chatDropHighlight, setChatDropHighlight] = useState(false)
   const [labSendModal, setLabSendModal] = useState<LabPatient | null>(null)
   const [labSendSelected, setLabSendSelected] = useState<Set<string | number>>(new Set())
@@ -4832,41 +4833,11 @@ function App() {
             </div>
             <div className="right-panel-body">
             {rightTab === 'notes' ? (
-              selectedClient ? (
-                <div className="rp-notes">
-                  <div className="rp-notes-list">
-                    {clientNotes.length === 0 && (
-                      <div className="rp-empty">Немає нотаток</div>
-                    )}
-                    {clientNotes.map(note => (
-                      <div key={note.id} className="rp-note rp-note-clickable" onClick={() => {
-                        // Scroll to note in chat
-                        const el = document.querySelector(`[data-note-id="${note.id}"]`)
-                        if (el) {
-                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          el.classList.add('note-highlight')
-                          setTimeout(() => el.classList.remove('note-highlight'), 1500)
-                        }
-                      }}>
-                        <div className="rp-note-header">
-                          <span className="rp-note-author">{note.author_name}</span>
-                          <span className="rp-note-date">
-                            {new Date(note.created_at).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                            {' '}
-                            {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <button className="rp-delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteNoteConfirm(note.id) }} title="Видалити">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                          </button>
-                        </div>
-                        <div className="rp-note-text">{note.text}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="rp-empty">Оберіть чат для перегляду нотаток</div>
-              )
+              <NotesTab
+                selectedClient={selectedClient}
+                notes={clientNotes}
+                onRequestDelete={setDeleteNoteConfirm}
+              />
             ) : rightTab === 'lab' ? (
               <div className="rp-lab">
                 <div className="rp-lab-search">
@@ -5467,50 +5438,18 @@ function App() {
             ) : null}
           </div>
           </div>
-          <div className="right-panel-tabs">
-            {rightTabs.map(tab => (
-              <button
-                key={tab}
-                className={`rp-tab ${rightTab === tab ? 'active' : ''}`}
-                data-tab={tab}
-                onClick={() => { setRightTab(tab); if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch); if (tab === 'clients' && rpClients.length === 0 && !rpClientLoading) loadRpClients(1, ''); if (tab === 'card' && selectedClient && !cardData) loadClientCard(selectedClient) }}
-                title={tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : tab === 'card' ? 'Картка клієнта' : 'Аналізи'}
-                draggable
-                onDragStart={e => { dragTabRef.current = tab; e.dataTransfer.effectAllowed = 'move' }}
-                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-                onDrop={e => {
-                  e.preventDefault()
-                  if (dragTabRef.current && dragTabRef.current !== tab) {
-                    setRightTabs(prev => {
-                      const arr = [...prev]
-                      const fi = arr.indexOf(dragTabRef.current as RpTab)
-                      const ti = arr.indexOf(tab)
-                      if (fi < 0 || ti < 0) return prev
-                      const [moved] = arr.splice(fi, 1)
-                      arr.splice(ti, 0, moved)
-                      try { localStorage.setItem('rp-tab-order', JSON.stringify(arr)) } catch {}
-                      return arr
-                    })
-                  }
-                  dragTabRef.current = null
-                }}
-                onDragEnd={() => { dragTabRef.current = null }}
-              >
-                {tab === 'notes' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                ) : tab === 'quick' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                ) : tab === 'clients' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                ) : tab === 'card' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M15 8h4M15 12h4"/><path d="M3 21v0c0-2.21 2.69-4 6-4s6 1.79 6 4"/></svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6a2 2 0 002 2h10M3 8v12a2 2 0 002 2h14a2 2 0 002-2V8"/><path d="M10 12h4M10 16h4"/></svg>
-                )}
-                <span className="rp-tab-label">{tab === 'notes' ? 'Нотатки' : tab === 'quick' ? 'Шаблони' : tab === 'clients' ? 'Контакти' : tab === 'card' ? 'Картка' : 'Аналізи'}</span>
-              </button>
-            ))}
-          </div>
+          <RightPanelTabs
+            tabs={rightTabs}
+            setTabs={setRightTabs}
+            activeTab={rightTab}
+            onTabClick={(tab) => {
+              setRightTab(tab)
+              if (tab === 'lab' && labPatients.length === 0 && !labLoading) loadLabResults(1, labSearch)
+              if (tab === 'clients' && rpClients.length === 0 && !rpClientLoading) loadRpClients(1, '')
+              if (tab === 'card' && selectedClient && !cardData) loadClientCard(selectedClient)
+            }}
+            dragTabRef={dragTabRef}
+          />
         </div>
       </div>
 

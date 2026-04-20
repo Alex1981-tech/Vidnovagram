@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.47': [
+    'Внутрішнє: старт розбиття RightPanel. Винесено `<RightPanelTabs/>` (вертикальний селектор вкладок з drag-reorder) і `<NotesTab/>` (найпростіший таб — список нотаток). App.tsx 6517 → 6456',
+  ],
   '0.17.46': [
     'Внутрішнє: фіналізовано розбиття Sidebar — винесено `<GmailEmailList/>` (список листів + пагінація) і `<ContactList/>` (контакти + глобальний пошук + username-результати + empty state + footer). UserIcon переїхав у `components/icons.tsx`. App.tsx 6678 → 6517',
   ],
