@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { formatPresence } from '../utils/presence'
+import { SharedMediaPanel } from './SharedMediaPanel'
 import type { ChatMessage, Contact } from '../types'
 
 interface Presence {
@@ -24,6 +25,11 @@ interface LinkedPhone {
   phone: string
 }
 
+interface VnoteModalState {
+  src: string
+  id: string | number
+}
+
 interface Props {
   open: boolean
   onClose: () => void
@@ -42,6 +48,15 @@ interface Props {
   setLightboxSrc: Dispatch<SetStateAction<string | null>>
   shellOpen: (url: string) => Promise<void>
   openSelectedClientCard: (clientId: string) => void
+  // Shared media panel
+  token: string
+  mediaBlobMap: Record<string, string>
+  mediaLoading: Record<string, boolean>
+  loadMediaBlob: (key: string, mediaPath: string) => Promise<string | null>
+  openMedia: (mediaPath: string, mediaType: string, messageId: string | number) => void
+  setVnoteModal: Dispatch<SetStateAction<VnoteModalState | null>>
+  setVnotePlaying: Dispatch<SetStateAction<boolean>>
+  setVnoteProgress: Dispatch<SetStateAction<number>>
 }
 
 /**
@@ -69,6 +84,14 @@ export function ContactProfileModal({
   setLightboxSrc,
   shellOpen,
   openSelectedClientCard,
+  token,
+  mediaBlobMap,
+  mediaLoading,
+  loadMediaBlob,
+  openMedia,
+  setVnoteModal,
+  setVnotePlaying,
+  setVnoteProgress,
 }: Props) {
   if (!open || !selectedClient || !chatContact) return null
 
@@ -80,10 +103,6 @@ export function ContactProfileModal({
   const { text: presText, isOnline: presOnline } = formatPresence(pr)
   const phone = chatDisplay.subtitle || clientPhone || chatContact.phone || ''
   const username = (chatContact as unknown as { tg_username?: string }).tg_username || ''
-  const photoCount = messages.filter(m => m.media_type === 'photo').length
-  const voiceCount = messages.filter(m => m.media_type === 'voice' || m.media_type === 'video_note').length
-  const docCount = messages.filter(m => m.media_type === 'document').length
-  const videoCount = messages.filter(m => m.media_type === 'video').length
   const source = (chatContact as unknown as { source?: string }).source
 
   return (
@@ -180,32 +199,18 @@ export function ContactProfileModal({
               </div>
             )}
             {!isPrivate && groupInfo?.about && <p className="contact-profile-about">{groupInfo.about}</p>}
-            <div className="contact-profile-media-list">
-              {photoCount > 0 && (
-                <div className="contact-profile-media-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-                  <span>{photoCount} фото</span>
-                </div>
-              )}
-              {videoCount > 0 && (
-                <div className="contact-profile-media-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                  <span>{videoCount} відео</span>
-                </div>
-              )}
-              {docCount > 0 && (
-                <div className="contact-profile-media-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  <span>{docCount} файлів</span>
-                </div>
-              )}
-              {voiceCount > 0 && (
-                <div className="contact-profile-media-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-                  <span>{voiceCount} голосових</span>
-                </div>
-              )}
-            </div>
+            <SharedMediaPanel
+              messages={messages}
+              token={token}
+              mediaBlobMap={mediaBlobMap}
+              mediaLoading={mediaLoading}
+              loadMediaBlob={loadMediaBlob}
+              setLightboxSrc={setLightboxSrc}
+              openMedia={openMedia}
+              setVnoteModal={setVnoteModal}
+              setVnotePlaying={setVnotePlaying}
+              setVnoteProgress={setVnoteProgress}
+            />
             <div className="contact-profile-action-list">
               <div
                 className="contact-profile-action-row"

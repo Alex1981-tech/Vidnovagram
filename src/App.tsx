@@ -4319,6 +4319,14 @@ function App() {
         setLightboxSrc={setLightboxSrc}
         shellOpen={shellOpen}
         openSelectedClientCard={openSelectedClientCard}
+        token={auth?.token || ''}
+        mediaBlobMap={mediaBlobMap}
+        mediaLoading={mediaLoading}
+        loadMediaBlob={loadMediaBlob}
+        openMedia={openMedia}
+        setVnoteModal={setVnoteModal}
+        setVnotePlaying={setVnotePlaying}
+        setVnoteProgress={setVnoteProgress}
       />
 
       {/* Lab Send Modal — send lab results to chat */}

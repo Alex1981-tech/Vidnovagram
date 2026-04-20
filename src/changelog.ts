@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.69': [
+    'Картка контакту: повноцінна галерея спільних медіа (як у Telegram) — таби Фото / Відео / Файли / Голосові, сітка з кліком для відкриття в lightbox / відео-модалі, список файлів та голосових. Раніше було тільки цифри',
+  ],
   '0.17.68': [
     'Внутрішнє: фінальна партія overlay-компонентів — 9 в одному комітом: `<ForwardBar/>` (forward-mode toolbar), `<ChannelReadonlyBar/>`, `<LinkClientModal/>` (привʼязка placeholder → real client), `<NoteModal/>` (нотатка з Ctrl+Enter), `<VnoteModal/>` (відеокружок-плеєр), `<ConfirmDeleteTemplate/>`, `<SelectAccountHint/>`, `<DeleteMessageConfirm/>`, `<DeleteNoteConfirm/>`. App.tsx 4704 → 4555',
   ],
