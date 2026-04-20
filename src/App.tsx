@@ -74,6 +74,7 @@ import { MessageContextMenu } from './components/MessageContextMenu'
 import { ForwardModal } from './components/ForwardModal'
 import { ComposeModal } from './components/ComposeModal'
 import { ContactProfileModal } from './components/ContactProfileModal'
+import { LabSendModal } from './components/LabSendModal'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -4453,100 +4454,17 @@ function App() {
       />
 
       {/* Lab Send Modal — send lab results to chat */}
-      {labSendModal && (
-        <div className="modal-overlay" onClick={() => { setLabSendModal(null); setLabSendSelected(new Set()) }}>
-          <div className="lab-send-modal" onClick={e => e.stopPropagation()}>
-            <div className="lab-send-header">
-              <h3>Надіслати аналізи</h3>
-              <button className="modal-close-btn" onClick={() => { setLabSendModal(null); setLabSendSelected(new Set()) }}>×</button>
-            </div>
-            <div className="lab-send-patient">
-              <div className="lab-patient-avatar">
-                <span>{(labSendModal.name || '?')[0].toUpperCase()}</span>
-              </div>
-              <div className="lab-send-patient-info">
-                <span className="lab-send-patient-name">{labSendModal.name || 'Невідомий'}</span>
-                {labSendModal.phone && <span className="lab-send-patient-phone">{labSendModal.phone}</span>}
-              </div>
-            </div>
-            <div className="lab-send-select-all">
-              <label onMouseDown={e => e.stopPropagation()}>
-                <input type="checkbox"
-                  checked={labSendSelected.size === labSendModal.results.filter(r => r.media_file).length && labSendSelected.size > 0}
-                  onChange={e => {
-                    if (e.target.checked) {
-                      setLabSendSelected(new Set(labSendModal.results.filter(r => r.media_file).map(r => r.id)))
-                    } else {
-                      setLabSendSelected(new Set())
-                    }
-                  }}
-                />
-                Вибрати всі ({labSendModal.results.filter(r => r.media_file).length})
-              </label>
-            </div>
-            <div className="lab-send-list">
-              {labSendModal.results.map(r => {
-                const hasFile = !!r.media_file
-                const isChecked = labSendSelected.has(r.id)
-                const typeLabel: Record<string, string> = {
-                  blood_test: 'Аналіз крові', ultrasound: 'УЗД', xray: 'Рентген',
-                  ct_scan: 'КТ', mri: 'МРТ', ecg: 'ЕКГ', dental_scan: 'Стоматологія',
-                  prescription: 'Рецепт', other_lab: 'Інше',
-                }
-                const thumbKey = `labsend_thumb_${r.id}`
-                if (r.thumbnail && !mediaBlobMap[thumbKey] && !mediaLoading[thumbKey]) loadMediaBlob(thumbKey, r.thumbnail)
-                return (
-                  <div
-                    key={r.id}
-                    className={`lab-send-item${!hasFile ? ' disabled' : ''}${isChecked ? ' selected' : ''}`}
-                    onClick={() => {
-                      if (!hasFile) return
-                      setLabSendSelected(prev => {
-                        const next = new Set(prev)
-                        if (next.has(r.id)) next.delete(r.id)
-                        else next.add(r.id)
-                        return next
-                      })
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      disabled={!hasFile}
-                      onClick={e => e.stopPropagation()}
-                      onChange={() => {
-                        if (!hasFile) return
-                        setLabSendSelected(prev => {
-                          const next = new Set(prev)
-                          if (next.has(r.id)) next.delete(r.id)
-                          else next.add(r.id)
-                          return next
-                        })
-                      }}
-                    />
-                    <div className="lab-send-item-thumb">
-                      {mediaBlobMap[thumbKey] ? <img src={mediaBlobMap[thumbKey]} alt="" /> : (
-                        <div className="lab-result-icon">{/\.pdf/i.test(r.media_file || '') ? '📄' : '🖼️'}</div>
-                      )}
-                    </div>
-                    <div className="lab-send-item-info">
-                      <span className="lab-send-item-type">{typeLabel[r.lab_result_type] || r.lab_result_type || 'Аналіз'}</span>
-                      <span className="lab-send-item-date">{new Date(r.message_date).toLocaleDateString('uk-UA')}</span>
-                    </div>
-                    <span className="lab-result-badge">{r.source === 'telegram' ? 'TG' : '✉️'}</span>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="lab-send-footer">
-              <button className="lab-send-cancel" onClick={() => { setLabSendModal(null); setLabSendSelected(new Set()) }}>Скасувати</button>
-              <button className="lab-send-submit" disabled={labSendSelected.size === 0 || labSending} onClick={sendLabResults}>
-                {labSending ? 'Надсилання...' : `Надіслати (${labSendSelected.size})`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LabSendModal
+        patient={labSendModal}
+        selectedIds={labSendSelected}
+        setSelectedIds={setLabSendSelected}
+        sending={labSending}
+        mediaBlobMap={mediaBlobMap}
+        mediaLoading={mediaLoading}
+        loadMediaBlob={loadMediaBlob}
+        onClose={() => { setLabSendModal(null); setLabSendSelected(new Set()) }}
+        onSend={sendLabResults}
+      />
 
       {/* Lab Assign Modal */}
       {labAssignMsg && (
