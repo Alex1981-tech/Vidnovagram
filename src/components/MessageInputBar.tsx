@@ -131,7 +131,7 @@ export function MessageInputBar({
         rows={1}
       />
       {hasContent ? (
-        <button className="chat-send-btn" onClick={sendMessage} disabled={sending}>
+        <button className="chat-send-btn" onClick={() => sendMessage()} disabled={sending}>
           {sending ? <div className="spinner-sm" /> : <SendIcon />}
         </button>
       ) : (

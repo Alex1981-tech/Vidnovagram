@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.57': [
+    'КРИТИЧНО: виправлено регрес v0.17.53 — кнопка "Надіслати" в чаті передавала MouseEvent як файл → Background upload TypeError з FormData.append',
+    'Внутрішнє: винесено 3 sub-компоненти MessageBubble — `<ReactionsRow/>` (емодзі-смужка з аватаркою), `<ReplyQuote/>` (цитата reply з thumbnail), `<MessageFooter/>` (source+time+edited+delivery status). App.tsx 5596 → 5530 (−66)',
+  ],
   '0.17.56': [
     'Внутрішнє: винесено `<CallCardBubble/>` (Binotel-дзвінок у стрічці з inline-audio плеєром) і `<ServiceMessage/>` (сервісні повідомлення груп: joins/leaves/pins/topic). App.tsx 5680 → 5596 (−84)',
   ],

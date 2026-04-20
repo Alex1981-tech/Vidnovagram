@@ -75,6 +75,9 @@ import { NoteItem } from './components/NoteItem'
 import { AlbumBubble } from './components/AlbumBubble'
 import { CallCardBubble } from './components/CallCardBubble'
 import { ServiceMessage } from './components/ServiceMessage'
+import { ReactionsRow } from './components/ReactionsRow'
+import { ReplyQuote } from './components/ReplyQuote'
+import { MessageFooter } from './components/MessageFooter'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3794,45 +3797,14 @@ function App() {
                           </div>
                         )}
                         {/* Reply quote — click to scroll to quoted message */}
-                        {(m.reply_to_msg_id || m.reply_to_text || m.reply_to_sender) && (() => {
-                          // Find thumbnail from replied message (lookup in loaded messages)
-                          const replyThumb = (() => {
-                            if (m.reply_to_thumbnail) return { thumb: m.reply_to_thumbnail, mediaType: m.reply_to_media_type || '' }
-                            if (!m.reply_to_msg_id) return null
-                            const replied = messages.find(rm => rm.tg_message_id === m.reply_to_msg_id && (!m.tg_peer_id || rm.tg_peer_id === m.tg_peer_id))
-                            if (replied?.thumbnail) return { thumb: replied.thumbnail, mediaType: replied.media_type || '' }
-                            return null
-                          })()
-                          const replyMediaType = m.reply_to_media_type || (() => {
-                            if (!m.reply_to_msg_id) return ''
-                            const replied = messages.find(rm => rm.tg_message_id === m.reply_to_msg_id && (!m.tg_peer_id || rm.tg_peer_id === m.tg_peer_id))
-                            return replied?.media_type || ''
-                          })()
-                          const replyText = m.reply_to_text || (replyMediaType ? ({
-                            photo: 'Фото', video: 'Відео', video_note: 'Відеоповідомлення',
-                            voice: 'Голосове повідомлення', sticker: 'Стікер', document: 'Документ',
-                          } as Record<string, string>)[replyMediaType] || 'Медіа' : '...')
-                          return (
-                            <div className="msg-reply-quote clickable" onClick={m.reply_to_msg_id ? (e) => { e.stopPropagation(); scrollToReplyMessage(m.reply_to_msg_id!, m.tg_peer_id) } : undefined}>
-                              <div className="msg-reply-bar" />
-                              <div className="msg-reply-body">
-                                {m.reply_to_sender && <span className="msg-reply-sender">{m.reply_to_sender}</span>}
-                                <span className="msg-reply-text">{replyText}</span>
-                              </div>
-                              {replyThumb && (
-                                <AuthMedia
-                                  mediaKey={`reply_thumb_${m.id}`}
-                                  mediaPath={replyThumb.thumb}
-                                  type="image"
-                                  className={`msg-reply-thumb${replyThumb.mediaType === 'video_note' ? ' msg-reply-thumb-round' : ''}`}
-                                  token={auth?.token || ''}
-                                  blobMap={mediaBlobMap}
-                                  loadBlob={loadMediaBlob}
-                                />
-                              )}
-                            </div>
-                          )
-                        })()}
+                        <ReplyQuote
+                          message={m}
+                          messages={messages}
+                          token={auth?.token || ''}
+                          mediaBlobMap={mediaBlobMap}
+                          loadMediaBlob={loadMediaBlob}
+                          onClickReply={scrollToReplyMessage}
+                        />
                         {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
                         {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
                           (() => {
@@ -4201,51 +4173,13 @@ function App() {
                           </div>
                         )}
                         {/* Reactions */}
-                        {m.reactions && m.reactions.length > 0 && (
-                          <div className="msg-reactions">
-                            {m.reactions.map((r, i) => (
-                              <span key={i} className={`msg-reaction${r.chosen ? ' chosen' : ''}`}>
-                                {!r.chosen && selectedClient && photoMap[selectedClient] ? (
-                                  <img src={photoMap[selectedClient]} className="reaction-avatar" alt="" />
-                                ) : !r.chosen ? (
-                                  <span className="reaction-avatar reaction-avatar-placeholder">
-                                    {(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
-                                  </span>
-                                ) : null}
-                                <span className="reaction-emoji">{r.emoji}</span>{r.count > 1 ? ` ${r.count}` : ''}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="msg-footer">
-                          <span className="msg-source">
-                            {m.source === 'whatsapp'
-                              ? <WhatsAppIcon size={10} color="#25D366" />
-                              : <TelegramIcon size={10} color="#2AABEE" />
-                            }
-                          </span>
-                          {m.is_edited && (
-                            <span className="msg-edited" title={m.original_text ? `Оригінал: ${m.original_text}` : 'Редаговано'}>ред.</span>
-                          )}
-                          <span className="msg-time">
-                            {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          {m.direction === 'sent' && (
-                            <span className={`msg-status-text ${
-                              m.source === 'whatsapp'
-                                ? (m.is_read ? 'read' : 'sent')
-                                : (m.is_read ? 'read' : m.is_read === false ? 'delivered' : 'sent')
-                            }`}>
-                              {m.local_status === 'sending'
-                                ? 'Надсилання'
-                                : m.local_status === 'failed'
-                                  ? 'Не відправлено'
-                                  : m.source === 'whatsapp'
-                                    ? (m.is_read ? 'Прочитано' : 'Надіслано')
-                                    : m.is_read ? 'Прочитано' : m.is_read === false ? 'Доставлено' : 'Надіслано'}
-                            </span>
-                          )}
-                        </div>
+                        <ReactionsRow
+                          reactions={m.reactions || []}
+                          selectedClient={selectedClient}
+                          clientPhotoUrl={selectedClient ? photoMap[selectedClient] : undefined}
+                          clientInitial={(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
+                        />
+                        <MessageFooter message={m} />
                         {m.local_status === 'failed' && (
                           <div className="msg-deleted-label">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
