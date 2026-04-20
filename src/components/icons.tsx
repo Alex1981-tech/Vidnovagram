@@ -140,6 +140,23 @@ export const InstagramIcon = ({ size = 20 }: { size?: number; color?: string }) 
   </svg>
 )
 
+// Telegram bot — standard Telegram paper plane + a small robot overlay so
+// operators visually distinguish bot chats from personal TG accounts.
+export const TelegramBotIcon = ({ size = 20 }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="12" fill="#2AABEE" />
+    <path
+      fill="#fff"
+      d="M17.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.692-1.653-1.123-2.678-1.799-1.185-.781-.417-1.21.258-1.911.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.492-1.302.487-.429-.008-1.252-.242-1.865-.442-.751-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635.099-.002.321.023.465.141.12.099.153.232.168.327.016.094.036.31.02.478z"
+    />
+    {/* "bot" badge — small dot with antenna */}
+    <circle cx="19" cy="5" r="4" fill="#ff6b35" stroke="#fff" strokeWidth="0.8" />
+    <path d="M19 3.2v-1.2M17.8 4h-.6M20.8 4h-.6" stroke="#fff" strokeWidth="0.6" strokeLinecap="round" />
+    <circle cx="17.8" cy="5.2" r="0.4" fill="#fff" />
+    <circle cx="20.2" cy="5.2" r="0.4" fill="#fff" />
+  </svg>
+)
+
 // Viber official purple brand mark (simplified).
 export const ViberIcon = ({ size = 20 }: { size?: number; color?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24">
