@@ -489,12 +489,14 @@ function App() {
   const draftsRef = useRef<Map<string, { text: string; replyTo?: any }>>(
     (() => { try { const s = localStorage.getItem('vg_drafts'); if (s) return new Map(JSON.parse(s)) } catch {} return new Map() })()
   )
-  // Chat search
+  // Chat search — session-scoped per-chat state. When user switches chats and
+  // comes back, last search (query + open/closed + current idx) is restored.
   const [chatSearchOpen, setChatSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [chatSearchResults, setChatSearchResults] = useState<number[]>([]) // indices into messages
   const [chatSearchIdx, setChatSearchIdx] = useState(0)
   const chatSearchRef = useRef<HTMLInputElement>(null)
+  const chatSearchPerChatRef = useRef<Map<string, { query: string; open: boolean; idx: number }>>(new Map())
 
   // Forward mode
   const [forwardMode, setForwardMode] = useState(false)
@@ -2809,10 +2811,29 @@ function App() {
     }
   }, [chatSearchQuery, messages])
 
-  // Reset search when changing client
+  // Save/restore search state on chat switch. Keeps the current session's searches
+  // alive across contact switching — when user jumps back to a contact, the search
+  // bar re-opens with the same query and current result position.
+  const prevSearchClientRef = useRef<string | null>(null)
   useEffect(() => {
-    setChatSearchOpen(false)
-    setChatSearchQuery('')
+    const prevClient = prevSearchClientRef.current
+    // 1. Persist current state under the previous client
+    if (prevClient && (chatSearchQuery || chatSearchOpen)) {
+      chatSearchPerChatRef.current.set(prevClient, {
+        query: chatSearchQuery,
+        open: chatSearchOpen,
+        idx: chatSearchIdx,
+      })
+    } else if (prevClient) {
+      chatSearchPerChatRef.current.delete(prevClient)
+    }
+    // 2. Restore state for the new client (or reset)
+    const saved = selectedClient ? chatSearchPerChatRef.current.get(selectedClient) : null
+    setChatSearchOpen(saved?.open ?? false)
+    setChatSearchQuery(saved?.query ?? '')
+    setChatSearchIdx(saved?.idx ?? 0)
+    prevSearchClientRef.current = selectedClient
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClient])
 
   // addToastRef updated below after addToast is defined

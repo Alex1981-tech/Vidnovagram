@@ -6752,6 +6752,47 @@ body {
   flex-shrink: 0;
 }
 
+/* Telegram phone/group call bubble (from ServiceMessage) */
+.tg-call-bubble {
+  padding: 10px 12px;
+  min-width: 180px;
+}
+.tg-call-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tg-call-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+.tg-call-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tg-call-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.tg-call-missed {
+  margin-left: 4px;
+  color: #ef4444;
+  font-weight: 400;
+}
+.tg-call-meta {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
 /* Contact profile — shared media gallery (tabs + content) */
 .shared-media-panel {
   width: 100%;
