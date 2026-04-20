@@ -479,9 +479,30 @@ function App() {
     setIsPlaceholder,
     setHasOlder: setHasOlderMessages,
     setMsgCursor,
-    loadMessages,
+    loadMessages: rawLoadMessages,
     loadOlderMessages,
   } = messagesCtrl
+
+  // Business (Viber / WA Cloud / FB Messenger / Instagram Direct).
+  // Declared here (above WS ref wiring) so loadMessages wrapper can read
+  // selectedBusiness — it must own the chat state to avoid TG polluting it.
+  const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
+  const [selectedBusiness, setSelectedBusiness] = useState<string>('')
+  const [businessUnreads] = useState<Record<string, number>>({})
+
+  // Track selectedBusiness in a ref so loadMessages can skip TG endpoint
+  // when the user is browsing a business (Viber/FB/IG) chat — otherwise
+  // TG messages would load into the business chat state.
+  const selectedBusinessRef = useRef(selectedBusiness)
+  useEffect(() => { selectedBusinessRef.current = selectedBusiness }, [selectedBusiness])
+
+  const loadMessages = useCallback((clientId: string, scrollToEnd: boolean = true) => {
+    if (selectedBusinessRef.current) {
+      // Business chat owns the message state; business polling updates it.
+      return Promise.resolve()
+    }
+    return rawLoadMessages(clientId, scrollToEnd)
+  }, [rawLoadMessages])
 
   // Edit message mode
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null)
@@ -522,10 +543,8 @@ function App() {
   const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const addContactCheckTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Business (Viber Business via TurboSMS, ...)
-  const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
-  const [selectedBusiness, setSelectedBusiness] = useState<string>('')
-  const [businessUnreads] = useState<Record<string, number>>({})
+  // (Business state moved above useMessages destructure so loadMessages wrapper
+  // can guard against TG fetch while a business account is active.)
 
   // Gmail
   const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
@@ -2784,14 +2803,22 @@ function App() {
     } catch (e) { console.error('business contacts:', e) }
   }, [auth?.token, setContacts])
 
-  const loadBusinessMessages = useCallback(async (accountId: string, clientId: string) => {
+  const loadBusinessMessages = useCallback(async (accountId: string, clientId: string, replaceScroll = false) => {
     if (!auth?.token || !accountId || !clientId) return
     try {
       const r = await authFetch(`${API_BASE}/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
       if (!r.ok) return
       const data = await r.json()
       const list = (data.messages || []) as ChatMessage[]
-      setMessages(list)
+      setMessages(prev => {
+        // Skip rerender if head/tail ids and length unchanged (polling idempotency)
+        if (!replaceScroll && prev.length === list.length && list.length > 0
+            && prev[0]?.id === list[0]?.id
+            && prev[prev.length - 1]?.id === list[list.length - 1]?.id) {
+          return prev
+        }
+        return list
+      })
     } catch (e) { console.error('business messages:', e) }
   }, [auth?.token, setMessages])
 
@@ -2799,21 +2826,20 @@ function App() {
   useEffect(() => {
     if (!selectedBusiness) return
     loadBusinessContacts(selectedBusiness)
+    const iv = setInterval(() => loadBusinessContacts(selectedBusiness), 30000)
+    return () => clearInterval(iv)
   }, [selectedBusiness, loadBusinessContacts])
 
   useEffect(() => {
     if (!selectedBusiness || !selectedClient) return
-    loadBusinessMessages(selectedBusiness, selectedClient)
+    loadBusinessMessages(selectedBusiness, selectedClient, true)
     const iv = setInterval(() => {
       loadBusinessMessages(selectedBusiness, selectedClient)
-      loadBusinessContacts(selectedBusiness)
-    }, 10000)
+    }, 15000)
     return () => clearInterval(iv)
-  }, [selectedBusiness, selectedClient, loadBusinessMessages, loadBusinessContacts])
+  }, [selectedBusiness, selectedClient, loadBusinessMessages])
 
   // Refs for stable WS callbacks (avoid reconnecting WS on every state change)
-  const selectedBusinessRef = useRef(selectedBusiness)
-  useEffect(() => { selectedBusinessRef.current = selectedBusiness }, [selectedBusiness])
 
   // When a WS event or scheduler triggers a contact-list reload, route it
   // to the currently active source (business or TG/WA) instead of always
