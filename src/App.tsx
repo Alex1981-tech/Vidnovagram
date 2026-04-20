@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, Suspense, lazy } from 'react'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { tempDir, join } from '@tauri-apps/api/path'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
@@ -40,7 +40,9 @@ import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon } from './components/icons'
-import { SettingsModal } from './components/SettingsModal'
+// SettingsModal is lazy-loaded — its ~40KB chunk (wallpapers, WA settings UI, sound previews)
+// only enters memory when the user actually opens Settings from the rail.
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })))
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
 import { AddToAccountModal } from './components/AddToAccountModal'
@@ -5018,25 +5020,29 @@ function App() {
         </div>
       )}
 
-      {/* Settings modal */}
-      <SettingsModal
-        open={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-        settingsTab={settingsTab}
-        setSettingsTab={setSettingsTab}
-        soundDropdownOpen={soundDropdownOpen}
-        setSoundDropdownOpen={setSoundDropdownOpen}
-        accounts={accounts}
-        gmailAccounts={gmailAccounts}
-        appSettings={appSettings}
-        setAppSettings={setAppSettings}
-        previewSound={previewSound}
-        setPreviewSound={setPreviewSound}
-        previewAudioRef={previewAudioRef}
-        waSettings={waSettings}
-        wallpapers={wallpapers}
-        currentVersion={currentVersion}
-      />
+      {/* Settings modal — lazy chunk, only enters memory when user opens Settings */}
+      {showSettingsModal && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            open={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
+            settingsTab={settingsTab}
+            setSettingsTab={setSettingsTab}
+            soundDropdownOpen={soundDropdownOpen}
+            setSoundDropdownOpen={setSoundDropdownOpen}
+            accounts={accounts}
+            gmailAccounts={gmailAccounts}
+            appSettings={appSettings}
+            setAppSettings={setAppSettings}
+            previewSound={previewSound}
+            setPreviewSound={setPreviewSound}
+            previewAudioRef={previewAudioRef}
+            waSettings={waSettings}
+            wallpapers={wallpapers}
+            currentVersion={currentVersion}
+          />
+        </Suspense>
+      )}
 
       {/* What's New modal */}
       <WhatsNewModal

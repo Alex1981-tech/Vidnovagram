@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.63': [
+    'Збірка: `<SettingsModal/>` переведено на lazy-chunk (19 KB / 4.6 KB gzip). Модалка налаштувань тепер не тягнеться в initial bundle, а підвантажується при першому відкритті',
+  ],
   '0.17.62': [
     'Внутрішнє: завершено розбиття MessageList — винесено `<MessageBubble/>` orchestrator, який композує всі 19 sub-компонентів bubble-і (header/reply/media/reactions/footer/labels/etc). Прибрано 14 imports + SingleCheckIcon inline з App.tsx. App.tsx 5235 → 5095 (−140). Тепер App.tsx нижче 5100 рядків',
   ],
