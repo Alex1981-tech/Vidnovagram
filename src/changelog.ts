@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.61': [
+    'Внутрішнє: фінальна хвиля MessageBubble — 7 компонентів одним комітом: `<PhotoBubble/>` (2 варіанти thumbnail/no-thumbnail), `<InlineButtons/>` (бот-кнопки url/callback/web_app), `<BubbleHeader/>` (group sender + forward from), `<DeletedLabel/>`, `<MediaPendingIndicator/>`, `<UnknownMediaPlaceholder/>`, `<FailedStatusLabel/>`. App.tsx 5341 → 5235 (−106)',
+  ],
   '0.17.60': [
     'Внутрішнє: винесено 4 media-bubble компоненти — `<VoiceBubble/>` (wraps VoicePlayer), `<DocumentBubble/>` (PDF/файл з іконкою), `<VideoBubble/>` (thumbnail+play→inline player), `<VideoNoteBubble/>` (кружки з autoplay+loop+modal). App.tsx 5387 → 5341 (−46)',
   ],

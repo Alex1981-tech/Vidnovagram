@@ -28,7 +28,6 @@ import {
   getCached,
   putCache,
 } from './cache'
-import { AuthMedia } from './components/AuthMedia'
 import { Linkify } from './components/Linkify'
 import { LinkPreviewCard } from './components/LinkPreviewCard'
 import { ThemeToggle } from './components/ThemeToggle'
@@ -84,6 +83,13 @@ import { VoiceBubble } from './components/VoiceBubble'
 import { DocumentBubble } from './components/DocumentBubble'
 import { VideoBubble } from './components/VideoBubble'
 import { VideoNoteBubble } from './components/VideoNoteBubble'
+import { PhotoBubble } from './components/PhotoBubble'
+import { InlineButtons } from './components/InlineButtons'
+import { BubbleHeader } from './components/BubbleHeader'
+import { DeletedLabel } from './components/DeletedLabel'
+import { MediaPendingIndicator } from './components/MediaPendingIndicator'
+import { UnknownMediaPlaceholder } from './components/UnknownMediaPlaceholder'
+import { FailedStatusLabel } from './components/FailedStatusLabel'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3791,17 +3797,8 @@ function App() {
                         </div>
                       )}
                       <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}${m.media_type === 'video_note' ? ' msg-bubble-vnote' : ''}`}>
-                        {/* Group sender name */}
-                        {m.chat_type && m.chat_type !== 'private' && m.direction === 'received' && m.sender_name && (
-                          <div className="msg-group-sender">{m.sender_name}</div>
-                        )}
-                        {/* Forwarded header */}
-                        {m.fwd_from_name && (
-                          <div className="msg-forward-header">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
-                            <span>Переслано від <strong>{m.fwd_from_name}</strong></span>
-                          </div>
-                        )}
+                        {/* Group sender + forwarded-from meta */}
+                        <BubbleHeader message={m} />
                         {/* Reply quote — click to scroll to quoted message */}
                         <ReplyQuote
                           message={m}
@@ -3811,55 +3808,14 @@ function App() {
                           loadMediaBlob={loadMediaBlob}
                           onClickReply={scrollToReplyMessage}
                         />
-                        {/* Photo with thumbnail → click to view full (exclude stickers — rendered separately) */}
-                        {m.has_media && m.thumbnail && m.media_type !== 'video' && m.media_type !== 'voice' && m.media_type !== 'document' && m.media_type !== 'sticker' && (
-                          (() => {
-                            const preferFullImage = m.media_type === 'photo' && !!m.media_file
-                            const mediaKey = `${preferFullImage || (m.source === 'whatsapp' && m.media_file) ? 'full' : 'thumb'}_${m.id}`
-                            const mediaPath = preferFullImage
-                              ? m.media_file
-                              : (m.source === 'whatsapp' && m.media_file ? m.media_file : m.thumbnail)
-                            const fallbackPath = preferFullImage
-                              ? (m.thumbnail || undefined)
-                              : (m.source === 'whatsapp' ? undefined : (m.media_file || undefined))
-                            return (
-                          <AuthMedia
-                            mediaKey={mediaKey}
-                            mediaPath={mediaPath}
-                            type="image"
-                            className={`msg-media${m.source === 'whatsapp' ? ' msg-media-wa' : ''}`}
-                            token={auth?.token || ''}
-                            blobMap={mediaBlobMap}
-                            loadBlob={loadMediaBlob}
-                            fallbackPath={fallbackPath}
-                            onClick={async () => {
-                              if (m.media_file) {
-                                const blob = mediaBlobMap[`full_${m.id}`] || await loadMediaBlob(`full_${m.id}`, m.media_file)
-                                if (blob) setLightboxSrc(blob)
-                              } else if (mediaBlobMap[`thumb_${m.id}`]) {
-                                setLightboxSrc(mediaBlobMap[`thumb_${m.id}`])
-                              }
-                            }}
-                          />
-                            )
-                          })()
-                        )}
-                        {/* Photo without thumbnail → load full image directly */}
-                        {m.has_media && !m.thumbnail && m.media_type === 'photo' && m.media_file && (
-                          <AuthMedia
-                            mediaKey={`full_${m.id}`}
-                            mediaPath={m.media_file}
-                            type="image"
-                            className={`msg-media${m.source === 'whatsapp' ? ' msg-media-wa' : ''}`}
-                            token={auth?.token || ''}
-                            blobMap={mediaBlobMap}
-                            loadBlob={loadMediaBlob}
-                            onClick={() => {
-                              const src = mediaBlobMap[`full_${m.id}`]
-                              if (src) setLightboxSrc(src)
-                            }}
-                          />
-                        )}
+                        {/* Photo (with or without thumbnail) */}
+                        <PhotoBubble
+                          message={m}
+                          token={auth?.token || ''}
+                          mediaBlobMap={mediaBlobMap}
+                          loadMediaBlob={loadMediaBlob}
+                          setLightboxSrc={setLightboxSrc}
+                        />
                         {/* Voice message → Telegram-style player */}
                         {m.has_media && m.media_type === 'voice' && (
                           <VoiceBubble
@@ -3902,14 +3858,8 @@ function App() {
                             onOpen={openMedia}
                           />
                         )}
-                        {/* Contact (vCard) — inline card with name & phone */}
                         {/* Media pending download — show loading indicator */}
-                        {m.has_media && m.media_status === 'pending' && !m.media_file && (
-                          <div className="msg-media-pending">
-                            <div className="spinner-sm" />
-                            <span>{m.media_type === 'photo' ? 'Фото' : m.media_type === 'video' ? 'Відео' : m.media_type === 'document' ? 'Файл' : m.media_type === 'voice' ? 'Голосове' : 'Медіа'} завантажується...</span>
-                          </div>
-                        )}
+                        <MediaPendingIndicator message={m} />
                         {/* Sticker — show emoji or media */}
                         {m.media_type === 'sticker' && (
                           <StickerBubble
@@ -3920,11 +3870,7 @@ function App() {
                           />
                         )}
                         {/* Unknown media without specific handler */}
-                        {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll', 'sticker'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
-                          <div className="msg-media-placeholder">
-                            {`📎 ${m.media_type}`}
-                          </div>
-                        )}
+                        <UnknownMediaPlaceholder message={m} />
                         {/* Contact card */}
                         {m.media_type === 'contact' && (
                           <ContactBubble
@@ -3954,61 +3900,14 @@ function App() {
                         {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊') || m.text.startsWith('📋'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
                         {m.text && !m.is_deleted && m.media_type !== 'geo' && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
                         {/* Inline keyboard (bot buttons) */}
-                        {m.reply_markup && m.reply_markup.length > 0 && (
-                          <div className="msg-inline-keyboard">
-                            {m.reply_markup.map((row: any[], ri: number) => (
-                              <div key={ri} className="msg-inline-row">
-                                {row.map((btn: any, bi: number) => (
-                                  <button
-                                    key={bi}
-                                    className={`msg-inline-btn${btn.type === 'url' || btn.type === 'web_app' ? ' msg-inline-btn-url' : ''}`}
-                                    onClick={async () => {
-                                      if (btn.type === 'url' || btn.type === 'web_app') {
-                                        shellOpen(btn.url)
-                                      } else if (btn.type === 'callback' && selectedAccount) {
-                                        try {
-                                          const res = await authFetch(`${API_BASE}/telegram/click-inline-button/`, auth!.token, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                              account_id: selectedAccount,
-                                              peer_id: m.tg_peer_id,
-                                              msg_id: m.tg_message_id,
-                                              data: btn.data,
-                                            }),
-                                          })
-                                          if (res.ok) {
-                                            const result = await res.json()
-                                            if (result.message) {
-                                              if (result.alert) {
-                                                alert(result.message)
-                                              }
-                                              // Bot may send new messages — they'll arrive via WS
-                                            }
-                                            if (result.url) shellOpen(result.url)
-                                          }
-                                        } catch (e) { console.error('Inline button click failed:', e) }
-                                      }
-                                    }}
-                                  >
-                                    {(btn.type === 'url' || btn.type === 'web_app') && <span className="inline-btn-icon">↗</span>}
-                                    {btn.text}
-                                  </button>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <InlineButtons
+                          message={m}
+                          selectedAccount={selectedAccount}
+                          token={auth?.token || ''}
+                          shellOpen={shellOpen}
+                        />
                         {/* Deleted label under message */}
-                        {m.is_deleted && (
-                          <div className="msg-deleted-label">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                            <span>{m.direction === 'sent'
-                              ? `Видалено у співрозмовника${m.deleted_by_peer_name ? ` · ${m.deleted_by_peer_name}` : ''}`
-                              : `Видалено співрозмовником${m.deleted_by_peer_name ? ` (${m.deleted_by_peer_name})` : ''}`
-                            }{m.deleted_at ? ` · ${new Date(m.deleted_at).toLocaleDateString('uk-UA')} ${new Date(m.deleted_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
-                          </div>
-                        )}
+                        <DeletedLabel message={m} />
                         {/* Reactions */}
                         <ReactionsRow
                           reactions={m.reactions || []}
@@ -4017,12 +3916,7 @@ function App() {
                           clientInitial={(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
                         />
                         <MessageFooter message={m} />
-                        {m.local_status === 'failed' && (
-                          <div className="msg-deleted-label">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                            <span>Не вдалося відправити{m.local_error ? ` · ${m.local_error}` : ''}</span>
-                          </div>
-                        )}
+                        <FailedStatusLabel message={m} />
                       </div>
                       <LabResultStrip
                         message={m}
