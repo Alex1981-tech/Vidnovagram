@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.65': [
+    'Внутрішнє: винесено `<ContactProfileModal/>` — картка профілю контакту / групи / каналу з media stats (фото/відео/файли/голосові), phone/username/linked phones, actions. App.tsx 4959 → 4910 (−49)',
+    'Продуктивність: LRU-cleanup для thumbnail memory cache (ліміт 500 entries, eviction з `URL.revokeObjectURL`). Phase 2 плану прискорення кешу мініатюр — запобігає розростанню RAM у довгих сесіях',
+  ],
   '0.17.64': [
     'Внутрішнє: винесено 3 overlay-компоненти — `<MessageContextMenu/>` (контекст-меню повідомлення з 9+ діями), `<ForwardModal/>` (пошук і вибір контакту для пересилки), `<ComposeModal/>` (новий лист Gmail з вкладеннями). ForwardIcon переїхав у `components/icons.tsx`. App.tsx 5095 → 4959',
   ],
