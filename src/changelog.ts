@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.67': [
+    'Внутрішнє: 4 модалки шаблонів одним комітом — `<CategoryAddModal/>`, `<TemplateAddModal/>`, `<TemplatePreviewModal/>` (preview+edit+send з extra files), `<TemplateEditModal/>` (CRUD з swap/remove media). Всі в одному файлі `components/TemplateModals.tsx`. App.tsx 4828 → 4704',
+  ],
   '0.17.66': [
     'Внутрішнє: винесено `<LabSendModal/>` — модалка відправки аналізів пацієнта в чат (checklist з thumbnails, select-all, preview з іконками pdf/img). App.tsx 4910 → 4828',
   ],

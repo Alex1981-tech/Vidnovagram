@@ -75,6 +75,12 @@ import { ForwardModal } from './components/ForwardModal'
 import { ComposeModal } from './components/ComposeModal'
 import { ContactProfileModal } from './components/ContactProfileModal'
 import { LabSendModal } from './components/LabSendModal'
+import {
+  CategoryAddModal,
+  TemplateAddModal,
+  TemplatePreviewModal,
+  TemplateEditModal,
+} from './components/TemplateModals'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -4532,201 +4538,71 @@ function App() {
       />
 
       {/* Add Category Modal */}
-      {showCatModal && (
-        <div className="modal-overlay" onClick={() => setShowCatModal(false)}>
-          <div className="tpl-modal" onClick={e => e.stopPropagation()}>
-            <h3>Нова категорія</h3>
-            <input
-              value={newCatName}
-              onChange={e => setNewCatName(e.target.value)}
-              placeholder="Назва категорії"
-              autoFocus
-              onKeyDown={e => { if (e.key === 'Enter') addCategory() }}
-            />
-            <div className="tpl-color-row">
-              <span>Колір:</span>
-              <div className="tpl-colors">
-                {['#6366f1','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#64748b'].map(c => (
-                  <button key={c} className={`tpl-color-dot ${newCatColor === c ? 'active' : ''}`} style={{ background: c }} onClick={() => setNewCatColor(c)} />
-                ))}
-              </div>
-            </div>
-            <div className="tpl-modal-btns">
-              <button className="tpl-btn-primary" onClick={addCategory} disabled={!newCatName.trim()}>Створити</button>
-              <button className="tpl-btn-secondary" onClick={() => setShowCatModal(false)}>Скасувати</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CategoryAddModal
+        open={showCatModal}
+        onClose={() => setShowCatModal(false)}
+        name={newCatName}
+        setName={setNewCatName}
+        color={newCatColor}
+        setColor={setNewCatColor}
+        onAdd={addCategory}
+      />
 
       {/* Add Template Modal */}
-      {showTplModal && (
-        <div className="modal-overlay" onClick={() => setShowTplModal(null)}>
-          <div className="tpl-modal" onClick={e => e.stopPropagation()}>
-            <h3>Новий шаблон</h3>
-            <input
-              value={newTplTitle}
-              onChange={e => setNewTplTitle(e.target.value)}
-              placeholder="Коротка назва"
-              autoFocus
-            />
-            <textarea
-              value={newTplText}
-              onChange={e => setNewTplText(e.target.value)}
-              placeholder="Текст повідомлення..."
-              rows={12}
-            />
-            <label className="tpl-media-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-              {newTplMedia ? newTplMedia.name : 'Прикріпити медіа'}
-              <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => setNewTplMedia(e.target.files?.[0] || null)} hidden />
-            </label>
-            <div className="tpl-modal-btns">
-              <button className="tpl-btn-primary" onClick={addTemplate} disabled={!newTplTitle.trim() || !newTplText.trim()}>Додати</button>
-              <button className="tpl-btn-secondary" onClick={() => setShowTplModal(null)}>Скасувати</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TemplateAddModal
+        open={!!showTplModal}
+        onClose={() => setShowTplModal(null)}
+        title={newTplTitle}
+        setTitle={setNewTplTitle}
+        text={newTplText}
+        setText={setNewTplText}
+        media={newTplMedia}
+        setMedia={setNewTplMedia}
+        onAdd={addTemplate}
+      />
 
       {/* Template Preview Modal */}
-      {previewTpl && (
-        <div className="modal-overlay" onClick={() => setPreviewTpl(null)}>
-          <div className="tpl-edit-modal" onClick={e => e.stopPropagation()}>
-            <div className="tpl-edit-header">
-              <span>{previewTpl.title}</span>
-              <button onClick={() => setPreviewTpl(null)}>✕</button>
-            </div>
-            <div className="tpl-edit-body">
-              {/* Media preview with remove */}
-              {previewTpl.media_file && tplIncludeMedia && (
-                <div className="tpl-edit-media">
-                  {previewTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
-                    <img src={`https://cc.vidnova.app${previewTpl.media_file}`} alt="" />
-                  ) : previewTpl.media_file.match(/\.(mp4|webm|mov)/i) ? (
-                    <div className="tpl-edit-file-tag">🎬 Відео</div>
-                  ) : (
-                    <div className="tpl-edit-file-tag">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
-                      {previewTpl.media_file.split('/').pop()}
-                    </div>
-                  )}
-                  <button className="tpl-edit-media-remove" onClick={() => setTplIncludeMedia(false)} title="Видалити вкладення">✕</button>
-                </div>
-              )}
-              {/* Re-include media button (when removed) */}
-              {previewTpl.media_file && !tplIncludeMedia && (
-                <button className="tpl-reinclude-media" onClick={() => setTplIncludeMedia(true)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                  Повернути вкладення шаблону
-                </button>
-              )}
-              {/* Extra file attachments (multiple) */}
-              {tplSendExtraFiles.length > 0 && (
-                <div className="tpl-extra-files">
-                  {tplSendExtraFiles.map((f, i) => (
-                    <div className="tpl-extra-file" key={i}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                      <span>{f.name}</span>
-                      <button onClick={() => setTplSendExtraFiles(prev => prev.filter((_, j) => j !== i))} title="Видалити">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button type="button" className="tpl-attach-extra" onClick={async () => {
-                try {
-                  const selected = await openFileDialog({ multiple: true, title: 'Додати файли' })
-                  if (!selected) return
-                  const paths = Array.isArray(selected) ? selected : [selected]
-                  for (const p of paths) {
-                    const data = await readFile(p)
-                    const name = p.split(/[/\\]/).pop() || 'file'
-                    const file = new File([data], name)
-                    setTplSendExtraFiles(prev => [...prev, file])
-                  }
-                } catch (e) { console.log('File pick cancelled', e) }
-              }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                Додати файл{tplSendExtraFiles.length > 0 ? ` (${tplSendExtraFiles.length})` : ''}
-              </button>
-              {/* Editable text */}
-              <textarea
-                className="tpl-edit-textarea"
-                value={tplEditText}
-                onChange={e => setTplEditText(e.target.value)}
-                rows={Math.max(4, tplEditText.split('\n').length + 1)}
-              />
-            </div>
-            <div className="tpl-edit-footer">
-              <span className="tpl-edit-hint">
-                {chatDisplay.name || chatDisplay.subtitle || ''}
-              </span>
-              <button
-                className="tpl-btn-send"
-                onClick={() => sendTemplate(tplEditText, tplIncludeMedia ? previewTpl.media_file : null, tplSendExtraFiles)}
-                disabled={!selectedClient || (!tplEditText.trim() && !(tplIncludeMedia && previewTpl.media_file) && !tplSendExtraFiles.length)}
-              >
-                <SendIcon /> Відправити
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TemplatePreviewModal
+        tpl={previewTpl}
+        onClose={() => setPreviewTpl(null)}
+        selectedClient={selectedClient}
+        includeMedia={tplIncludeMedia}
+        setIncludeMedia={setTplIncludeMedia}
+        extraFiles={tplSendExtraFiles}
+        setExtraFiles={setTplSendExtraFiles}
+        editText={tplEditText}
+        setEditText={setTplEditText}
+        chatSubtitle={chatDisplay.name || chatDisplay.subtitle || ''}
+        onSend={(text, mediaFile, extraFiles) => sendTemplate(text, mediaFile, extraFiles)}
+        pickExtraFiles={async () => {
+          try {
+            const selected = await openFileDialog({ multiple: true, title: 'Додати файли' })
+            if (!selected) return
+            const paths = Array.isArray(selected) ? selected : [selected]
+            for (const p of paths) {
+              const data = await readFile(p)
+              const name = p.split(/[/\\\\]/).pop() || 'file'
+              const file = new File([data], name)
+              setTplSendExtraFiles(prev => [...prev, file])
+            }
+          } catch (e) { console.log('File pick cancelled', e) }
+        }}
+      />
 
       {/* Global Edit Template Modal */}
-      {editingTpl && (
-        <div className="modal-overlay" onClick={() => setEditingTpl(null)}>
-          <div className="tpl-modal tpl-global-edit-modal" onClick={e => e.stopPropagation()}>
-            <h3>Редагувати шаблон</h3>
-            <input
-              value={editTplTitle}
-              onChange={e => setEditTplTitle(e.target.value)}
-              placeholder="Коротка назва"
-              autoFocus
-            />
-            <textarea
-              value={editTplText}
-              onChange={e => setEditTplText(e.target.value)}
-              placeholder="Текст повідомлення..."
-              rows={4}
-            />
-            {/* Current media */}
-            {editingTpl.media_file && !editTplRemoveMedia && !editTplMedia && (
-              <div className="tpl-edit-media">
-                {editingTpl.media_file.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
-                  <img src={`${API_BASE.replace('/api', '')}${editingTpl.media_file}`} alt="" />
-                ) : (
-                  <div className="tpl-edit-file-tag">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
-                    {editingTpl.media_file.split('/').pop()}
-                  </div>
-                )}
-                <button className="tpl-edit-media-remove" onClick={() => setEditTplRemoveMedia(true)} title="Видалити вкладення">✕</button>
-              </div>
-            )}
-            {/* New media selected */}
-            {editTplMedia && (
-              <div className="tpl-extra-file">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                <span>{editTplMedia.name}</span>
-                <button onClick={() => setEditTplMedia(null)} title="Видалити">✕</button>
-              </div>
-            )}
-            {/* Media upload / re-add */}
-            {!editTplMedia && (editTplRemoveMedia || !editingTpl.media_file) && (
-              <label className="tpl-media-label">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                Прикріпити медіа
-                <input type="file" accept="image/*,video/*,application/pdf,.doc,.docx" onChange={e => { setEditTplMedia(e.target.files?.[0] || null); setEditTplRemoveMedia(false) }} hidden />
-              </label>
-            )}
-            <div className="tpl-modal-btns">
-              <button className="tpl-btn-primary" onClick={() => saveTemplate(editingTpl)} disabled={!editTplTitle.trim() || !editTplText.trim()}>Зберегти</button>
-              <button className="tpl-btn-secondary" onClick={() => setEditingTpl(null)}>Скасувати</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TemplateEditModal
+        tpl={editingTpl}
+        onClose={() => setEditingTpl(null)}
+        title={editTplTitle}
+        setTitle={setEditTplTitle}
+        text={editTplText}
+        setText={setEditTplText}
+        media={editTplMedia}
+        setMedia={setEditTplMedia}
+        removeMedia={editTplRemoveMedia}
+        setRemoveMedia={setEditTplRemoveMedia}
+        onSave={saveTemplate}
+      />
 
       {/* Gmail Compose modal */}
       <ComposeModal
