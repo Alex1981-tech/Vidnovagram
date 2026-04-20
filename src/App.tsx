@@ -46,7 +46,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon } from './components/icons'
+import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
@@ -67,6 +67,9 @@ import { ClientCardTab, type ClientCardData } from './components/ClientCardTab'
 import { ChatHeader } from './components/ChatHeader'
 import { ChatSearchBar } from './components/ChatSearchBar'
 import { MessageInputBar } from './components/MessageInputBar'
+import { TodoListModal } from './components/TodoListModal'
+import { AttachedPreview } from './components/AttachedPreview'
+import { ReplyEditBar } from './components/ReplyEditBar'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -144,11 +147,6 @@ const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
 const ForwardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
-  </svg>
-)
-const XIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
   </svg>
 )
 // ===== Main App =====
@@ -4493,64 +4491,28 @@ function App() {
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
                     onChange={handleFileSelect} />
                   {/* ToDo list creation modal */}
-                  {showTodoModal && (
-                    <div className="file-modal-overlay" onClick={() => setShowTodoModal(false)}>
-                      <div className="file-modal" onClick={e => e.stopPropagation()} style={{ width: 380 }}>
-                        <div className="file-modal-header">
-                          <span className="file-modal-title">Новий список</span>
-                          <button className="file-modal-close" onClick={() => setShowTodoModal(false)}>✕</button>
-                        </div>
-                        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <input
-                            className="todo-modal-input"
-                            value={todoTitle}
-                            onChange={e => setTodoTitle(e.target.value)}
-                            placeholder="Назва списку"
-                            autoFocus
-                          />
-                          {todoItems.map((item, i) => (
-                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <span style={{ opacity: 0.4, fontSize: 14 }}>☐</span>
-                              <input
-                                className="todo-modal-input"
-                                value={item}
-                                onChange={e => { const arr = [...todoItems]; arr[i] = e.target.value; setTodoItems(arr) }}
-                                placeholder={`Пункт ${i + 1}`}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') { e.preventDefault(); setTodoItems(prev => [...prev, '']) }
-                                  if (e.key === 'Backspace' && !item && todoItems.length > 1) { e.preventDefault(); setTodoItems(prev => prev.filter((_, j) => j !== i)) }
-                                }}
-                              />
-                            </div>
-                          ))}
-                          <button className="attach-menu-item" onClick={() => setTodoItems(prev => [...prev, ''])} style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
-                            + Додати пункт
-                          </button>
-                        </div>
-                        <div className="file-modal-actions">
-                          <button className="file-modal-send" disabled={!todoTitle.trim() || todoItems.filter(i => i.trim()).length === 0 || sending}
-                            onClick={async () => {
-                              if (!selectedClient || !auth?.token || !selectedAccount) return
-                              const items = todoItems.filter(i => i.trim())
-                              if (!todoTitle.trim() || items.length === 0) return
-                              const text = `📋 ${todoTitle.trim()}\n${items.map(i => `☐ ${i.trim()}`).join('\n')}`
-                              setShowTodoModal(false)
-                              setSending(true)
-                              try {
-                                const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
-                                const fd = _buildSendFd({ text })
-                                await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
-                                setTodoTitle('')
-                                setTodoItems(['', '', ''])
-                              } catch (e) { console.error('ToDo send failed:', e) }
-                              finally { setSending(false) }
-                            }}>
-                            <SendIcon /> Надіслати
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <TodoListModal
+                    open={showTodoModal}
+                    onClose={() => setShowTodoModal(false)}
+                    title={todoTitle}
+                    setTitle={setTodoTitle}
+                    items={todoItems}
+                    setItems={setTodoItems}
+                    sending={sending}
+                    onSend={async (text) => {
+                      if (!selectedClient || !auth?.token || !selectedAccount) return
+                      setShowTodoModal(false)
+                      setSending(true)
+                      try {
+                        const sendUrl = `${API_BASE}/telegram/contacts/${selectedClient}/send/`
+                        const fd = _buildSendFd({ text })
+                        await authFetch(sendUrl, auth.token, { method: 'POST', body: fd })
+                        setTodoTitle('')
+                        setTodoItems(['', '', ''])
+                      } catch (e) { console.error('ToDo send failed:', e) }
+                      finally { setSending(false) }
+                    }}
+                  />
                   {/* File upload modal (multi-file) */}
                   <FileUploadModal
                     open={showFileModal}
@@ -4568,37 +4530,24 @@ function App() {
                     onCloseEmpty={() => setShowFileModal(false)}
                   />
                   {/* Attachment indicator (fallback when modal closed) */}
-                  {attachedFiles.length > 0 && !showFileModal && (
-                    <div className="attached-preview">
-                      {attachedFiles.length === 1 && attachedPreviews[0] && attachedFiles[0].type.startsWith('image/') ? (
-                        <img src={attachedPreviews[0]} alt="" className="attached-thumb" />
-                      ) : (
-                        <span className="attached-name">
-                          {attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} файлів`}
-                        </span>
-                      )}
-                      <button className="attached-remove" onClick={clearAttachment}><XIcon /></button>
-                    </div>
+                  {!showFileModal && (
+                    <AttachedPreview
+                      files={attachedFiles}
+                      previews={attachedPreviews}
+                      onClear={clearAttachment}
+                    />
                   )}
                   {/* Reply / Edit bar */}
-                  {(editingMsg || (window as any).__replyTo) && (
-                    <div className="reply-edit-bar">
-                      <div className="reply-edit-bar-accent" />
-                      <div className="reply-edit-bar-content">
-                        <span className="reply-edit-bar-title">
-                          {editingMsg ? '✏️ Редагування' : `↩️ ${(window as any).__replyTo?.sender || ''}`}
-                        </span>
-                        <span className="reply-edit-bar-text">
-                          {editingMsg ? editingMsg.text?.slice(0, 80) : (window as any).__replyTo?.text}
-                        </span>
-                      </div>
-                      <button className="reply-edit-bar-close" onClick={() => {
-                        setEditingMsg(null)
-                        ;(window as any).__replyTo = null
-                        if (editingMsg) setMessageText('')
-                      }}>✕</button>
-                    </div>
-                  )}
+                  <ReplyEditBar
+                    editingMsg={editingMsg}
+                    replyTo={(window as unknown as { __replyTo?: { sender?: string; text?: string } | null }).__replyTo || null}
+                    onClose={() => {
+                      const wasEditing = !!editingMsg
+                      setEditingMsg(null)
+                      ;(window as unknown as { __replyTo?: unknown }).__replyTo = null
+                      if (wasEditing) setMessageText('')
+                    }}
+                  />
                   {isRecording ? (
                     /* Recording active — show minimal indicator, modal handles the rest */
                     <div className="recording-bar">

@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.54': [
+    'Внутрішнє: clean-up input-area. Винесено `<TodoListModal/>` (композиція списку ☐), `<AttachedPreview/>` (компактна панель стейджу файлів) і `<ReplyEditBar/>` (банер reply/edit над textarea). XIcon переїхав у `components/icons.tsx`. App.tsx 5808 → 5757',
+  ],
   '0.17.53': [
     'Внутрішнє: винесено `<MessageInputBar/>` — нижня панель вводу: attach menu (медіа/файл/список), emoji picker, auto-grow textarea, морфінг-кластер send/нотатка/голос/відео. PaperclipIcon переїхав у `components/icons.tsx`. App.tsx 5864 → 5808',
   ],
