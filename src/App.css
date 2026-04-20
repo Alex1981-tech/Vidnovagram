@@ -4996,6 +4996,12 @@ body {
   background: var(--border);
   margin: 4px auto;
 }
+.rail-avatar-img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .rail-section-label {
   font-size: 11px;
   font-weight: 700;

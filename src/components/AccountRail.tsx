@@ -8,6 +8,8 @@ export interface BusinessAccountSummary {
   label: string
   sender_name: string
   status: string
+  profile_picture_url?: string
+  profile_username?: string
 }
 
 interface Props {
@@ -86,11 +88,19 @@ export function AccountRail({
                 title={`${b.label} — ${b.sender_name}`}
               >
                 <span className="rail-item-icon">
-                  {b.provider === 'viber_turbosms' && <ViberIcon size={18} />}
-                  {b.provider === 'facebook_messenger' && <FacebookIcon size={18} />}
-                  {b.provider === 'instagram_direct' && <InstagramIcon size={18} />}
-                  {b.provider === 'whatsapp_cloud' && <WhatsAppIcon size={18} color="#25D366" />}
-                  {b.provider === 'telegram_bot' && <TelegramBotIcon size={18} />}
+                  {b.profile_picture_url
+                    ? <img src={b.profile_picture_url.startsWith('http')
+                               ? b.profile_picture_url
+                               : `https://cc.vidnova.app${b.profile_picture_url}`}
+                           alt="" className="rail-avatar-img" />
+                    : <>
+                        {b.provider === 'viber_turbosms' && <ViberIcon size={18} />}
+                        {b.provider === 'facebook_messenger' && <FacebookIcon size={18} />}
+                        {b.provider === 'instagram_direct' && <InstagramIcon size={18} />}
+                        {b.provider === 'whatsapp_cloud' && <WhatsAppIcon size={18} color="#25D366" />}
+                        {b.provider === 'telegram_bot' && <TelegramBotIcon size={18} />}
+                      </>
+                  }
                   {businessUnreads[b.id] > 0 && <span className="rail-badge">{businessUnreads[b.id] > 99 ? '99+' : businessUnreads[b.id]}</span>}
                   <span className={`rail-status ${b.status === 'active' ? 'online' : ''}`} />
                 </span>
