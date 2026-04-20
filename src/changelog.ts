@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.50': [
+    'Внутрішнє: винесено `<ClientsTab/>` — пошук контактів, infinite-scroll, детальний вигляд з хронологією (дзвінки + повідомлення злиті по даті). App.tsx 6271 → 6146 (−125)',
+  ],
   '0.17.49': [
     'Внутрішнє: винесено `<LabTab/>` — пацієнти з аналізами: пошук, infinite-scroll, drag-to-chat, preview медіа, auto-load thumbnails. App.tsx 6405 → 6271 (−134)',
   ],

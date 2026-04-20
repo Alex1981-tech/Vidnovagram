@@ -62,6 +62,7 @@ import { RightPanelTabs, type RpTab } from './components/RightPanelTabs'
 import { NotesTab } from './components/NotesTab'
 import { QuickRepliesTab } from './components/QuickRepliesTab'
 import { LabTab } from './components/LabTab'
+import { ClientsTab } from './components/ClientsTab'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -4897,158 +4898,32 @@ function App() {
                 setNewCatColor={setNewCatColor}
               />
             ) : rightTab === 'clients' ? (
-              <div className="rp-clients">
-                {!rpSelectedClient ? (
-                  <>
-                    <div className="rp-lab-search">
-                      <input
-                        value={rpClientSearch}
-                        onChange={e => setRpClientSearch(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') loadRpClients(1, rpClientSearch) }}
-                        placeholder="Пошук за ПІБ або телефоном..."
-                      />
-                      {rpClientSearch && (
-                        <button onClick={() => { setRpClientSearch(''); loadRpClients(1, '') }} title="Очистити" className="rp-search-clear">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                        </button>
-                      )}
-                      <button onClick={() => loadRpClients(1, rpClientSearch)} title="Пошук">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                      </button>
-                    </div>
-                    {rpClientLoading && <div className="rp-empty">Завантаження...</div>}
-                    {!rpClientLoading && rpClients.length === 0 && <div className="rp-empty">Немає контактів</div>}
-                    <div className="rp-client-list" onScroll={e => {
-                      const el = e.currentTarget
-                      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40 && !rpClientLoading && rpClients.length < rpClientTotal) {
-                        loadRpClients(rpClientPage + 1, rpClientSearch, true)
-                      }
-                    }}>
-                      {rpClients.map(c => {
-                        const display = resolveContactDisplay({ full_name: c.full_name, phone: c.phone })
-                        return (
-                        <div key={c.id} className="rp-client-item" onClick={() => loadRpClientDetail(c.id)}>
-                          <div className="rp-client-avatar">
-                            {rpClientPhotos[c.id]
-                              ? <img src={rpClientPhotos[c.id]} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                              : <span>{(display.name || '?')[0].toUpperCase()}</span>}
-                          </div>
-                          <div className="rp-client-info">
-                            <div className="rp-client-name-row">
-                              <span className="rp-client-name">{display.name}</span>
-                              <span className="rp-client-icons">
-                                {c.has_telegram && <TelegramIcon size={12} color="#2AABEE" />}
-                                {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
-                              </span>
-                            </div>
-                            <div className="rp-client-meta">
-                              {display.subtitle && <span className="rp-client-phone">{display.subtitle}</span>}
-                              <span className="rp-client-calls">{c.calls_count} дзв.</span>
-                            </div>
-                          </div>
-                          <button className="rp-client-add-btn" title="Додати в акаунт і відкрити чат" onClick={e => {
-                            e.stopPropagation()
-                            setAddToAcctModal({ phone: c.phone, name: c.full_name, clientId: c.id })
-                            setAddToAcctResult(null)
-                            setAddToAcctSelected('')
-                            checkPhoneMessengers(c.phone)
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                          </button>
-                        </div>
-                        )
-                      })}
-                      {rpClientLoading && rpClients.length > 0 && <div className="rp-empty" style={{ padding: '8px' }}>Завантаження...</div>}
-                    </div>
-                  </>
-                ) : (
-                  <div className="rp-client-detail">
-                    {rpClientDetailLoading && <div className="rp-empty">Завантаження...</div>}
-                    {!rpClientDetailLoading && (
-                      <>
-                        {/* Client info card */}
-                        <div className="rp-cd-card">
-                          {rpSelectedClient && rpClientPhotos[rpSelectedClient] && (
-                            <img src={rpClientPhotos[rpSelectedClient]} alt="" className="rp-cd-photo" />
-                          )}
-                          <div className="rp-cd-name">{rpClientInfo?.name || 'Невідомий'}</div>
-                          <div className="rp-cd-phone">{rpClientInfo?.phone}</div>
-                          {(rpClientInfo?.linked_phones?.length ?? 0) > 0 && (
-                            <div className="rp-cd-linked-phones">
-                              {rpClientInfo!.linked_phones!.map(lp => (
-                                <div key={lp.id} className="rp-cd-linked-phone">
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                                  {lp.phone}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className="rp-cd-actions">
-                            <button onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)} title="Відкрити чат">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                              Чат
-                            </button>
-                            <button onClick={() => {
-                              setAddToAcctModal({ phone: rpClientInfo?.phone || '', name: rpClientInfo?.name || '', clientId: rpSelectedClient! })
-                              setAddToAcctResult(null); setAddToAcctSelected('')
-                              checkPhoneMessengers(rpClientInfo?.phone || '')
-                            }} title="Додати в акаунт">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                        {/* Chronological timeline: calls + messages merged by date */}
-                        {(() => {
-                          const timeline: { type: 'call' | 'msg'; date: string; data: any }[] = []
-                          rpClientCalls.forEach(c => timeline.push({ type: 'call', date: c.call_datetime, data: c }))
-                          rpClientMsgs.filter(m => m.source !== 'binotel' && (m as any).type !== 'call').forEach(m => timeline.push({ type: 'msg', date: m.message_date, data: m }))
-                          timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                          const shown = timeline.slice(0, 50)
-                          if (shown.length === 0) return <div className="rp-empty">Немає історії</div>
-                          return (
-                            <div className="rp-cd-section">
-                              <div className="rp-cd-section-title">
-                                Хронологія ({timeline.length})
-                                <button className="rp-cd-chat-link" onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)}>
-                                  Відкрити чат →
-                                </button>
-                              </div>
-                              {shown.map(item => item.type === 'call' ? (
-                                <div key={`c-${item.data.id}`} className={`rp-cd-call ${(item.data.disposition || '').toLowerCase() === 'answer' ? 'answered' : (item.data.disposition || '').toLowerCase()}`}>
-                                  <div className="rp-cd-call-icon">
-                                    {item.data.direction === 'incoming'
-                                      ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 2 16 8 22 8"/><line x1="22" y1="2" x2="16" y2="8"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
-                                      : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 8 22 2 16 2"/><line x1="16" y1="8" x2="22" y2="2"/><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/></svg>
-                                    }
-                                  </div>
-                                  <div className="rp-cd-call-info">
-                                    <span className="rp-cd-call-date">{new Date(item.data.call_datetime).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                    <span className="rp-cd-call-dur">{item.data.duration_seconds ? `${Math.floor(item.data.duration_seconds / 60)}:${String(item.data.duration_seconds % 60).padStart(2, '0')}` : '—'}</span>
-                                    {item.data.operator_name && <span className="rp-cd-call-op">{item.data.operator_name}</span>}
-                                  </div>
-                                  {item.data.has_audio && (
-                                    <button className={`rp-cd-play${rpPlayingCall === item.data.id ? ' playing' : ''}`} onClick={() => playCallAudio(item.data.id, item.data.audio_file)}>
-                                      {rpPlayingCall === item.data.id ? '⏸' : '▶'}
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <div key={`m-${item.data.id}`} className={`rp-cd-msg ${item.data.direction}`} onClick={() => openClientChat(rpSelectedClient!, rpClientInfo?.phone, rpClientInfo?.name)}>
-                                  <span className="rp-cd-msg-source">
-                                    {item.data.source === 'whatsapp' ? <WhatsAppIcon size={10} color="#25D366" /> : <TelegramIcon size={10} color="#2AABEE" />}
-                                  </span>
-                                  <span className="rp-cd-msg-text">{item.data.text?.slice(0, 60) || (item.data.has_media ? `📎 ${item.data.media_type || 'медіа'}` : '...')}</span>
-                                  <span className="rp-cd-msg-date">{new Date(item.data.message_date).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        })()}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+              <ClientsTab
+                selectedClientId={rpSelectedClient}
+                setSelectedClientId={setRpSelectedClient}
+                search={rpClientSearch}
+                setSearch={setRpClientSearch}
+                clients={rpClients}
+                loading={rpClientLoading}
+                page={rpClientPage}
+                total={rpClientTotal}
+                photos={rpClientPhotos}
+                loadClients={loadRpClients}
+                loadClientDetail={loadRpClientDetail}
+                clientInfo={rpClientInfo}
+                detailLoading={rpClientDetailLoading}
+                calls={rpClientCalls}
+                messages={rpClientMsgs}
+                playingCall={rpPlayingCall}
+                playCallAudio={playCallAudio}
+                openClientChat={openClientChat}
+                onAddToAccount={(state) => {
+                  setAddToAcctModal(state)
+                  setAddToAcctResult(null)
+                  setAddToAcctSelected('')
+                  checkPhoneMessengers(state.phone)
+                }}
+              />
             ) : rightTab === 'card' ? (
               selectedClient ? (
                 contacts.find(c => c.client_id === selectedClient)?.is_employee ? (
