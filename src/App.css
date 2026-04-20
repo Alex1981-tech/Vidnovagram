@@ -4996,6 +4996,14 @@ body {
   background: var(--border);
   margin: 4px auto;
 }
+.rail-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 8px 12px 4px;
+}
 
 /* ── Gmail sidebar filter ── */
 .gmail-sidebar-filter {

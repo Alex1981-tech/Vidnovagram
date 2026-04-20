@@ -28,7 +28,7 @@ export interface Account {
   label: string
   phone: string
   status: string
-  type: 'telegram' | 'whatsapp'
+  type: 'telegram' | 'whatsapp' | 'viber'
 }
 
 export interface Contact {
@@ -58,7 +58,7 @@ export interface Contact {
 export interface ChatMessage {
   id: number | string
   type?: 'call'
-  source?: 'telegram' | 'whatsapp' | 'binotel'
+  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber'
   direction: 'sent' | 'received' | 'incoming' | 'outgoing'
   text: string
   has_media: boolean
@@ -140,12 +140,12 @@ export interface AlbumGroup {
   direction: 'sent' | 'received'
   message_date: string
   caption?: string
-  source?: 'telegram' | 'whatsapp' | 'binotel'
+  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber'
 }
 
 export interface WsReactionEvent {
   type: string
-  source?: 'telegram' | 'whatsapp'
+  source?: 'telegram' | 'whatsapp' | 'viber'
   client_id?: string
   account_id?: string
   message_id?: string
@@ -191,7 +191,7 @@ export interface GlobalSearchResult {
   text?: string
   message_date?: string | null
   direction?: string
-  source?: 'telegram' | 'whatsapp'
+  source?: 'telegram' | 'whatsapp' | 'viber'
   account_label?: string
 }
 

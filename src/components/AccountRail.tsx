@@ -1,6 +1,14 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { TelegramIcon, WhatsAppIcon, GmailIcon } from './icons'
+import { TelegramIcon, WhatsAppIcon, GmailIcon, ViberIcon } from './icons'
 import type { Account, ChatMessage, GmailAccount } from '../types'
+
+export interface BusinessAccountSummary {
+  id: string
+  provider: string
+  label: string
+  sender_name: string
+  status: string
+}
 
 interface Props {
   expanded: boolean
@@ -12,6 +20,10 @@ interface Props {
   selectedGmail: string | null
   accounts: Account[]
   gmailAccounts: GmailAccount[]
+  businessAccounts?: BusinessAccountSummary[]
+  selectedBusiness?: string
+  businessUnreads?: Record<string, number>
+  onBusinessClick?: (accountId: string) => void
   unreadCount: number
   accountUnreads: Record<string, number>
   onAccountClick: (accountId: string) => void
@@ -31,6 +43,10 @@ export function AccountRail({
   selectedGmail,
   accounts,
   gmailAccounts,
+  businessAccounts = [],
+  selectedBusiness = '',
+  businessUnreads = {},
+  onBusinessClick,
   unreadCount,
   accountUnreads,
   onAccountClick,
@@ -38,6 +54,7 @@ export function AccountRail({
   onOpenSettings,
   currentVersion,
 }: Props) {
+  const hasBusiness = businessAccounts.length > 0
   return (
     <div
       className={`account-rail ${expanded ? 'expanded' : ''}`}
@@ -46,7 +63,7 @@ export function AccountRail({
     >
       <div className="rail-accounts">
         <button
-          className={`rail-item ${!selectedAccount ? 'active' : ''}`}
+          className={`rail-item ${!selectedAccount && !selectedBusiness ? 'active' : ''}`}
           onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
           title="Усі месенджери"
         >
@@ -58,6 +75,36 @@ export function AccountRail({
           </span>
           {expanded && <span className="rail-item-label">Усі месенджери</span>}
         </button>
+        {hasBusiness && (
+          <>
+            {expanded && <div className="rail-section-label">Бізнес</div>}
+            {!expanded && <div className="rail-divider" />}
+            {businessAccounts.map(b => (
+              <button
+                key={b.id}
+                className={`rail-item ${selectedBusiness === b.id ? 'active' : ''}`}
+                onClick={() => onBusinessClick?.(b.id)}
+                title={`${b.label} — ${b.sender_name}`}
+              >
+                <span className="rail-item-icon">
+                  {b.provider === 'viber_turbosms'
+                    ? <ViberIcon size={18} />
+                    : <span>?</span>}
+                  {businessUnreads[b.id] > 0 && <span className="rail-badge">{businessUnreads[b.id] > 99 ? '99+' : businessUnreads[b.id]}</span>}
+                  <span className={`rail-status ${b.status === 'active' ? 'online' : ''}`} />
+                </span>
+                {expanded && (
+                  <span className="rail-item-text">
+                    <span className="rail-item-name">{b.label}</span>
+                    <span className="rail-item-phone">{b.sender_name}</span>
+                  </span>
+                )}
+              </button>
+            ))}
+            {expanded && <div className="rail-section-label">Месенджери</div>}
+            {!expanded && <div className="rail-divider" />}
+          </>
+        )}
         {accounts.map(acc => (
           <button
             key={acc.id}

@@ -1,7 +1,7 @@
 {
   "name": "vidnovagram",
   "private": true,
-  "version": "0.17.75",
+  "version": "0.17.76",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -522,6 +522,10 @@ function App() {
   const addContactSugTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const addContactCheckTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  // Business (Viber Business via TurboSMS, ...)
+  const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
+  const [selectedBusiness, setSelectedBusiness] = useState<string>('')
+
   // Gmail
   const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
   const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
@@ -703,6 +707,15 @@ function App() {
       }
 
       setAccounts([...tgAccounts, ...waAccounts])
+
+      // Business accounts (Viber Business, ...)
+      try {
+        const bizResp = await authFetch(`${API_BASE}/api/business/accounts/public/`, auth.token)
+        if (bizResp.ok) {
+          const bizData = await bizResp.json()
+          setBusinessAccounts(Array.isArray(bizData.accounts) ? bizData.accounts : [])
+        }
+      } catch { /* ignore — rail just shows no business section */ }
     } catch (e) { console.error('Accounts:', e) }
   }, [auth?.token])
 
@@ -3422,6 +3435,14 @@ function App() {
           selectedGmail={selectedGmail}
           accounts={accounts}
           gmailAccounts={gmailAccounts}
+          businessAccounts={businessAccounts}
+          selectedBusiness={selectedBusiness}
+          onBusinessClick={id => {
+            setSelectedBusiness(id)
+            setSelectedAccount('')
+            setSelectedGmail(null)
+            setSelectedClient(null)
+          }}
           unreadCount={unreadCount}
           accountUnreads={accountUnreads}
           onAccountClick={handleAccountClick}
