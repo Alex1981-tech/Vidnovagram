@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.74': [
+    'Дзвінки в історії тепер показують реальну тривалість та позначку "пропущений" — backend (MadelineProto) витягує `duration`, `reason` (missed/busy/hangup), `video` з `messageActionPhoneCall` і обчислює напрям (sent/received) за sender vs tg_user_id акаунту. Раніше поля були завжди порожні. Для нових дзвінків працює одразу; історичні чати оновляться після нового sync',
+    'Фікс: кнопка "Завершити" / "Відхилити" в VoIP-виклику більше не кидає помилку "call_id required" коли WS подія прийшла без id — ринґтон завжди глушиться, оверлей скидається локально, API-запит шлеться тільки якщо id відомий',
+  ],
   '0.17.73': [
     'Read-state після reconnect: коли WebSocket переконектується (після мережевого розриву або сну компʼютера), Vidnovagram одразу re-fetch unread counters, список контактів і повідомлення відкритого чату. Раніше badge міг залишатися з застарілим значенням до 30с (чекав stale-poll)',
   ],

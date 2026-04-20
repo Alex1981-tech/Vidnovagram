@@ -124,23 +124,26 @@ export function useVoipController({
 
   const hangup = useCallback(async () => {
     const call = activeCall || incomingCall
-    if (!call) return
-    try {
-      ringtoneRef.current?.pause()
-      await voipHangup(makeAuthFetch(), call.id)
-    } catch (e: any) {
-      console.error('[VoIP] Hangup failed:', e.message)
+    ringtoneRef.current?.pause()
+    if (call?.id) {
+      try {
+        await voipHangup(makeAuthFetch(), call.id)
+      } catch (e: any) {
+        console.error('[VoIP] Hangup failed:', e.message)
+      }
     }
     resetCall()
   }, [activeCall, incomingCall, makeAuthFetch, resetCall])
 
   const decline = useCallback(async () => {
     if (!incomingCall) return
-    try {
-      ringtoneRef.current?.pause()
-      await voipHangup(makeAuthFetch(), incomingCall.id)
-    } catch (e: any) {
-      console.error('[VoIP] Decline failed:', e.message)
+    ringtoneRef.current?.pause()
+    if (incomingCall.id) {
+      try {
+        await voipHangup(makeAuthFetch(), incomingCall.id)
+      } catch (e: any) {
+        console.error('[VoIP] Decline failed:', e.message)
+      }
     }
     setIncomingCall(null)
   }, [incomingCall, makeAuthFetch])
