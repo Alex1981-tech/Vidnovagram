@@ -294,6 +294,27 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
             }
           }
 
+          if (data.type === 'pin_update') {
+            // Peer pinned/unpinned a message. Flip is_pinned for matching message
+            // in the currently loaded list. If `action === 'pin'` also clear
+            // any previous pin in the same chat (Telegram single-pin semantics).
+            const tgMsgId = data.tg_message_id
+            const peerId = data.tg_peer_id
+            const action = data.action
+            if (tgMsgId && peerId && (action === 'pin' || action === 'unpin')) {
+              o.setMessages((prev) => prev.map((m) => {
+                if (m.tg_peer_id !== peerId) return m
+                if (action === 'pin') {
+                  // Only target message becomes pinned; others in same chat get unpinned
+                  return { ...m, is_pinned: m.tg_message_id === tgMsgId }
+                }
+                // unpin: just clear is_pinned on the target
+                if (m.tg_message_id === tgMsgId) return { ...m, is_pinned: false }
+                return m
+              }))
+            }
+          }
+
           if (data.type === 'read_outbox') {
             const maxId = data.max_id
             if (maxId) {

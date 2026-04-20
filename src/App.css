@@ -694,6 +694,24 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--foreground);
+  flex: 1;
+}
+.pinned-unpin-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background 0.12s;
+}
+.pinned-unpin-btn:hover {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
 }
 
 .contact-meta {
