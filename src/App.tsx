@@ -46,7 +46,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon } from './components/icons'
+import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
@@ -66,6 +66,7 @@ import { ClientsTab } from './components/ClientsTab'
 import { ClientCardTab, type ClientCardData } from './components/ClientCardTab'
 import { ChatHeader } from './components/ChatHeader'
 import { ChatSearchBar } from './components/ChatSearchBar'
+import { MessageInputBar } from './components/MessageInputBar'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -140,11 +141,6 @@ const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
   </svg>
 )
 // Attachment & media icons
-const PaperclipIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-  </svg>
-)
 const ForwardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
@@ -4614,78 +4610,26 @@ function App() {
                       </div>
                     </div>
                   ) : (
-                    /* Normal input */
-                    <>
-                      <div className="attach-menu-wrap">
-                        <button className="chat-input-btn" onClick={() => { setShowAttachMenu(p => !p); setShowEmojiPicker(false) }} title="Вкласти">
-                          <PaperclipIcon />
-                        </button>
-                        {showAttachMenu && (
-                          <div className="attach-menu-panel">
-                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); fileInputRef.current?.click() }}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                              Медіа
-                            </button>
-                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); setForceDocument(true); fileInputRef.current?.click() }}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                              Файл
-                            </button>
-                            <button className="attach-menu-item" onClick={() => { setShowAttachMenu(false); setShowTodoModal(true); setTodoTitle(''); setTodoItems(['', '']) }}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                              Список
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <div className="emoji-picker-wrap">
-                        <button className="chat-input-btn" onClick={() => setShowEmojiPicker(p => !p)} title="Емодзі">
-                          <span style={{ fontSize: 18, lineHeight: 1 }}>😊</span>
-                        </button>
-                        {showEmojiPicker && (
-                          <div className="emoji-picker-panel">
-                            {['😊','😂','❤️','👍','🙏','😍','🥰','😘','🤗','😎','🔥','✨','💪','👏','🎉','😢','😭','🤔','😮','😡','👋','🤝','💕','⭐','🌟','✅','❌','💯','🫶','🤩','😇','🥺','😋','🤣','😅','🫡','🙌','💐','🌹','🎂'].map(e => (
-                              <button key={e} className="emoji-picker-item" onClick={() => {
-                                setMessageText(prev => prev + e)
-                                setShowEmojiPicker(false)
-                                chatInputRef.current?.focus()
-                              }}>{e}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <textarea
-                        ref={chatInputRef}
-                        value={messageText}
-                        onFocus={() => { setShowAttachMenu(false); setShowEmojiPicker(false) }}
-                        onChange={e => {
-                          setMessageText(e.target.value)
-                          e.target.style.height = 'auto'
-                          e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
-                          sendTypingIndicator()
-                        }}
-                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                        onPaste={handlePaste}
-                        placeholder="Написати повідомлення..."
-                        rows={1}
-                      />
-                      {messageText.trim() || attachedFiles.length > 0 ? (
-                        <button className="chat-send-btn" onClick={() => sendMessage()} disabled={sending}>
-                          {sending ? <div className="spinner-sm" /> : <SendIcon />}
-                        </button>
-                      ) : (
-                        <div className="chat-input-media-btns">
-                          <button className="chat-input-btn" onClick={() => { setNewNoteText(''); setShowNoteModal(true) }} title="Нотатка">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
-                          </button>
-                          <button className="chat-input-btn" onClick={startVoiceRecording} title="Голосове повідомлення">
-                            <MicIcon />
-                          </button>
-                          <button className="chat-input-btn" onClick={startVideoRecording} title="Відеокружок">
-                            <VideoIcon />
-                          </button>
-                        </div>
-                      )}
-                    </>
+                    <MessageInputBar
+                      messageText={messageText}
+                      setMessageText={setMessageText}
+                      chatInputRef={chatInputRef}
+                      fileInputRef={fileInputRef}
+                      showAttachMenu={showAttachMenu}
+                      setShowAttachMenu={setShowAttachMenu}
+                      showEmojiPicker={showEmojiPicker}
+                      setShowEmojiPicker={setShowEmojiPicker}
+                      hasAttachments={attachedFiles.length > 0}
+                      sending={sending}
+                      sendMessage={sendMessage}
+                      handlePaste={handlePaste}
+                      sendTypingIndicator={sendTypingIndicator}
+                      onForceDocumentAttach={() => { setForceDocument(true); fileInputRef.current?.click() }}
+                      onOpenTodoModal={() => { setShowTodoModal(true); setTodoTitle(''); setTodoItems(['', '']) }}
+                      onOpenNoteModal={() => { setNewNoteText(''); setShowNoteModal(true) }}
+                      onStartVoiceRecording={startVoiceRecording}
+                      onStartVideoRecording={startVideoRecording}
+                    />
                   )}
                 </div>
               )}

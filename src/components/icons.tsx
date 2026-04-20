@@ -66,6 +66,12 @@ export const VideoIcon = () => (
   </svg>
 )
 
+export const PaperclipIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+  </svg>
+)
+
 // Brand marks for Telegram / WhatsApp / Gmail, used in account tabs
 // and settings.
 

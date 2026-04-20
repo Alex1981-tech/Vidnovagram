@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.53': [
+    'Внутрішнє: винесено `<MessageInputBar/>` — нижня панель вводу: attach menu (медіа/файл/список), emoji picker, auto-grow textarea, морфінг-кластер send/нотатка/голос/відео. PaperclipIcon переїхав у `components/icons.tsx`. App.tsx 5864 → 5808',
+  ],
   '0.17.52': [
     'Внутрішнє: старт розбиття ChatWindow. Винесено `<ChatHeader/>` (аватар+імʼя+presence/typing+кнопки voip/mute/search) і `<ChatSearchBar/>` (пошук у чаті з up/down навігацією). VideoIcon переїхав у `components/icons.tsx`. App.tsx 5969 → 5864',
   ],
