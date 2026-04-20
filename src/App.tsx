@@ -2812,14 +2812,29 @@ function App() {
   }, [selectedBusiness, selectedClient, loadBusinessMessages, loadBusinessContacts])
 
   // Refs for stable WS callbacks (avoid reconnecting WS on every state change)
-  const loadContactsRef = useRef(loadContacts)
+  const selectedBusinessRef = useRef(selectedBusiness)
+  useEffect(() => { selectedBusinessRef.current = selectedBusiness }, [selectedBusiness])
+
+  // When a WS event or scheduler triggers a contact-list reload, route it
+  // to the currently active source (business or TG/WA) instead of always
+  // hitting TG endpoint — which would wipe the business contact list.
+  const reloadCurrentContactList = useCallback(() => {
+    const biz = selectedBusinessRef.current
+    if (biz) {
+      loadBusinessContacts(biz)
+    } else {
+      loadContacts()
+    }
+  }, [loadContacts, loadBusinessContacts])
+
+  const loadContactsRef = useRef(reloadCurrentContactList)
   const loadMessagesRef = useRef(loadMessages)
   const soundEnabledRef = useRef(soundEnabled)
   const contactsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messagesRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingMessagesRefreshRef = useRef<{ clientId: string; scrollToEnd: boolean } | null>(null)
   const addToastRef = useRef<(clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => void>(() => {})
-  useEffect(() => { loadContactsRef.current = loadContacts }, [loadContacts])
+  useEffect(() => { loadContactsRef.current = reloadCurrentContactList }, [reloadCurrentContactList])
   useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
   const appSettingsRef = useRef(appSettings)

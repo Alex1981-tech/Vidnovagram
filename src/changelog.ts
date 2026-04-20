@@ -2,6 +2,11 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.79': [
+    'Фікс: підписи "Бізнес" і "Месенджери" в rail тепер видно і в згорнутому, і в розгорнутому вигляді (в collapsed — скорочено "Б"/"М"). Додано розділювач і кращий контраст',
+    'Фікс: перемикання на Viber-акаунт більше не зникає через секунду. Раніше будь-яка WebSocket-подія або scheduled-refresh перезавантажував TG-контакти й затирав business-список. Тепер reload поважає активне джерело (business vs TG/WA) і вантажить правильні контакти',
+    'Фікс (backend): більше немає 404-спаму в консолі для нещодавніх фото — thumbnail/media_file URL повертається тільки коли файл реально завантажений (media_status=downloaded), інакше клієнт отримує порожній рядок і показує placeholder/spinner',
+  ],
   '0.17.78': [
     'Hotfix: дубльований префікс `/api/api/` в запитах до бізнес-акаунтів (через що секція "Бізнес" не зʼявлялась у rail — endpoint повертав 404). Виправлено всі 4 Viber-запити (accounts/public, contacts, messages, send)',
   ],

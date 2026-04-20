@@ -77,8 +77,7 @@ export function AccountRail({
         </button>
         {hasBusiness && (
           <>
-            {expanded && <div className="rail-section-label">Бізнес</div>}
-            {!expanded && <div className="rail-divider" />}
+            <div className="rail-section-label">{expanded ? 'Бізнес' : 'Б'}</div>
             {businessAccounts.map(b => (
               <button
                 key={b.id}
@@ -101,8 +100,7 @@ export function AccountRail({
                 )}
               </button>
             ))}
-            {expanded && <div className="rail-section-label">Месенджери</div>}
-            {!expanded && <div className="rail-divider" />}
+            <div className="rail-section-label">{expanded ? 'Месенджери' : 'М'}</div>
           </>
         )}
         {accounts.map(acc => (
