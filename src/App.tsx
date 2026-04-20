@@ -29,7 +29,6 @@ import {
   putCache,
 } from './cache'
 import { AuthMedia } from './components/AuthMedia'
-import { VoicePlayer } from './components/VoicePlayer'
 import { Linkify } from './components/Linkify'
 import { LinkPreviewCard } from './components/LinkPreviewCard'
 import { ThemeToggle } from './components/ThemeToggle'
@@ -81,6 +80,10 @@ import { StickerBubble } from './components/StickerBubble'
 import { PollBubble } from './components/PollBubble'
 import { ContactBubble } from './components/ContactBubble'
 import { GeoBubble } from './components/GeoBubble'
+import { VoiceBubble } from './components/VoiceBubble'
+import { DocumentBubble } from './components/DocumentBubble'
+import { VideoBubble } from './components/VideoBubble'
+import { VideoNoteBubble } from './components/VideoNoteBubble'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3858,95 +3861,46 @@ function App() {
                           />
                         )}
                         {/* Voice message → Telegram-style player */}
-                        {m.has_media && m.media_type === 'voice' && m.media_file && (
-                          <VoicePlayer
-                            messageId={m.id}
-                            mediaFile={m.media_file}
-                            blobMap={mediaBlobMap}
-                            loadBlob={loadMediaBlob}
-                            loading={!!mediaLoading[`voice_${m.id}`]}
-                            direction={m.direction}
+                        {m.has_media && m.media_type === 'voice' && (
+                          <VoiceBubble
+                            message={m}
+                            mediaBlobMap={mediaBlobMap}
+                            mediaLoading={mediaLoading}
+                            loadMediaBlob={loadMediaBlob}
                           />
                         )}
                         {/* Video note (round video / кружок) — autoplay muted like Telegram */}
-                        {m.has_media && m.media_type === 'video_note' && m.media_file && (
-                          <div className={`msg-vnote-wrap ${m.direction}`}>
-                            <div className="msg-vnote" onClick={async () => {
-                              const key = `vid_${m.id}`
-                              let src = mediaBlobMap[key]
-                              if (!src) { src = await loadMediaBlob(key, m.media_file) || '' }
-                              if (src) { setVnoteModal({ src, id: m.id }); setVnotePlaying(true); setVnoteProgress(0) }
-                            }}>
-                              {mediaBlobMap[`vid_${m.id}`] ? (
-                                <video
-                                  src={mediaBlobMap[`vid_${m.id}`]}
-                                  className="msg-vnote-player"
-                                  autoPlay muted loop playsInline
-                                />
-                              ) : (
-                                <>
-                                  {m.thumbnail ? (
-                                    <AuthMedia
-                                      mediaKey={`vnthumb_${m.id}`}
-                                      mediaPath={m.thumbnail}
-                                      type="image"
-                                      className="msg-vnote-thumb"
-                                      token={auth?.token || ''}
-                                      blobMap={mediaBlobMap}
-                                      loadBlob={loadMediaBlob}
-                                    />
-                                  ) : <div className="msg-vnote-thumb" style={{background: 'var(--muted)'}} />}
-                                  <div className="msg-vnote-play" onClick={async (e) => {
-                                    e.stopPropagation()
-                                    const key = `vid_${m.id}`
-                                    if (!mediaBlobMap[key]) await loadMediaBlob(key, m.media_file)
-                                  }}>
-                                    {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="white" style={{filter:'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'}}><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
+                        {m.has_media && m.media_type === 'video_note' && (
+                          <VideoNoteBubble
+                            message={m}
+                            token={auth?.token || ''}
+                            mediaBlobMap={mediaBlobMap}
+                            mediaLoading={mediaLoading}
+                            loadMediaBlob={loadMediaBlob}
+                            onOpenVnote={(src, id) => {
+                              setVnoteModal({ src, id })
+                              setVnotePlaying(true)
+                              setVnoteProgress(0)
+                            }}
+                          />
                         )}
                         {/* Regular video */}
-                        {m.has_media && m.media_type === 'video' && m.media_file && (
-                          <div className={`msg-video${!mediaBlobMap[`vid_${m.id}`] ? '' : ' playing'}`}>
-                            {mediaBlobMap[`vid_${m.id}`] ? (
-                              <video
-                                controls
-                                autoPlay
-                                preload="auto"
-                                src={mediaBlobMap[`vid_${m.id}`]}
-                                className="msg-video-player"
-                              />
-                            ) : (
-                              <>
-                                {m.thumbnail && <AuthMedia mediaKey={`vthumb_${m.id}`} mediaPath={m.thumbnail} type="image" className="msg-video-thumb" token={auth?.token || ''} blobMap={mediaBlobMap} loadBlob={loadMediaBlob} />}
-                                <button
-                                  className={`msg-video-btn${!m.thumbnail ? ' msg-video-btn-static' : ''}`}
-                                  onClick={() => loadMediaBlob(`vid_${m.id}`, m.media_file)}
-                                  disabled={mediaLoading[`vid_${m.id}`]}
-                                >
-                                  {mediaLoading[`vid_${m.id}`] ? <div className="spinner-sm" /> : (
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                  )}
-                                </button>
-                              </>
-                            )}
-                          </div>
+                        {m.has_media && m.media_type === 'video' && (
+                          <VideoBubble
+                            message={m}
+                            token={auth?.token || ''}
+                            mediaBlobMap={mediaBlobMap}
+                            mediaLoading={mediaLoading}
+                            loadMediaBlob={loadMediaBlob}
+                          />
                         )}
                         {/* Document → PDF opens in browser, others save+open */}
-                        {m.has_media && m.media_type === 'document' && m.media_file && (
-                          <div className="msg-document" onClick={() => openMedia(m.media_file, m.media_type, m.id)}>
-                            <span className="msg-doc-icon">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? '📄' : '📎'}</span>
-                            <div className="msg-doc-info">
-                              <span className="msg-doc-name">{m.media_file.split('/').pop() || 'Файл'}</span>
-                              <span className="msg-doc-action">{(m.media_file || '').toLowerCase().endsWith('.pdf') ? 'Відкрити в браузері' : 'Зберегти та відкрити'}</span>
-                            </div>
-                            {mediaLoading[`doc_${m.media_file}`] && <div className="spinner-sm" />}
-                          </div>
+                        {m.has_media && m.media_type === 'document' && (
+                          <DocumentBubble
+                            message={m}
+                            mediaLoading={mediaLoading}
+                            onOpen={openMedia}
+                          />
                         )}
                         {/* Contact (vCard) — inline card with name & phone */}
                         {/* Media pending download — show loading indicator */}

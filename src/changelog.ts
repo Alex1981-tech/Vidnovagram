@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.60': [
+    'Внутрішнє: винесено 4 media-bubble компоненти — `<VoiceBubble/>` (wraps VoicePlayer), `<DocumentBubble/>` (PDF/файл з іконкою), `<VideoBubble/>` (thumbnail+play→inline player), `<VideoNoteBubble/>` (кружки з autoplay+loop+modal). App.tsx 5387 → 5341 (−46)',
+  ],
   '0.17.59': [
     'Внутрішнє: винесено `<PollBubble/>` (wraps PollCard, 2 джерела — native TG poll/todo + legacy 📊/📋 text), `<ContactBubble/>` (👤+📞 картка з avatar lookup + add-to-account), `<GeoBubble/>` (OSM 2×2 tile preview з pin). App.tsx 5471 → 5387 (−84)',
   ],
