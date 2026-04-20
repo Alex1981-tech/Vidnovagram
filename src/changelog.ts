@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.52': [
+    'Внутрішнє: старт розбиття ChatWindow. Винесено `<ChatHeader/>` (аватар+імʼя+presence/typing+кнопки voip/mute/search) і `<ChatSearchBar/>` (пошук у чаті з up/down навігацією). VideoIcon переїхав у `components/icons.tsx`. App.tsx 5969 → 5864',
+  ],
   '0.17.51': [
     'Внутрішнє: винесено `<ClientCardTab/>` — теги, соцмережі, email/місто/джерело/коментар з inline-edit, кастомні посилання. RightPanel тепер повністю розбито (6 tabs/компонентів). App.tsx 6146 → 5969 — вперше < 6000 рядків!',
   ],

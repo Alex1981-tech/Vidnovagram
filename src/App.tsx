@@ -46,7 +46,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon } from './components/icons'
+import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
@@ -64,6 +64,8 @@ import { QuickRepliesTab } from './components/QuickRepliesTab'
 import { LabTab } from './components/LabTab'
 import { ClientsTab } from './components/ClientsTab'
 import { ClientCardTab, type ClientCardData } from './components/ClientCardTab'
+import { ChatHeader } from './components/ChatHeader'
+import { ChatSearchBar } from './components/ChatSearchBar'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -141,11 +143,6 @@ const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
 const PaperclipIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-  </svg>
-)
-const VideoIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>
   </svg>
 )
 const ForwardIcon = () => (
@@ -3591,139 +3588,37 @@ function App() {
         <div className="chat">
           {selectedClient && chatContact ? (
             <>
-              <div className="chat-header">
-                <div className="chat-header-avatar" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
-                  {selectedClient && photoMap[selectedClient]
-                    ? <img src={photoMap[selectedClient]} className="avatar-img" alt="" />
-                    : <UserIcon />}
-                  {(chatContact as any)?.tg_peer_id && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && peerPresence[(chatContact as any).tg_peer_id]?.status === 'online' && (
-                    <span className="online-dot online-dot-header" />
-                  )}
-                </div>
-                  <div className="chat-header-info" onClick={() => setShowContactProfile(true)} style={{ cursor: 'pointer' }}>
-                  <div className="chat-header-name">
-                    {chatDisplay.name}
-                  </div>
-                  <div className="chat-header-phone">
-                    {selectedClient && typingIndicators[selectedClient] ? (
-                      <span className="typing-indicator">набирає повідомлення<span className="typing-dots"><span>.</span><span>.</span><span>.</span></span></span>
-                    ) : (() => {
-                      const ct = (chatContact as any)?.chat_type
-                      if (ct && ct !== 'private' && groupInfo) {
-                        const parts: string[] = []
-                        if (groupInfo.participants_count != null) {
-                          parts.push(`${groupInfo.participants_count} ${ct === 'channel' ? 'підписників' : 'учасників'}`)
-                        }
-                        if (groupInfo.online_count != null && groupInfo.online_count > 0) parts.push(`${groupInfo.online_count} онлайн`)
-                        if (ct === 'channel' && !parts.length) parts.push('канал')
-                        if (parts.length) return <span className="presence-offline">{parts.join(', ')}</span>
-                      }
-                      const peerId = (chatContact as any)?.tg_peer_id
-                      const pr = peerId ? peerPresence[peerId] : undefined
-                      const { text: presText, isOnline } = formatPresence(pr)
-                      if (presText) {
-                        return (
-                          <span className={isOnline ? 'presence-online' : 'presence-offline'}>
-                            {presText}
-                          </span>
-                        )
-                      }
-                      return chatDisplay.subtitle
-                    })()}
-                  </div>
-                </div>
-                <div className="chat-header-right">
-                  <button
-                    className="chat-mute-btn"
-                    onClick={() => openSelectedClientCard(selectedClient)}
-                    title="Картка клієнта"
-                  >
-                    <UserIcon />
-                  </button>
-                  {(chatContact as any)?.tg_peer_id && selectedAccount && !activeCall && (!(chatContact as any)?.chat_type || (chatContact as any).chat_type === 'private') && (
-                    <>
-                      <button
-                        className="voip-call-btn"
-                        onClick={() => handleVoipCall(selectedAccount, (chatContact as any).tg_peer_id)}
-                        title="Голосовий дзвінок"
-                      >
-                        <PhoneIcon />
-                      </button>
-                      <button
-                        className="voip-call-btn voip-call-btn-disabled"
-                        title="Відеодзвінок (незабаром)"
-                        disabled
-                      >
-                        <VideoIcon />
-                      </button>
-                    </>
-                  )}
-                  {(chatContact as any)?.chat_type && (chatContact as any).chat_type !== 'private' && selectedAccount && (
-                    <button
-                      className={`chat-mute-btn${chatMuted ? ' muted' : ''}`}
-                      onClick={toggleMuteChat}
-                      disabled={muteLoading}
-                      title={chatMuted ? 'Увімкнути сповіщення' : 'Вимкнути сповіщення'}
-                    >
-                      {chatMuted
-                        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.8 8A6 6 0 0 1 20 12"/><path d="m2 2 20 20"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M8.54 5A6 6 0 0 1 18 8c0 1-.3 2.08-.78 3.1"/><path d="M6 6a8.11 8.11 0 0 0-1.56 3.85c-.42 2.15.07 3.75.56 5.15H18"/></svg>
-                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                      }
-                    </button>
-                  )}
-                  <button className="chat-search-btn" onClick={() => setChatSearchOpen(o => !o)} title="Пошук у чаті">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  </button>
-                  <span className="msg-count-badge">{msgCount} повідомлень</span>
-                </div>
-              </div>
+              <ChatHeader
+                selectedClient={selectedClient}
+                chatContact={chatContact as unknown as Record<string, unknown>}
+                chatDisplay={chatDisplay}
+                photoMap={photoMap}
+                peerPresence={peerPresence}
+                typingIndicators={typingIndicators}
+                groupInfo={groupInfo}
+                selectedAccount={selectedAccount}
+                activeCall={!!activeCall}
+                chatMuted={chatMuted}
+                muteLoading={muteLoading}
+                msgCount={msgCount}
+                onOpenProfile={() => setShowContactProfile(true)}
+                onOpenCard={openSelectedClientCard}
+                onVoipCall={(accountId, peerId) => handleVoipCall(accountId, Number(peerId))}
+                onToggleMute={toggleMuteChat}
+                onToggleSearch={() => setChatSearchOpen(o => !o)}
+              />
 
               {/* Chat search panel */}
               {chatSearchOpen && (
-                <div className="chat-search-panel">
-                  <input
-                    ref={chatSearchRef}
-                    type="text"
-                    className="chat-search-input"
-                    placeholder="Пошук у чаті..."
-                    value={chatSearchQuery}
-                    onChange={e => setChatSearchQuery(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && chatSearchResults.length > 0) {
-                        const nextIdx = (chatSearchIdx + 1) % chatSearchResults.length
-                        setChatSearchIdx(nextIdx)
-                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[nextIdx]}"]`)
-                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                      }
-                      if (e.key === 'Escape') {
-                        setChatSearchOpen(false)
-                        setChatSearchQuery('')
-                      }
-                    }}
-                    autoFocus
-                  />
-                  {chatSearchResults.length > 0 && (
-                    <div className="chat-search-nav">
-                      <span className="chat-search-count">{chatSearchIdx + 1}/{chatSearchResults.length}</span>
-                      <button className="chat-search-nav-btn" onClick={() => {
-                        const prev = (chatSearchIdx - 1 + chatSearchResults.length) % chatSearchResults.length
-                        setChatSearchIdx(prev)
-                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[prev]}"]`)
-                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                      }}>▲</button>
-                      <button className="chat-search-nav-btn" onClick={() => {
-                        const next = (chatSearchIdx + 1) % chatSearchResults.length
-                        setChatSearchIdx(next)
-                        const msgEl = document.querySelector(`[data-msg-id="${chatSearchResults[next]}"]`)
-                        if (msgEl) msgEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                      }}>▼</button>
-                    </div>
-                  )}
-                  {chatSearchQuery && chatSearchResults.length === 0 && (
-                    <span className="chat-search-count">0 результатів</span>
-                  )}
-                  <button className="chat-search-close" onClick={() => { setChatSearchOpen(false); setChatSearchQuery('') }}>✕</button>
-                </div>
+                <ChatSearchBar
+                  inputRef={chatSearchRef}
+                  query={chatSearchQuery}
+                  setQuery={setChatSearchQuery}
+                  results={chatSearchResults}
+                  idx={chatSearchIdx}
+                  setIdx={setChatSearchIdx}
+                  onClose={() => { setChatSearchOpen(false); setChatSearchQuery('') }}
+                />
               )}
 
               {/* Placeholder banner — hide for groups/supergroups */}
