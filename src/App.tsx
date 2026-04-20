@@ -38,7 +38,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon, ForwardIcon } from './components/icons'
+import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon } from './components/icons'
 // SettingsModal is lazy-loaded — its ~40KB chunk (wallpapers, WA settings UI, sound previews)
 // only enters memory when the user actually opens Settings from the rail.
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })))
@@ -81,6 +81,17 @@ import {
   TemplatePreviewModal,
   TemplateEditModal,
 } from './components/TemplateModals'
+import { ForwardBar } from './components/ForwardBar'
+import { ChannelReadonlyBar } from './components/ChannelReadonlyBar'
+import { LinkClientModal } from './components/LinkClientModal'
+import { NoteModal } from './components/NoteModal'
+import { VnoteModal } from './components/VnoteModal'
+import {
+  ConfirmDeleteTemplate,
+  SelectAccountHint,
+  DeleteMessageConfirm,
+  DeleteNoteConfirm,
+} from './components/ConfirmDialogs'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3717,55 +3728,17 @@ function App() {
               )}
 
               {/* Link client modal */}
-              {showLinkModal && (
-                <div className="link-modal-overlay" onClick={() => setShowLinkModal(false)}>
-                  <div className="link-modal" onClick={e => e.stopPropagation()}>
-                    <div className="link-modal-header">
-                      <h3>Прив'язати до пацієнта</h3>
-                      <button className="link-modal-close" onClick={() => setShowLinkModal(false)}>✕</button>
-                    </div>
-                    <div className="link-modal-search">
-                      <input
-                        type="text"
-                        placeholder="Пошук за ім'ям або телефоном..."
-                        value={linkSearch}
-                        onChange={e => {
-                          const v = e.target.value
-                          setLinkSearch(v)
-                          clearTimeout(linkSearchTimerRef.current)
-                          linkSearchTimerRef.current = setTimeout(() => searchClientsForLink(v), 300)
-                        }}
-                        autoFocus
-                      />
-                    </div>
-                    <div className="link-modal-results">
-                      {linkResults.map(c => {
-                        const display = resolveContactDisplay({ full_name: c.full_name, phone: c.phone })
-                        return (
-                          <button
-                            key={c.id}
-                            className="link-modal-item"
-                            onClick={() => handleLinkClient(c.id)}
-                            disabled={linkLoading}
-                          >
-                            <div className="link-modal-item-avatar"><UserIcon /></div>
-                            <div className="link-modal-item-info">
-                              <div className="link-modal-item-name">{display.name}</div>
-                              <div className="link-modal-item-phone">{c.phone}{c.calls_count > 0 ? ` · ${c.calls_count} дзвінків` : ''}</div>
-                            </div>
-                          </button>
-                        )
-                      })}
-                      {linkSearch.length >= 2 && linkResults.length === 0 && (
-                        <div className="link-modal-empty">Не знайдено</div>
-                      )}
-                      {linkSearch.length < 2 && (
-                        <div className="link-modal-empty">Введіть ім'я або телефон</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+              <LinkClientModal
+                open={showLinkModal}
+                onClose={() => setShowLinkModal(false)}
+                search={linkSearch}
+                setSearch={setLinkSearch}
+                results={linkResults}
+                loading={linkLoading}
+                onPickClient={handleLinkClient}
+                debounceTimerRef={linkSearchTimerRef}
+                runSearch={searchClientsForLink}
+              />
 
               {pinnedMessage && (
                 <div className="pinned-banner" onClick={() => {
@@ -3896,30 +3869,19 @@ function App() {
                 )}
               </div>
               {/* Forward mode bar */}
-              {forwardMode && (
-                <div className="forward-bar">
-                  <button className="forward-bar-cancel" onClick={exitForwardMode}><XIcon /> Скасувати</button>
-                  <span className="forward-bar-count">Обрано: {selectedMsgIds.size}</span>
-                  <button className="forward-bar-btn" onClick={bulkCopyMessages} disabled={selectedMsgIds.size === 0} title="Копіювати">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  </button>
-                  {messages.some(m => selectedMsgIds.has(m.id) && m.direction === 'sent' && ((!!m.tg_message_id && !!m.tg_peer_id) || m.source === 'whatsapp')) && (
-                    <button className="forward-bar-btn forward-bar-btn-danger" onClick={bulkDeleteMessages} disabled={selectedMsgIds.size === 0} title="Видалити">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-                  )}
-                  <button className="forward-bar-send" onClick={openForwardModal} disabled={selectedMsgIds.size === 0}>
-                    <ForwardIcon /> Переслати
-                  </button>
-                </div>
-              )}
-              {!forwardMode && (chatContact as any)?.chat_type === 'channel' && (
-                <div className="channel-readonly-bar">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/></svg>
-                  <span>Канал — тільки перегляд</span>
-                  {chatMuted && <span className="channel-muted-label">🔇</span>}
-                </div>
-              )}
+              <ForwardBar
+                active={forwardMode}
+                selectedIds={selectedMsgIds}
+                messages={messages}
+                onCancel={exitForwardMode}
+                onCopy={bulkCopyMessages}
+                onBulkDelete={bulkDeleteMessages}
+                onOpenForwardModal={openForwardModal}
+              />
+              <ChannelReadonlyBar
+                active={!forwardMode && (chatContact as unknown as { chat_type?: string })?.chat_type === 'channel'}
+                chatMuted={chatMuted}
+              />
               {!forwardMode && (chatContact as any)?.chat_type !== 'channel' && (
                 <div className="chat-input">
                   <input type="file" ref={fileInputRef} hidden multiple
@@ -4268,88 +4230,24 @@ function App() {
       <LightboxOverlay src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
 
       {/* Note modal */}
-      {showNoteModal && (
-        <div className="note-modal-overlay" onClick={() => setShowNoteModal(false)}>
-          <div className="note-modal" onClick={e => e.stopPropagation()}>
-            <div className="note-modal-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
-              <span>Нотатка</span>
-              <button className="note-modal-close" onClick={() => setShowNoteModal(false)}>✕</button>
-            </div>
-            <textarea
-              className="note-modal-input"
-              value={newNoteText}
-              onChange={e => setNewNoteText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addClientNote(); setShowNoteModal(false) } }}
-              placeholder="Текст нотатки..."
-              rows={4}
-              autoFocus
-            />
-            <button
-              className="note-modal-save"
-              disabled={!newNoteText.trim()}
-              onClick={() => { addClientNote(); setShowNoteModal(false) }}
-            >
-              Зберегти
-            </button>
-          </div>
-        </div>
-      )}
+      <NoteModal
+        open={showNoteModal}
+        onClose={() => setShowNoteModal(false)}
+        text={newNoteText}
+        setText={setNewNoteText}
+        onSave={addClientNote}
+      />
 
       {/* Video note modal */}
-      {vnoteModal && (
-        <div className="vnote-modal-overlay" onClick={() => { setVnoteModal(null); setVnotePlaying(false) }}>
-          <div className="vnote-modal" onClick={e => e.stopPropagation()}>
-            <button className="vnote-modal-close" onClick={() => { setVnoteModal(null); setVnotePlaying(false) }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-            <div className="vnote-modal-video">
-              <video
-                ref={vnoteModalRef}
-                src={vnoteModal.src}
-                autoPlay
-                className="vnote-modal-player"
-                onTimeUpdate={e => {
-                  const v = e.target as HTMLVideoElement
-                  setVnoteProgress(v.duration ? v.currentTime / v.duration : 0)
-                }}
-                onPlay={() => setVnotePlaying(true)}
-                onPause={() => setVnotePlaying(false)}
-                onEnded={() => { setVnotePlaying(false); setVnoteProgress(1) }}
-              />
-            </div>
-            <div className="vnote-modal-seek" onClick={e => {
-              const v = vnoteModalRef.current
-              if (!v || !v.duration) return
-              const rect = e.currentTarget.getBoundingClientRect()
-              const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-              v.currentTime = pct * v.duration
-            }}>
-              <div className="vnote-modal-seek-fill" style={{ width: `${vnoteProgress * 100}%` }} />
-              <div className="vnote-modal-seek-thumb" style={{ left: `${vnoteProgress * 100}%` }} />
-            </div>
-            <div className="vnote-modal-controls">
-              <button className="vnote-modal-btn" onClick={() => {
-                const v = vnoteModalRef.current
-                if (!v) return
-                v.paused ? v.play() : v.pause()
-              }}>
-                {vnotePlaying ? (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                ) : (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                )}
-              </button>
-              <button className="vnote-modal-btn" onClick={() => {
-                const v = vnoteModalRef.current
-                if (v) v.muted = !v.muted
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <VnoteModal
+        state={vnoteModal}
+        videoRef={vnoteModalRef}
+        playing={vnotePlaying}
+        setPlaying={setVnotePlaying}
+        progress={vnoteProgress}
+        setProgress={setVnoteProgress}
+        onClose={() => setVnoteModal(null)}
+      />
 
       {/* Forward Modal */}
       <ForwardModal
@@ -4382,61 +4280,25 @@ function App() {
       />
 
       {/* Confirm Delete Template/Category */}
-      {confirmDelete && (
-        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="confirm-delete-modal" onClick={e => e.stopPropagation()}>
-            <div className="confirm-delete-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-            </div>
-            <h3>Видалити {confirmDelete.type === 'category' ? 'категорію' : 'шаблон'}?</h3>
-            <p>«{confirmDelete.name}» буде видалено назавжди{confirmDelete.type === 'category' ? ' разом з усіма шаблонами' : ''}.</p>
-            <div className="confirm-delete-actions">
-              <button onClick={() => setConfirmDelete(null)}>Скасувати</button>
-              <button className="danger" onClick={() => {
-                if (confirmDelete.type === 'category') deleteCategory(confirmDelete.id)
-                else deleteTemplate(confirmDelete.id)
-                setConfirmDelete(null)
-              }}>Видалити</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteTemplate
+        state={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onDeleteCategory={deleteCategory}
+        onDeleteTemplate={deleteTemplate}
+      />
 
       {/* Select Account Hint Modal */}
-      {showSelectAccountHint && (
-        <div className="modal-overlay" onClick={() => setShowSelectAccountHint(false)}>
-          <div className="select-account-hint-modal" onClick={e => e.stopPropagation()}>
-            <div className="select-account-hint-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
-              </svg>
-            </div>
-            <h3 className="select-account-hint-title">Виберіть акаунт</h3>
-            <p className="select-account-hint-text">
-              Для відправки повідомлень та реакцій потрібно вибрати конкретний акаунт у лівій панелі.
-            </p>
-            <button className="select-account-hint-btn" onClick={() => setShowSelectAccountHint(false)}>Зрозуміло</button>
-          </div>
-        </div>
-      )}
+      <SelectAccountHint
+        open={showSelectAccountHint}
+        onClose={() => setShowSelectAccountHint(false)}
+      />
 
       {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="delete-confirm-modal" onClick={e => e.stopPropagation()}>
-            <h3 className="delete-confirm-title">Видалити повідомлення?</h3>
-            <p className="delete-confirm-text">Повідомлення буде видалено у співрозмовника, але залишиться у вас з позначкою.</p>
-            <div className="delete-confirm-actions">
-              <button className="delete-confirm-btn delete-btn-revoke" onClick={() => deleteMessage(deleteConfirm)}>
-                Видалити у співрозмовника
-              </button>
-              <button className="delete-confirm-btn delete-btn-cancel" onClick={() => setDeleteConfirm(null)}>
-                Скасувати
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteMessageConfirm
+        state={deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onDelete={(s) => deleteMessage(s)}
+      />
 
       {/* Contact Profile Modal */}
       <ContactProfileModal
@@ -4655,22 +4517,11 @@ function App() {
       />
 
       {/* Delete note confirmation modal */}
-      {deleteNoteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteNoteConfirm(null)}>
-          <div className="modal-dialog modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Видалити нотатку?</h3>
-            </div>
-            <div className="modal-body">
-              <p>Нотатку буде позначено як видалену. Вона залишиться видимою в картці клієнта на сайті.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="modal-btn modal-btn-cancel" onClick={() => setDeleteNoteConfirm(null)}>Скасувати</button>
-              <button className="modal-btn modal-btn-danger" onClick={() => deleteClientNote(deleteNoteConfirm)}>Видалити</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteNoteConfirm
+        noteId={deleteNoteConfirm}
+        onClose={() => setDeleteNoteConfirm(null)}
+        onDelete={(id) => deleteClientNote(id)}
+      />
 
       <ToastsContainer
         toasts={toasts}

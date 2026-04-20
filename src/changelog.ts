@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.68': [
+    'Внутрішнє: фінальна партія overlay-компонентів — 9 в одному комітом: `<ForwardBar/>` (forward-mode toolbar), `<ChannelReadonlyBar/>`, `<LinkClientModal/>` (привʼязка placeholder → real client), `<NoteModal/>` (нотатка з Ctrl+Enter), `<VnoteModal/>` (відеокружок-плеєр), `<ConfirmDeleteTemplate/>`, `<SelectAccountHint/>`, `<DeleteMessageConfirm/>`, `<DeleteNoteConfirm/>`. App.tsx 4704 → 4555',
+  ],
   '0.17.67': [
     'Внутрішнє: 4 модалки шаблонів одним комітом — `<CategoryAddModal/>`, `<TemplateAddModal/>`, `<TemplatePreviewModal/>` (preview+edit+send з extra files), `<TemplateEditModal/>` (CRUD з swap/remove media). Всі в одному файлі `components/TemplateModals.tsx`. App.tsx 4828 → 4704',
   ],
