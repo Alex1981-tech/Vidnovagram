@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.62': [
+    'Внутрішнє: завершено розбиття MessageList — винесено `<MessageBubble/>` orchestrator, який композує всі 19 sub-компонентів bubble-і (header/reply/media/reactions/footer/labels/etc). Прибрано 14 imports + SingleCheckIcon inline з App.tsx. App.tsx 5235 → 5095 (−140). Тепер App.tsx нижче 5100 рядків',
+  ],
   '0.17.61': [
     'Внутрішнє: фінальна хвиля MessageBubble — 7 компонентів одним комітом: `<PhotoBubble/>` (2 варіанти thumbnail/no-thumbnail), `<InlineButtons/>` (бот-кнопки url/callback/web_app), `<BubbleHeader/>` (group sender + forward from), `<DeletedLabel/>`, `<MediaPendingIndicator/>`, `<UnknownMediaPlaceholder/>`, `<FailedStatusLabel/>`. App.tsx 5341 → 5235 (−106)',
   ],

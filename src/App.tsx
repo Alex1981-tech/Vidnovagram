@@ -21,15 +21,12 @@ import {
   saveSettings,
 } from './settings'
 import { authFetch } from './utils/authFetch'
-import { extractFirstUrl } from './utils/urlExtract'
 import { useTheme } from './utils/theme'
 import {
   THUMB_STORE,
   getCached,
   putCache,
 } from './cache'
-import { Linkify } from './components/Linkify'
-import { LinkPreviewCard } from './components/LinkPreviewCard'
 import { ThemeToggle } from './components/ThemeToggle'
 import { LoginScreen } from './screens/LoginScreen'
 import { useTauriUpdater } from './hooks/useTauriUpdater'
@@ -71,25 +68,7 @@ import { NoteItem } from './components/NoteItem'
 import { AlbumBubble } from './components/AlbumBubble'
 import { CallCardBubble } from './components/CallCardBubble'
 import { ServiceMessage } from './components/ServiceMessage'
-import { ReactionsRow } from './components/ReactionsRow'
-import { ReplyQuote } from './components/ReplyQuote'
-import { MessageFooter } from './components/MessageFooter'
-import { LabResultStrip } from './components/LabResultStrip'
-import { StickerBubble } from './components/StickerBubble'
-import { PollBubble } from './components/PollBubble'
-import { ContactBubble } from './components/ContactBubble'
-import { GeoBubble } from './components/GeoBubble'
-import { VoiceBubble } from './components/VoiceBubble'
-import { DocumentBubble } from './components/DocumentBubble'
-import { VideoBubble } from './components/VideoBubble'
-import { VideoNoteBubble } from './components/VideoNoteBubble'
-import { PhotoBubble } from './components/PhotoBubble'
-import { InlineButtons } from './components/InlineButtons'
-import { BubbleHeader } from './components/BubbleHeader'
-import { DeletedLabel } from './components/DeletedLabel'
-import { MediaPendingIndicator } from './components/MediaPendingIndicator'
-import { UnknownMediaPlaceholder } from './components/UnknownMediaPlaceholder'
-import { FailedStatusLabel } from './components/FailedStatusLabel'
+import { MessageBubble } from './components/MessageBubble'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -158,11 +137,6 @@ const VolumeOffIcon = () => (
 )
 
 // Message status icons
-const SingleCheckIcon = ({ color = 'currentColor' }: { color?: string }) => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-)
 // Attachment & media icons
 const ForwardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -3779,156 +3753,42 @@ function App() {
                     return <ServiceMessage key={m.id} message={m} />
                   }
                   return (
-                    <div key={m.id} data-msg-id={m.id} className={`msg ${m.direction} src-${m.source || 'telegram'}${forwardMode ? ' selectable' : ''}${selectedMsgIds.has(m.id) ? ' selected' : ''}${chatSearchResults.includes(m.id as number) ? ' search-highlight' : ''}${chatSearchResults[chatSearchIdx] === m.id ? ' search-active' : ''}`}
-                      onClick={forwardMode ? () => toggleMsgSelection(m.id) : undefined}
-                      onContextMenu={!forwardMode ? (e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        if (m.has_media && m.media_file) {
-                          setCtxMenu({ x: e.clientX, y: e.clientY, mediaPath: m.media_file, mediaType: m.media_type, messageId: m.id })
-                        } else {
-                          setCtxMenu({ x: e.clientX, y: e.clientY, messageId: m.id })
-                        }
-                      } : undefined}
-                    >
-                      {forwardMode && (
-                        <div className={`msg-checkbox${selectedMsgIds.has(m.id) ? ' checked' : ''}`}>
-                          {selectedMsgIds.has(m.id) && <SingleCheckIcon color="white" />}
-                        </div>
-                      )}
-                      <div className={`msg-bubble${m.is_deleted ? ' msg-bubble-deleted' : ''}${m.is_lab_result ? ' msg-bubble-lab' : ''}${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}${m.media_type === 'video_note' ? ' msg-bubble-vnote' : ''}`}>
-                        {/* Group sender + forwarded-from meta */}
-                        <BubbleHeader message={m} />
-                        {/* Reply quote — click to scroll to quoted message */}
-                        <ReplyQuote
-                          message={m}
-                          messages={messages}
-                          token={auth?.token || ''}
-                          mediaBlobMap={mediaBlobMap}
-                          loadMediaBlob={loadMediaBlob}
-                          onClickReply={scrollToReplyMessage}
-                        />
-                        {/* Photo (with or without thumbnail) */}
-                        <PhotoBubble
-                          message={m}
-                          token={auth?.token || ''}
-                          mediaBlobMap={mediaBlobMap}
-                          loadMediaBlob={loadMediaBlob}
-                          setLightboxSrc={setLightboxSrc}
-                        />
-                        {/* Voice message → Telegram-style player */}
-                        {m.has_media && m.media_type === 'voice' && (
-                          <VoiceBubble
-                            message={m}
-                            mediaBlobMap={mediaBlobMap}
-                            mediaLoading={mediaLoading}
-                            loadMediaBlob={loadMediaBlob}
-                          />
-                        )}
-                        {/* Video note (round video / кружок) — autoplay muted like Telegram */}
-                        {m.has_media && m.media_type === 'video_note' && (
-                          <VideoNoteBubble
-                            message={m}
-                            token={auth?.token || ''}
-                            mediaBlobMap={mediaBlobMap}
-                            mediaLoading={mediaLoading}
-                            loadMediaBlob={loadMediaBlob}
-                            onOpenVnote={(src, id) => {
-                              setVnoteModal({ src, id })
-                              setVnotePlaying(true)
-                              setVnoteProgress(0)
-                            }}
-                          />
-                        )}
-                        {/* Regular video */}
-                        {m.has_media && m.media_type === 'video' && (
-                          <VideoBubble
-                            message={m}
-                            token={auth?.token || ''}
-                            mediaBlobMap={mediaBlobMap}
-                            mediaLoading={mediaLoading}
-                            loadMediaBlob={loadMediaBlob}
-                          />
-                        )}
-                        {/* Document → PDF opens in browser, others save+open */}
-                        {m.has_media && m.media_type === 'document' && (
-                          <DocumentBubble
-                            message={m}
-                            mediaLoading={mediaLoading}
-                            onOpen={openMedia}
-                          />
-                        )}
-                        {/* Media pending download — show loading indicator */}
-                        <MediaPendingIndicator message={m} />
-                        {/* Sticker — show emoji or media */}
-                        {m.media_type === 'sticker' && (
-                          <StickerBubble
-                            message={m}
-                            token={auth?.token || ''}
-                            mediaBlobMap={mediaBlobMap}
-                            loadMediaBlob={loadMediaBlob}
-                          />
-                        )}
-                        {/* Unknown media without specific handler */}
-                        <UnknownMediaPlaceholder message={m} />
-                        {/* Contact card */}
-                        {m.media_type === 'contact' && (
-                          <ContactBubble
-                            message={m}
-                            contacts={contacts}
-                            photoMap={photoMap}
-                            onAddToAccount={(state) => {
-                              setAddToAcctModal(state)
-                              checkPhoneMessengers(state.phone)
-                            }}
-                          />
-                        )}
-                        {/* Poll/checklist/ToDo card */}
-                        {m.media_type === 'poll' && (
-                          <PollBubble
-                            message={m}
-                            selectedAccount={selectedAccount}
-                            authToken={auth?.token || ''}
-                            onTextUpdate={(msgId, newText) => setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: newText } : msg))}
-                          />
-                        )}
-                        {/* Geo location card */}
-                        {m.media_type === 'geo' && (
-                          <GeoBubble message={m} shellOpen={shellOpen} />
-                        )}
-                        {/* Message text — always shown, even for deleted */}
-                        {m.text && m.media_type !== 'contact' && !(m.media_type === 'poll' && (m.poll_question || m.text.startsWith('📊') || m.text.startsWith('📋'))) && !(m.media_type === 'geo' && (m.location_lat != null || m.text.includes('📍'))) && <div className={`msg-text${m.is_deleted ? ' msg-text-deleted' : ''}`}><Linkify text={m.text} onLinkClick={u => shellOpen(u)} /></div>}
-                        {m.text && !m.is_deleted && m.media_type !== 'geo' && (() => { const u = extractFirstUrl(m.text); return u ? <LinkPreviewCard url={u} token={auth!.token} onClick={u => shellOpen(u)} /> : null })()}
-                        {/* Inline keyboard (bot buttons) */}
-                        <InlineButtons
-                          message={m}
-                          selectedAccount={selectedAccount}
-                          token={auth?.token || ''}
-                          shellOpen={shellOpen}
-                        />
-                        {/* Deleted label under message */}
-                        <DeletedLabel message={m} />
-                        {/* Reactions */}
-                        <ReactionsRow
-                          reactions={m.reactions || []}
-                          selectedClient={selectedClient}
-                          clientPhotoUrl={selectedClient ? photoMap[selectedClient] : undefined}
-                          clientInitial={(contacts.find(c => c.client_id === selectedClient)?.full_name || '?')[0].toUpperCase()}
-                        />
-                        <MessageFooter message={m} />
-                        <FailedStatusLabel message={m} />
-                      </div>
-                      <LabResultStrip
-                        message={m}
-                        onOpenLabTab={(patientKey) => {
-                          setRightTab('lab')
-                          if (labPatients.length === 0 && !labLoading) loadLabResults(1, '')
-                          setExpandedLabPatient(patientKey)
-                        }}
-                        onEditLabResult={editLabResult}
-                        onUnlinkLabResult={unlinkLabResult}
-                      />
-                    </div>
+                    <MessageBubble
+                      key={m.id}
+                      message={m}
+                      messages={messages}
+                      selectedClient={selectedClient}
+                      selectedAccount={selectedAccount}
+                      token={auth?.token || ''}
+                      forwardMode={forwardMode}
+                      selectedMsgIds={selectedMsgIds}
+                      toggleMsgSelection={toggleMsgSelection}
+                      chatSearchResults={chatSearchResults}
+                      chatSearchIdx={chatSearchIdx}
+                      setCtxMenu={setCtxMenu}
+                      mediaBlobMap={mediaBlobMap}
+                      mediaLoading={mediaLoading}
+                      loadMediaBlob={loadMediaBlob}
+                      setLightboxSrc={setLightboxSrc}
+                      shellOpen={shellOpen}
+                      openMedia={openMedia}
+                      scrollToReplyMessage={scrollToReplyMessage}
+                      setVnoteModal={setVnoteModal}
+                      setVnotePlaying={setVnotePlaying}
+                      setVnoteProgress={setVnoteProgress}
+                      photoMap={photoMap}
+                      contacts={contacts}
+                      setAddToAcctModal={setAddToAcctModal}
+                      checkPhoneMessengers={checkPhoneMessengers}
+                      setMessages={setMessages}
+                      setRightTab={setRightTab}
+                      labPatients={labPatients}
+                      labLoading={labLoading}
+                      loadLabResults={loadLabResults}
+                      setExpandedLabPatient={setExpandedLabPatient}
+                      editLabResult={editLabResult}
+                      unlinkLabResult={unlinkLabResult}
+                    />
                   )
                 })}
                 <div ref={chatEndRef} />
