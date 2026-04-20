@@ -1,6 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { formatPresence } from '../utils/presence'
 import { SharedMediaPanel } from './SharedMediaPanel'
+import { GroupMembersPanel } from './GroupMembersPanel'
+import { ForumTopicsPanel } from './ForumTopicsPanel'
 import type { ChatMessage, Contact } from '../types'
 
 interface Presence {
@@ -48,8 +50,9 @@ interface Props {
   setLightboxSrc: Dispatch<SetStateAction<string | null>>
   shellOpen: (url: string) => Promise<void>
   openSelectedClientCard: (clientId: string) => void
-  // Shared media panel
+  // Shared media + group members panels
   token: string
+  accountId?: string
   mediaBlobMap: Record<string, string>
   mediaLoading: Record<string, boolean>
   loadMediaBlob: (key: string, mediaPath: string) => Promise<string | null>
@@ -85,6 +88,7 @@ export function ContactProfileModal({
   shellOpen,
   openSelectedClientCard,
   token,
+  accountId = '',
   mediaBlobMap,
   mediaLoading,
   loadMediaBlob,
@@ -98,6 +102,7 @@ export function ContactProfileModal({
   const ct = (chatContact as unknown as { chat_type?: string }).chat_type
   const isPrivate = !ct || ct === 'private'
   const isChannel = ct === 'channel'
+  const isGroup = ct === 'group' || ct === 'supergroup'
   const peerId = (chatContact as unknown as { tg_peer_id?: number | string }).tg_peer_id
   const pr = peerId != null ? peerPresence[peerId] : undefined
   const { text: presText, isOnline: presOnline } = formatPresence(pr)
@@ -199,6 +204,24 @@ export function ContactProfileModal({
               </div>
             )}
             {!isPrivate && groupInfo?.about && <p className="contact-profile-about">{groupInfo.about}</p>}
+            {isGroup && peerId != null && accountId && (
+              <>
+                <GroupMembersPanel
+                  open={open}
+                  accountId={accountId}
+                  peerId={peerId}
+                  token={token}
+                />
+                {ct === 'supergroup' && (
+                  <ForumTopicsPanel
+                    open={open}
+                    accountId={accountId}
+                    peerId={peerId}
+                    token={token}
+                  />
+                )}
+              </>
+            )}
             <SharedMediaPanel
               messages={messages}
               token={token}

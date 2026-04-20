@@ -3050,9 +3050,33 @@ function App() {
   }, [messages, clientNotes])
 
   // Pinned message — find last pinned message in current chat
+  const [pinnedExtra, setPinnedExtra] = useState<ChatMessage | null>(null)
   const pinnedMessage = useMemo(() => {
-    return messages.find(m => m.is_pinned) || null
-  }, [messages])
+    return messages.find(m => m.is_pinned) || pinnedExtra
+  }, [messages, pinnedExtra])
+
+  // Fetch pinned message separately if it's beyond the loaded window
+  useEffect(() => {
+    setPinnedExtra(null)
+    if (!auth?.token || !selectedAccount || !selectedClient || !chatContact) return
+    const peer = (chatContact as unknown as { tg_peer_id?: number | string }).tg_peer_id
+    if (!peer) return
+    const inLoaded = messages.some(m => m.is_pinned)
+    if (inLoaded) return
+    if (!hasOlderMessages && messages.length > 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const url = `${API_BASE}/api/telegram/pinned-message/?account_id=${encodeURIComponent(selectedAccount)}&peer_id=${peer}`
+        const r = await authFetch(url, auth.token)
+        if (!r.ok) return
+        const data = await r.json()
+        if (cancelled || !data.pinned) return
+        setPinnedExtra(data.pinned as ChatMessage)
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [auth?.token, selectedAccount, selectedClient, chatContact, messages, hasOlderMessages])
 
   // Select client handler
   const selectClient = useCallback((clientId: string, opts?: { accountId?: string; jumpToMessageId?: string | number }) => {
@@ -4378,6 +4402,7 @@ function App() {
         shellOpen={shellOpen}
         openSelectedClientCard={openSelectedClientCard}
         token={auth?.token || ''}
+        accountId={selectedAccount}
         mediaBlobMap={mediaBlobMap}
         mediaLoading={mediaLoading}
         loadMediaBlob={loadMediaBlob}
