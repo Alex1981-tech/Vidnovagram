@@ -7,7 +7,7 @@ import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import * as telemetry from './telemetry'
 import './App.css'
 import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
-import { formatContactDate, formatDateSeparator } from './utils/dateFormat'
+import { formatDateSeparator } from './utils/dateFormat'
 import {
   isPlaceholderPhone,
   isPlaceholderName,
@@ -34,7 +34,6 @@ import { LottieSticker } from './components/LottieSticker'
 import { PollCard } from './components/PollCard'
 import { Linkify } from './components/Linkify'
 import { LinkPreviewCard } from './components/LinkPreviewCard'
-import { ContactName } from './components/ContactName'
 import { ThemeToggle } from './components/ThemeToggle'
 import { LoginScreen } from './screens/LoginScreen'
 import { useTauriUpdater } from './hooks/useTauriUpdater'
@@ -47,7 +46,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon } from './components/icons'
+import { PhoneIcon, MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon } from './components/icons'
 import { SettingsModal } from './components/SettingsModal'
 import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
@@ -57,6 +56,8 @@ import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { SidebarSearch } from './components/SidebarSearch'
 import { GmailSidebarFilter } from './components/GmailSidebarFilter'
+import { GmailEmailList } from './components/GmailEmailList'
+import { ContactList } from './components/ContactList'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -113,11 +114,6 @@ async function oggToWav(blob: Blob): Promise<Blob> {
 
 // ===== SVG Icons =====
 
-const UserIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-  </svg>
-)
 const VolumeOnIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
@@ -3359,220 +3355,63 @@ function App() {
           )}
           {/* Contact list / Gmail email list */}
           {selectedGmail ? (
-            <>
-              <div className="contact-list">
-                {gmailLoading && <div className="loading-more">Завантаження...</div>}
-                {!gmailLoading && gmailEmails.length === 0 && <div className="loading-more" style={{ color: 'var(--muted-foreground)' }}>Немає листів</div>}
-                {gmailEmails.map(email => {
-                  const emailIsSent = gmailDirection === 'sent' || (gmailDirection === '' && email.labels?.includes('SENT') && !email.labels?.includes('INBOX'))
-                  const displayName = emailIsSent ? (email.recipients[0] || '—') : email.sender.replace(/<[^>]+>/, '').trim()
-                  const initial = displayName[0]?.toUpperCase() || '?'
-                  return (
-                    <div
-                      key={email.id}
-                      className={`contact gmail-contact ${gmailSelectedMsg?.id === email.id ? 'active' : ''}${!email.is_read ? ' unread' : ''}`}
-                      onClick={() => {
-                        if (!email.is_read) {
-                          email.is_read = true
-                          setGmailEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
-                        }
-                        setGmailSelectedMsg(email)
-                      }}
-                    >
-                      <div className="avatar gmail-avatar">
-                        <span>{initial}</span>
-                      </div>
-                      <div className="contact-body">
-                        <div className="contact-row">
-                          <span className="contact-name">{displayName}</span>
-                          <span className="contact-time">{formatContactDate(email.date)}</span>
-                        </div>
-                        <div className="contact-row">
-                          <span className="contact-preview gmail-subject">{email.subject || '(без теми)'}</span>
-                        </div>
-                        <div className="contact-meta">
-                          <span className="contact-preview gmail-snippet">{email.snippet?.slice(0, 50)}</span>
-                          <span className="contact-icons">
-                            {email.has_attachments && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
-                            {gmailDirection === '' && (
-                              emailIsSent
-                                ? <svg className="gmail-dir-icon gmail-dir-sent" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                                : <svg className="gmail-dir-icon gmail-dir-inbox" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-                            )}
-                            <GmailIcon size={11} color="#EA4335" />
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Pagination */}
-              {gmailTotal > 50 && (
-                <div className="gmail-pagination sidebar-footer">
-                  <button disabled={gmailPage <= 1} onClick={() => loadGmailEmails(selectedGmail, gmailPage - 1, gmailSearch, gmailDirection)}>←</button>
-                  <span>{gmailPage} / {Math.ceil(gmailTotal / 50)}</span>
-                  <button disabled={gmailPage * 50 >= gmailTotal} onClick={() => loadGmailEmails(selectedGmail, gmailPage + 1, gmailSearch, gmailDirection)}>→</button>
-                </div>
-              )}
-              {gmailTotal <= 50 && (
-                <div className="sidebar-footer">{gmailEmails.length} листів</div>
-              )}
-            </>
+            <GmailEmailList
+              selectedGmail={selectedGmail}
+              emails={gmailEmails}
+              setEmails={setGmailEmails}
+              loading={gmailLoading}
+              direction={gmailDirection}
+              search={gmailSearch}
+              page={gmailPage}
+              total={gmailTotal}
+              selected={gmailSelectedMsg}
+              onSelect={setGmailSelectedMsg}
+              onPageChange={loadGmailEmails}
+            />
           ) : (
-            <>
-              <div className="contact-list" onScroll={e => {
-                const el = e.currentTarget
-                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
-                  loadMoreContacts()
-                }
-              }}>
-                {hasMessengerAccounts ? (
-                  <>
-                    {contacts.map(c => {
-                      const display = resolveContactDisplay(c)
-                      return (
-                      <div
-                        key={c.client_id}
-                        className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
-                        onClick={() => selectClient(c.client_id)}
-                      >
-                        <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
-                          {photoMap[c.client_id]
-                            ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
-                            : <UserIcon />}
-                          {c.tg_peer_id && peerPresence[c.tg_peer_id]?.status === 'online' && (
-                            <span className="online-dot" />
-                          )}
-                        </div>
-                        <div className="contact-body">
-                          <div className="contact-row">
-                            <span className={`contact-name${c.is_employee ? ' employee' : ''}`}>
-                              <ContactName name={display.name} isEmployee={c.is_employee} />
-                            </span>
-                            {isUnread(c) && <span className="unread-dot" />}
-                            <span className="contact-time">
-                              {c.last_message_date && formatContactDate(c.last_message_date)}
-                            </span>
-                          </div>
-                          <div className="contact-row">
-                            <span className="contact-preview">
-                              {draftsRef.current.has(c.client_id) ? (
-                                <><span className="preview-draft">Чернетка: </span>{draftsRef.current.get(c.client_id)!.text.slice(0, 50)}</>
-                              ) : (
-                                <>{c.last_message_direction === 'sent' && <span className="preview-you">Ви: </span>}{c.last_message_text?.slice(0, 60) || 'Медіа'}</>
-                              )}
-                            </span>
-                          </div>
-                          <div className="contact-meta">
-                            <span className="contact-phone">{display.subtitle}</span>
-                            <span className="contact-icons">
-                              {c.has_telegram === true && <TelegramIcon size={12} color="#2AABEE" />}
-                              {c.has_whatsapp && <WhatsAppIcon size={12} color="#25D366" />}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      )
-                    })}
-                    {loadingMoreContacts && (
-                      <div className="loading-more">Завантаження...</div>
-                    )}
-                    {/* Username search result (@bot / @user) */}
-                    {usernameSearchResult && (
-                      <>
-                        <div className="search-section-header">
-                          {usernameSearchResult.is_bot ? '🤖 Бот' : '👤 Користувач'}
-                        </div>
-                        <div className="contact search-result username-result" onClick={async () => {
-                          // Start chat with bot/user: send /start if bot, or just open chat
-                          const peerId = usernameSearchResult.peer_id
-                          if (!peerId || !selectedAccount) return
-                          try {
-                            if (usernameSearchResult.is_bot) {
-                              // Send /start to bot via MadelineProto directly
-                              await authFetch(`${API_BASE}/telegram/send-to-peer/`, auth!.token, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, text: '/start' }),
-                              })
-                            }
-                            // Reload contacts — bot should appear after /start
-                            setSearch('')
-                            setUsernameSearchResult(null)
-                            setGlobalSearchResults([])
-                            setTimeout(() => loadContacts(), 1500)
-                          } catch (e) { console.error('Failed to start bot chat:', e) }
-                        }}>
-                          <div className="avatar">{usernameSearchResult.is_bot ? <span>🤖</span> : <UserIcon />}</div>
-                          <div className="contact-body">
-                            <div className="contact-row">
-                              <span className="contact-name">{usernameSearchResult.first_name} {usernameSearchResult.last_name || ''}</span>
-                            </div>
-                            <div className="contact-row">
-                              <span className="contact-preview">@{usernameSearchResult.username}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    {/* Global message search results */}
-                    {globalSearchResults.length > 0 && (
-                      <>
-                        <div className="search-section-header">Повідомлення ({globalSearchResults.length})</div>
-                        {globalSearchResults.map((r, i) => (
-                          <div key={`sr-${i}`} className="contact search-result" onClick={() => {
-                            if (r.client_id) {
-                              selectClient(r.client_id, { accountId: r.account_id || undefined, jumpToMessageId: r.id })
-                              setSearch('')
-                              setGlobalSearchResults([])
-                              setUsernameSearchResult(null)
-                            }
-                          }}>
-                            <div className="avatar"><UserIcon /></div>
-                            <div className="contact-body">
-                              <div className="contact-row">
-                                <span className="contact-name">{r.client_name || r.client_phone || 'Невідомий'}</span>
-                                <span className="contact-time">{r.message_date && formatContactDate(r.message_date)}</span>
-                              </div>
-                              <div className="contact-row">
-                                <span className="contact-preview search-preview">
-                                  {r.direction === 'sent' && <span className="preview-you">Ви: </span>}
-                                  {r.text?.slice(0, 80)}
-                                </span>
-                              </div>
-                              <div className="contact-meta">
-                                <span className="contact-phone">{r.account_label || '—'}</span>
-                                <span className="contact-icons">
-                                  {r.source === 'telegram'
-                                    ? <TelegramIcon size={12} color="#2AABEE" />
-                                    : <WhatsAppIcon size={12} color="#25D366" />}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <div className="sidebar-empty-state">
-                    <div className="sidebar-empty-state-icon">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                      </svg>
-                    </div>
-                    <div className="sidebar-empty-state-title">Немає доступних акаунтів</div>
-                    <div className="sidebar-empty-state-text">
-                      У налаштуваннях користувача не видано жодного Telegram або WhatsApp акаунта.
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="sidebar-footer">
-                {hasMessengerAccounts ? `${contacts.length} / ${contactCount} контактів` : 'Попросіть адміністратора надати доступ до акаунтів'}
-              </div>
-            </>
+            <ContactList
+              hasMessengerAccounts={hasMessengerAccounts}
+              contacts={contacts}
+              selectedClient={selectedClient}
+              selectedAccount={selectedAccount}
+              isUnread={isUnread}
+              photoMap={photoMap}
+              peerPresence={peerPresence}
+              draftsRef={draftsRef}
+              loadMoreContacts={loadMoreContacts}
+              loadingMoreContacts={loadingMoreContacts}
+              contactCount={contactCount}
+              usernameSearchResult={usernameSearchResult}
+              globalSearchResults={globalSearchResults}
+              onSelectClient={(clientId, opts) => {
+                selectClient(clientId, opts)
+                setSearch('')
+                setGlobalSearchResults([])
+                setUsernameSearchResult(null)
+              }}
+              onUsernameSelect={async (result) => {
+                const peerId = result.peer_id
+                if (!peerId || !selectedAccount) return
+                try {
+                  if (result.is_bot) {
+                    await authFetch(`${API_BASE}/telegram/send-to-peer/`, auth!.token, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ account_id: selectedAccount, peer_id: peerId, text: '/start' }),
+                    })
+                  }
+                  setSearch('')
+                  setUsernameSearchResult(null)
+                  setGlobalSearchResults([])
+                  setTimeout(() => loadContacts(), 1500)
+                } catch (e) { console.error('Failed to start bot chat:', e) }
+              }}
+              onClearSearch={() => {
+                setSearch('')
+                setGlobalSearchResults([])
+                setUsernameSearchResult(null)
+              }}
+            />
           )}
         </div>
 

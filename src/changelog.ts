@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.46': [
+    'Внутрішнє: фіналізовано розбиття Sidebar — винесено `<GmailEmailList/>` (список листів + пагінація) і `<ContactList/>` (контакти + глобальний пошук + username-результати + empty state + footer). UserIcon переїхав у `components/icons.tsx`. App.tsx 6678 → 6517',
+  ],
   '0.17.45': [
     'Внутрішнє: ще 2 leaf-компоненти сайдбару — `<SidebarSearch/>` (перемикач пошуку TG/WA/Gmail) і `<GmailSidebarFilter/>` (кнопки All/Inbox/Sent + Compose). App.tsx 6694 → 6678',
   ],
