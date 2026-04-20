@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.86': [
+    'Фікс: у бізнес-чатах (Viber / Telegram-бот / Meta) у заголовку чату показувалось ім\'я та телефон чужого клієнта — брались stale-значення з попереднього Telegram-чату. Тепер business rail завжди використовує власні `full_name`/`phone` з `/api/business/contacts/` і не перетирається useMessages',
+  ],
   '0.17.85': [
     'У бізнес-чатах (Viber / Telegram-бот / Meta) у списку контактів тепер показується фото клієнта з Telegram (якщо є) + бейдж "🆕" поряд з іменем для нових пацієнтів. Картка профілю контакту відкриває розширену панель з BAF-карткою, бонусним балансом та найближчими прийомами (читає `GET /api/business/contacts/{id}/profile/`)',
   ],

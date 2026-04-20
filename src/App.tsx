@@ -3075,9 +3075,11 @@ function App() {
     account_label: '',
     account_phone: '',
   } : null)
+  // Business rails own their own contact data (from /business/contacts/). Don't let
+  // stale TG clientName/Phone (from useMessages) bleed into Viber/FB/IG/Telegram-bot chats.
   const chatDisplay = resolveContactDisplay(chatContact ? {
-    full_name: clientName && !isPlaceholderName(clientName) ? clientName : chatContact.full_name,
-    phone: clientPhone && !isPlaceholderPhone(clientPhone) ? clientPhone : chatContact.phone,
+    full_name: (!selectedBusiness && clientName && !isPlaceholderName(clientName)) ? clientName : chatContact.full_name,
+    phone: (!selectedBusiness && clientPhone && !isPlaceholderPhone(clientPhone)) ? clientPhone : chatContact.phone,
     tg_name: (chatContact as any).tg_name,
     tg_username: (chatContact as any).tg_username,
     linked_phones: (chatContact as any)?.linked_phones,
