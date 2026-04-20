@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.55': [
+    'Внутрішнє: старт розбиття MessageList. Винесено 3 leaf-рендерери: `<DateSeparator/>`, `<NoteItem/>` (інлайн-нотатка), `<AlbumBubble/>` (медіа-альбом 2×2 grid). App.tsx 5757 → 5680 (−77)',
+  ],
   '0.17.54': [
     'Внутрішнє: clean-up input-area. Винесено `<TodoListModal/>` (композиція списку ☐), `<AttachedPreview/>` (компактна панель стейджу файлів) і `<ReplyEditBar/>` (банер reply/edit над textarea). XIcon переїхав у `components/icons.tsx`. App.tsx 5808 → 5757',
   ],

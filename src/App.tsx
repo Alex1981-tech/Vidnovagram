@@ -70,6 +70,9 @@ import { MessageInputBar } from './components/MessageInputBar'
 import { TodoListModal } from './components/TodoListModal'
 import { AttachedPreview } from './components/AttachedPreview'
 import { ReplyEditBar } from './components/ReplyEditBar'
+import { DateSeparator } from './components/DateSeparator'
+import { NoteItem } from './components/NoteItem'
+import { AlbumBubble } from './components/AlbumBubble'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3718,106 +3721,26 @@ function App() {
                 </div>
                 {groupedMessages.map((item, i) => {
                   if ('type' in item && item.type === 'date') {
-                    return (
-                      <div key={`date-${i}`} className="date-separator">
-                        <span>{item.date}</span>
-                      </div>
-                    )
+                    return <DateSeparator key={`date-${i}`} date={item.date} />
                   }
                   // Note item
                   if ('_isNote' in item && (item as any)._isNote) {
                     const note = item as ClientNote & { _isNote: true }
-                    return (
-                      <div key={`note-${note.id}`} data-note-id={note.id} className="msg msg-note">
-                        <div className="msg-bubble msg-bubble-note">
-                          <div className="msg-note-header">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
-                            <span className="msg-note-author">{note.author_name}</span>
-                            <button className="msg-note-delete" onClick={() => deleteClientNote(note.id)} title="Видалити">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                            </button>
-                          </div>
-                          <div className="msg-note-text">{note.text}</div>
-                          <div className="msg-time">
-                            {new Date(note.created_at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      </div>
-                    )
+                    return <NoteItem key={`note-${note.id}`} note={note} onDelete={deleteClientNote} />
                   }
                   // Album group
                   if ('type' in item && (item as any).type === 'album') {
                     const album = item as AlbumGroup
-                    const count = album.messages.length
-                    // Grid class: 2 items = 2 cols, 3 = 2+1, 4+ = 2x2 grid
-                    const gridClass = count === 2 ? 'album-grid-2' : count === 3 ? 'album-grid-3' : 'album-grid-4'
                     return (
-                      <div key={`album-${album.media_group_id}`} className={`msg ${album.direction} src-${album.source || 'telegram'}`}>
-                        <div className="msg-bubble">
-                          <div className={`album-grid ${gridClass}`}>
-                            {album.messages.map((am, ai) => (
-                              <div key={am.id} className={`album-item${count === 3 && ai === 0 ? ' album-item-wide' : ''}`}>
-                                {am.thumbnail || am.media_file ? (
-                                  (() => {
-                                    const preferFullImage = am.media_type === 'photo' && !!am.media_file
-                                    const mediaKey = `${preferFullImage ? 'full' : 'thumb'}_${am.id}`
-                                    const mediaPath = preferFullImage
-                                      ? am.media_file
-                                      : (am.thumbnail || am.media_file)
-                                    const fallbackPath = preferFullImage
-                                      ? (am.thumbnail || undefined)
-                                      : (am.thumbnail && am.media_file ? am.media_file : undefined)
-                                    return (
-                                  <AuthMedia
-                                    mediaKey={mediaKey}
-                                    mediaPath={mediaPath}
-                                    type="image"
-                                    className="album-media"
-                                    token={auth?.token || ''}
-                                    blobMap={mediaBlobMap}
-                                    loadBlob={loadMediaBlob}
-                                    fallbackPath={fallbackPath}
-                                    onClick={async () => {
-                                      if (am.media_file) {
-                                        const blob = mediaBlobMap[`full_${am.id}`] || await loadMediaBlob(`full_${am.id}`, am.media_file)
-                                        if (blob) setLightboxSrc(blob)
-                                      } else if (mediaBlobMap[`thumb_${am.id}`]) {
-                                        setLightboxSrc(mediaBlobMap[`thumb_${am.id}`])
-                                      }
-                                    }}
-                                  />
-                                    )
-                                  })()
-                                ) : (
-                                  <div className="album-placeholder">
-                                    {am.media_status === 'pending' ? <div className="spinner-sm" /> : `📎 ${am.media_type || 'медіа'}`}
-                                  </div>
-                                )}
-                                {am.media_type === 'video' && (
-                                  <div className="album-video-badge">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          {album.caption && <div className="msg-text"><Linkify text={album.caption} onLinkClick={u => shellOpen(u)} /></div>}
-                          <div className="msg-footer">
-                            <span className="msg-source">
-                              {album.source === 'whatsapp'
-                                ? <WhatsAppIcon size={10} color="#25D366" />
-                                : <TelegramIcon size={10} color="#2AABEE" />
-                              }
-                            </span>
-                            <span className="msg-time">
-                              {new Date(album.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            {album.direction === 'sent' && (
-                              <span className="msg-status-text read">Прочитано</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                      <AlbumBubble
+                        key={`album-${album.media_group_id}`}
+                        album={album}
+                        token={auth?.token || ''}
+                        mediaBlobMap={mediaBlobMap}
+                        loadMediaBlob={loadMediaBlob}
+                        setLightboxSrc={setLightboxSrc}
+                        shellOpen={shellOpen}
+                      />
                     )
                   }
                   const m = item as ChatMessage
