@@ -1,10 +1,19 @@
 import { useEffect, useRef } from 'react'
 
 /**
+ * Module-level cache of natural dimensions for each mediaPath. First time a user
+ * sees an image it jumps slightly (default 4:3 placeholder → real aspect ratio);
+ * subsequent renders reserve the exact aspect before the blob arrives, so the
+ * chat doesn't visibly reflow when scrolling or reopening.
+ */
+const dimsCache = new Map<string, { w: number; h: number }>()
+
+/**
  * Authenticated image renderer that fetches the media through a caller-provided
  * `loadBlob` and falls back to a secondary path if the primary fails. Keeps
  * retry bookkeeping local so several AuthMedia instances don't trample each
- * other.
+ * other. Placeholder reserves space matching the image's aspect ratio (cached
+ * from previous load) to prevent layout shift.
  */
 export function AuthMedia({
   mediaKey,
@@ -62,7 +71,24 @@ export function AuthMedia({
   }, [token, mediaKey, mediaPath])
 
   const src = blobMap[mediaKey] || blobMap[fallbackKey]
-  if (!src) return <div className="msg-media-placeholder">📷 ...</div>
+
+  // Cached aspect — from primary path or from fallback (same content, different key)
+  const cached = dimsCache.get(mediaPath) || (fallbackPath ? dimsCache.get(fallbackPath) : undefined)
+  const aspectStyle = cached
+    ? { aspectRatio: `${cached.w} / ${cached.h}` }
+    : { aspectRatio: '4 / 3' as const }
+
+  if (!src) {
+    return (
+      <div
+        className={`${className || ''} auth-media-loading`}
+        style={aspectStyle}
+      >
+        <span>📷 ...</span>
+      </div>
+    )
+  }
+
   if (type === 'image') {
     return (
       <img
@@ -70,6 +96,13 @@ export function AuthMedia({
         alt=""
         className={className}
         onClick={onClick}
+        onLoad={(e) => {
+          const img = e.currentTarget
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            dimsCache.set(mediaPath, { w: img.naturalWidth, h: img.naturalHeight })
+            if (fallbackPath) dimsCache.set(fallbackPath, { w: img.naturalWidth, h: img.naturalHeight })
+          }
+        }}
         onError={() => {
           if (fallbackPath && !blobMap[fallbackKey] && !fallbackTried.current) {
             fallbackTried.current = true
