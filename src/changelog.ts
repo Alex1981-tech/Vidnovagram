@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.77': [
+    'Viber Business (TurboSMS): повноцінний чат у Vidnovagram. При виборі бізнес-акаунту в rail — підтягуються контакти переписок, клік по контакту відкриває історію повідомлень, відправка працює через `POST /api/business/send/`. 10-секундний polling підхоплює нові вхідні (WebSocket-інтеграцію додамо після активації chat-сесій у TurboSMS). Перемикання між Бізнес/Месенджери очищає поточний чат і підвантажує правильний список',
+    'Backend: виправлено TurboSMS request-shape (nested `viber` object замість плоских полів), nормалізація 0XX → 380XX, коректна обробка response_code 801 SUCCESS_MESSAGE_SENT (раніше вважалося помилкою)',
+  ],
   '0.17.76': [
     'Бізнес-месенджери: у верхньому rail зʼявилася секція "Бізнес" (над "Месенджери") — для офіційних бренд-акаунтів (Viber Business / WhatsApp Business API / ...). Перший провайдер — Viber Business через TurboSMS. Поточний статус: зареєстровано бренд Vidnova; іконка вже є в rail. Обробка вхідних/вихідних повідомлень через бекенд-webhook готова; повноцінний чат (список контактів і історія переписки) додасться наступним релізом одразу після налаштування webhook в кабінеті TurboSMS',
   ],

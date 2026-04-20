@@ -525,6 +525,7 @@ function App() {
   // Business (Viber Business via TurboSMS, ...)
   const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
   const [selectedBusiness, setSelectedBusiness] = useState<string>('')
+  const [businessUnreads] = useState<Record<string, number>>({})
 
   // Gmail
   const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
@@ -1045,6 +1046,41 @@ function App() {
 
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
+
+    // --- Business (Viber) branch ---
+    if (selectedBusiness) {
+      const text = messageText.trim()
+      if (!text) return
+      setSending(true)
+      try {
+        const r = await authFetch(`${API_BASE}/api/business/send/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: selectedBusiness,
+            client_id: selectedClient,
+            text,
+          }),
+        })
+        if (r.ok) {
+          const data = await r.json()
+          if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
+          setMessageText('')
+          if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+        } else {
+          const err = await r.json().catch(() => ({ error: r.statusText }))
+          console.error('[Viber] send failed:', err)
+          alert(`Viber: ${err.error || r.statusText}`)
+        }
+      } catch (e: any) {
+        console.error('[Viber] send error:', e)
+        alert(`Viber: ${e.message || 'network error'}`)
+      } finally {
+        setSending(false)
+      }
+      return
+    }
+
     if (!selectedAccount) {
       setShowSelectAccountHint(true)
       return
@@ -2724,6 +2760,57 @@ function App() {
     return () => clearInterval(iv)
   }, [auth?.authorized, loadUpdates])
 
+  // --- Business (Viber) chat fetchers ---
+  const loadBusinessContacts = useCallback(async (accountId: string) => {
+    if (!auth?.token || !accountId) return
+    try {
+      const r = await authFetch(`${API_BASE}/api/business/contacts/?account_id=${accountId}`, auth.token)
+      if (!r.ok) return
+      const data = await r.json()
+      const list = (data.contacts || []) as Array<{
+        client_id: string; account_id: string; account_label: string; phone: string;
+        full_name: string; last_message: string; last_message_date: string; unread: number;
+      }>
+      const mapped: Contact[] = list.map(c => ({
+        client_id: c.client_id,
+        phone: c.phone,
+        full_name: c.full_name,
+        last_message: c.last_message,
+        last_message_date: c.last_message_date,
+        unread: c.unread,
+        source: 'viber' as const,
+      } as unknown as Contact))
+      setContacts(mapped)
+    } catch (e) { console.error('business contacts:', e) }
+  }, [auth?.token, setContacts])
+
+  const loadBusinessMessages = useCallback(async (accountId: string, clientId: string) => {
+    if (!auth?.token || !accountId || !clientId) return
+    try {
+      const r = await authFetch(`${API_BASE}/api/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
+      if (!r.ok) return
+      const data = await r.json()
+      const list = (data.messages || []) as ChatMessage[]
+      setMessages(list)
+    } catch (e) { console.error('business messages:', e) }
+  }, [auth?.token, setMessages])
+
+  // Switch chat source when user clicks business rail
+  useEffect(() => {
+    if (!selectedBusiness) return
+    loadBusinessContacts(selectedBusiness)
+  }, [selectedBusiness, loadBusinessContacts])
+
+  useEffect(() => {
+    if (!selectedBusiness || !selectedClient) return
+    loadBusinessMessages(selectedBusiness, selectedClient)
+    const iv = setInterval(() => {
+      loadBusinessMessages(selectedBusiness, selectedClient)
+      loadBusinessContacts(selectedBusiness)
+    }, 10000)
+    return () => clearInterval(iv)
+  }, [selectedBusiness, selectedClient, loadBusinessMessages, loadBusinessContacts])
+
   // Refs for stable WS callbacks (avoid reconnecting WS on every state change)
   const loadContactsRef = useRef(loadContacts)
   const loadMessagesRef = useRef(loadMessages)
@@ -3350,6 +3437,7 @@ function App() {
   const handleAccountClick = useCallback((accountId: string) => {
     setSelectedAccount(prev => prev === accountId ? '' : accountId)
     telemetry.trackTabSwitch(accountId)
+    setSelectedBusiness('')
     setSelectedClient(null)
     setMessages([])
     setSelectedGmail(null); setGmailEmails([]); setGmailSelectedMsg(null)
@@ -3437,11 +3525,14 @@ function App() {
           gmailAccounts={gmailAccounts}
           businessAccounts={businessAccounts}
           selectedBusiness={selectedBusiness}
+          businessUnreads={businessUnreads}
           onBusinessClick={id => {
             setSelectedBusiness(id)
             setSelectedAccount('')
             setSelectedGmail(null)
             setSelectedClient(null)
+            setMessages([])
+            setContacts([])
           }}
           unreadCount={unreadCount}
           accountUnreads={accountUnreads}
