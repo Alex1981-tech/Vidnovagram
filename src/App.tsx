@@ -30,7 +30,6 @@ import {
 } from './cache'
 import { AuthMedia } from './components/AuthMedia'
 import { VoicePlayer } from './components/VoicePlayer'
-import { LottieSticker } from './components/LottieSticker'
 import { PollCard } from './components/PollCard'
 import { Linkify } from './components/Linkify'
 import { LinkPreviewCard } from './components/LinkPreviewCard'
@@ -78,6 +77,8 @@ import { ServiceMessage } from './components/ServiceMessage'
 import { ReactionsRow } from './components/ReactionsRow'
 import { ReplyQuote } from './components/ReplyQuote'
 import { MessageFooter } from './components/MessageFooter'
+import { LabResultStrip } from './components/LabResultStrip'
+import { StickerBubble } from './components/StickerBubble'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -3954,48 +3955,14 @@ function App() {
                           </div>
                         )}
                         {/* Sticker — show emoji or media */}
-                        {m.media_type === 'sticker' && (() => {
-                          // Animated sticker (TGS/Lottie) — render with lottie-web
-                          if (m.is_animated_sticker && (m.media_file || m.thumbnail)) {
-                            const stickerKey = `sticker_${m.id}`
-                            const blobUrl = mediaBlobMap[stickerKey]
-                            if (!blobUrl) {
-                              loadMediaBlob(stickerKey, m.media_file || m.thumbnail)
-                              return (
-                                <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
-                                  {m.sticker_emoji || '🏷️'}
-                                </div>
-                              )
-                            }
-                            return (
-                              <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
-                                <LottieSticker blobUrl={blobUrl} size={200} />
-                              </div>
-                            )
-                          }
-                          // Static/video sticker with image — render large without bubble
-                          if (m.thumbnail || m.media_file) {
-                            return (
-                              <div className="msg-sticker-img" title={m.sticker_set_name || m.sticker_emoji || 'Стікер'}>
-                                <AuthMedia
-                                  mediaKey={`sticker_${m.id}`}
-                                  mediaPath={m.thumbnail || m.media_file}
-                                  type="image"
-                                  className="sticker-image"
-                                  token={auth?.token || ''}
-                                  blobMap={mediaBlobMap}
-                                  loadBlob={loadMediaBlob}
-                                />
-                              </div>
-                            )
-                          }
-                          // Sticker without image — show emoji or placeholder
-                          return (
-                            <div className="msg-sticker" title={m.sticker_set_name || 'Стікер'}>
-                              {m.sticker_emoji ? <span className="msg-sticker-emoji">{m.sticker_emoji}</span> : '🏷️ Стікер'}
-                            </div>
-                          )
-                        })()}
+                        {m.media_type === 'sticker' && (
+                          <StickerBubble
+                            message={m}
+                            token={auth?.token || ''}
+                            mediaBlobMap={mediaBlobMap}
+                            loadMediaBlob={loadMediaBlob}
+                          />
+                        )}
                         {/* Unknown media without specific handler */}
                         {m.has_media && !m.thumbnail && m.media_type && !['voice', 'video', 'video_note', 'document', 'photo', 'contact', 'geo', 'poll', 'sticker'].includes(m.media_type) && !m.media_file && m.media_status !== 'pending' && (
                           <div className="msg-media-placeholder">
@@ -4187,42 +4154,16 @@ function App() {
                           </div>
                         )}
                       </div>
-                      {/* Lab result strip: linked */}
-                      {m.is_lab_result && (m.patient_client_id || m.patient_name) && (
-                        <div className="lab-strip lab-strip-linked" onClick={(e) => {
-                          e.stopPropagation()
-                          // Open lab tab and highlight the patient
+                      <LabResultStrip
+                        message={m}
+                        onOpenLabTab={(patientKey) => {
                           setRightTab('lab')
                           if (labPatients.length === 0 && !labLoading) loadLabResults(1, '')
-                          const patientKey = m.patient_client_id || m.patient_name || ''
                           setExpandedLabPatient(patientKey)
-                        }}>
-                          <svg className="lab-strip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
-                          <span className="lab-strip-name">{m.patient_client_name || m.patient_name}</span>
-                          <div className="lab-strip-actions">
-                            <button onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Змінити пацієнта">
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); unlinkLabResult(m) }} title="Відкріпити">
-                              <XIcon />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {/* Lab result strip: unlinked (detected but no patient) */}
-                      {m.is_lab_result && !m.patient_client_id && !m.patient_name && (
-                        <div className="lab-strip lab-strip-unlinked" onClick={(e) => { e.stopPropagation(); editLabResult(m) }}>
-                          <svg className="lab-strip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 11v4"/><path d="M12 17h.01"/></svg>
-                          <span className="lab-strip-label">Привʼязати пацієнта</span>
-                        </div>
-                      )}
-                      {/* Incoming media, not yet classified — manual assign button */}
-                      {m.is_lab_result == null && m.direction === 'received' && m.has_media && (
-                        <button className="lab-card-assign-btn" onClick={(e) => { e.stopPropagation(); editLabResult(m) }} title="Додати аналіз">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-                          <span>Додати аналіз</span>
-                        </button>
-                      )}
+                        }}
+                        onEditLabResult={editLabResult}
+                        onUnlinkLabResult={unlinkLabResult}
+                      />
                     </div>
                   )
                 })}
