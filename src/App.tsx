@@ -39,7 +39,7 @@ import { VoipOverlays } from './components/VoipOverlays'
 import { ToastsContainer } from './components/ToastsContainer'
 import { BgUploadsContainer, type BgUpload } from './components/BgUploadsContainer'
 import { WhatsNewModal } from './components/WhatsNewModal'
-import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon } from './components/icons'
+import { MicIcon, TelegramIcon, WhatsAppIcon, GmailIcon, SendIcon, UserIcon, VideoIcon, PaperclipIcon, XIcon, ForwardIcon } from './components/icons'
 // SettingsModal is lazy-loaded — its ~40KB chunk (wallpapers, WA settings UI, sound previews)
 // only enters memory when the user actually opens Settings from the rail.
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })))
@@ -71,6 +71,9 @@ import { AlbumBubble } from './components/AlbumBubble'
 import { CallCardBubble } from './components/CallCardBubble'
 import { ServiceMessage } from './components/ServiceMessage'
 import { MessageBubble } from './components/MessageBubble'
+import { MessageContextMenu } from './components/MessageContextMenu'
+import { ForwardModal } from './components/ForwardModal'
+import { ComposeModal } from './components/ComposeModal'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
 import { useWaSettings } from './hooks/useWaSettings'
@@ -140,11 +143,6 @@ const VolumeOffIcon = () => (
 
 // Message status icons
 // Attachment & media icons
-const ForwardIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
-  </svg>
-)
 // ===== Main App =====
 
 function App() {
@@ -4150,96 +4148,24 @@ function App() {
 
       {/* Media context menu */}
       {ctxMenu && (
-        <div className="ctx-menu-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}>
-          <div className="ctx-menu" ref={el => {
-          if (el) {
-            const rect = el.getBoundingClientRect()
-            const maxY = window.innerHeight - rect.height - 8
-            const maxX = window.innerWidth - rect.width - 8
-            if (rect.top > maxY || rect.left > maxX) {
-              el.style.top = `${Math.max(8, Math.min(ctxMenu.y, maxY))}px`
-              el.style.left = `${Math.max(8, Math.min(ctxMenu.x, maxX))}px`
-            }
-          }
-        }} style={{
-          top: ctxMenu.y,
-          left: ctxMenu.x,
-        }} onClick={e => e.stopPropagation()}>
-            {ctxMenu.mediaPath && (
-              <>
-                <button className="ctx-menu-item" onClick={ctxMenuOpen}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-                  Відкрити
-                </button>
-                <button className="ctx-menu-item" onClick={ctxMenuSave}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  Зберегти на комп'ютер
-                </button>
-              </>
-            )}
-            {/* Quick reactions */}
-            <div className="ctx-menu-reactions">
-              {['👍', '❤️', '😂', '😮', '😢', '👎'].map(emoji => (
-                <button key={emoji} className="ctx-reaction-btn" onClick={() => sendReaction(ctxMenu.messageId, emoji)}>{emoji}</button>
-              ))}
-            </div>
-            <button className="ctx-menu-item" onClick={ctxMenuReply}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-              Відповісти
-            </button>
-            <button className="ctx-menu-item" onClick={ctxMenuCopy}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Копіювати
-            </button>
-            {messages.find(m => m.id === ctxMenu.messageId)?.local_status === 'failed' && (
-              <button className="ctx-menu-item" onClick={() => { retryFailedMessage(ctxMenu.messageId); setCtxMenu(null) }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>
-                Повторити
-              </button>
-            )}
-            {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && messages.find(m => m.id === ctxMenu.messageId)?.source !== 'whatsapp' && (
-              <button className="ctx-menu-item" onClick={ctxMenuEdit}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                Редагувати
-              </button>
-            )}
-            <button className="ctx-menu-item" onClick={ctxMenuForward}>
-              <ForwardIcon />
-              Переслати
-            </button>
-            <button className="ctx-menu-item" onClick={ctxMenuSelect}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              Виділити
-            </button>
-            <button className="ctx-menu-item" onClick={ctxMenuLabAssign}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
-              Додати аналіз
-            </button>
-            {selectedAccount && messages.find(m => m.id === ctxMenu.messageId)?.source !== 'whatsapp' && (
-              <button className="ctx-menu-item" onClick={ctxMenuPin}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>
-                {messages.find(m => m.id === ctxMenu.messageId)?.is_pinned ? 'Відкріпити' : 'Закріпити'}
-              </button>
-            )}
-            {messages.find(m => m.id === ctxMenu.messageId)?.direction === 'sent' && (
-              <button className="ctx-menu-item ctx-menu-item-danger" onClick={() => {
-                const msg = messages.find(m => m.id === ctxMenu.messageId)
-                if (msg) {
-                  setDeleteConfirm({
-                    msgId: msg.id,
-                    source: (msg.source || 'telegram') as 'telegram' | 'whatsapp',
-                    tgMsgId: msg.tg_message_id,
-                    peerId: msg.tg_peer_id,
-                  })
-                }
-                setCtxMenu(null)
-              }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Видалити
-              </button>
-            )}
-          </div>
-        </div>
+        <MessageContextMenu
+          ctxMenu={ctxMenu}
+          setCtxMenu={setCtxMenu}
+          messages={messages}
+          selectedAccount={selectedAccount}
+          onOpenMedia={ctxMenuOpen}
+          onSaveMedia={ctxMenuSave}
+          onSendReaction={sendReaction}
+          onReply={ctxMenuReply}
+          onCopy={ctxMenuCopy}
+          onForward={ctxMenuForward}
+          onSelect={ctxMenuSelect}
+          onLabAssign={ctxMenuLabAssign}
+          onEdit={ctxMenuEdit}
+          onPin={ctxMenuPin}
+          onRetry={retryFailedMessage}
+          setDeleteConfirm={setDeleteConfirm}
+        />
       )}
 
       <LightboxOverlay src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
@@ -4329,50 +4255,21 @@ function App() {
       )}
 
       {/* Forward Modal */}
-      {showForwardModal && (
-        <div className="modal-overlay" onClick={() => setShowForwardModal(false)}>
-          <div className="forward-modal" onClick={e => e.stopPropagation()}>
-            <h3>Переслати {selectedMsgIds.size} повідомлень</h3>
-            <div className="forward-modal-account">
-              <label>Акаунт:</label>
-              <select value={forwardAccount} onChange={e => { setForwardAccount(e.target.value); searchForwardContacts(forwardSearch) }}>
-                <option value="">Той самий</option>
-                {accounts.filter(a => a.status === 'active').map(a => (
-                  <option key={a.id} value={a.id}>{a.label || a.phone}</option>
-                ))}
-              </select>
-            </div>
-            <input
-              className="forward-modal-search"
-              placeholder="Пошук контакту..."
-              value={forwardSearch}
-              onChange={e => { setForwardSearch(e.target.value); searchForwardContacts(e.target.value) }}
-              autoFocus
-            />
-            <div className="forward-modal-list">
-              {forwardContacts.filter(c => c.client_id !== selectedClient).map(c => {
-                const display = resolveContactDisplay(c)
-                return (
-                  <div key={c.client_id} className="forward-modal-contact" onClick={() => executeForward(c.client_id)}>
-                    <div className="forward-modal-avatar">
-                      {photoMap[c.client_id]
-                        ? <img src={photoMap[c.client_id]} alt="" />
-                        : <span>{(display.name || '?')[0]}</span>
-                      }
-                    </div>
-                    <div className="forward-modal-info">
-                      <div className="forward-modal-name">{display.name}</div>
-                      <div className="forward-modal-phone">{display.subtitle || c.phone}</div>
-                    </div>
-                  </div>
-                )
-              })}
-              {forwardContacts.length === 0 && <div className="forward-modal-empty">Контактів не знайдено</div>}
-            </div>
-            <button className="tpl-btn-secondary" onClick={() => setShowForwardModal(false)}>Скасувати</button>
-          </div>
-        </div>
-      )}
+      <ForwardModal
+        open={showForwardModal}
+        onClose={() => setShowForwardModal(false)}
+        count={selectedMsgIds.size}
+        selectedClient={selectedClient}
+        forwardAccount={forwardAccount}
+        setForwardAccount={setForwardAccount}
+        forwardSearch={forwardSearch}
+        setForwardSearch={setForwardSearch}
+        searchForwardContacts={searchForwardContacts}
+        forwardContacts={forwardContacts}
+        accounts={accounts}
+        photoMap={photoMap}
+        executeForward={executeForward}
+      />
 
       {/* Add to Account Modal */}
       <AddToAccountModal
@@ -4963,62 +4860,23 @@ function App() {
       )}
 
       {/* Gmail Compose modal */}
-      {showCompose && selectedGmail && (
-        <div className="modal-overlay" onClick={() => setShowCompose(false)}>
-          <div className="gmail-compose-modal" onClick={e => e.stopPropagation()}>
-            <div className="gmail-compose-header">
-              <h3>Новий лист</h3>
-              <button className="icon-btn" onClick={() => setShowCompose(false)}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-            <div className="gmail-compose-from">
-              <GmailIcon size={14} color="#EA4335" />
-              <span>{gmailAccounts.find(g => g.id === selectedGmail)?.email}</span>
-            </div>
-            <div className="gmail-compose-fields">
-              <input placeholder="Кому" value={composeTo} onChange={e => setComposeTo(e.target.value)} className="gmail-compose-input" />
-              <input placeholder="Тема" value={composeSubject} onChange={e => setComposeSubject(e.target.value)} className="gmail-compose-input" />
-              <textarea
-                placeholder="Текст листа..."
-                value={composeBody}
-                onChange={e => setComposeBody(e.target.value)}
-                className="gmail-compose-body"
-                rows={10}
-              />
-            </div>
-            {composeFiles.length > 0 && (
-              <div className="gmail-compose-files">
-                {composeFiles.map((f, i) => (
-                  <div key={i} className="gmail-compose-file">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                    <span>{f.name}</span>
-                    <button onClick={() => setComposeFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="gmail-compose-actions">
-              <div className="gmail-compose-actions-left">
-                <button className="gmail-attach-btn" onClick={() => composeFileRef.current?.click()}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  Вкласти
-                </button>
-                <input
-                  ref={composeFileRef}
-                  type="file"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files) setComposeFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }}
-                />
-              </div>
-              <button className="gmail-send-btn" onClick={sendGmailEmail} disabled={composeSending || !composeTo.trim()}>
-                {composeSending ? 'Надсилаю...' : 'Надіслати'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ComposeModal
+        open={showCompose}
+        onClose={() => setShowCompose(false)}
+        selectedGmail={selectedGmail}
+        gmailAccounts={gmailAccounts}
+        composeTo={composeTo}
+        setComposeTo={setComposeTo}
+        composeSubject={composeSubject}
+        setComposeSubject={setComposeSubject}
+        composeBody={composeBody}
+        setComposeBody={setComposeBody}
+        composeFiles={composeFiles}
+        setComposeFiles={setComposeFiles}
+        composeFileRef={composeFileRef}
+        composeSending={composeSending}
+        sendEmail={sendGmailEmail}
+      />
 
       {/* Settings modal — lazy chunk, only enters memory when user opens Settings */}
       {showSettingsModal && (

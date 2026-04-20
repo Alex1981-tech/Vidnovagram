@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.64': [
+    'Внутрішнє: винесено 3 overlay-компоненти — `<MessageContextMenu/>` (контекст-меню повідомлення з 9+ діями), `<ForwardModal/>` (пошук і вибір контакту для пересилки), `<ComposeModal/>` (новий лист Gmail з вкладеннями). ForwardIcon переїхав у `components/icons.tsx`. App.tsx 5095 → 4959',
+  ],
   '0.17.63': [
     'Збірка: `<SettingsModal/>` переведено на lazy-chunk (19 KB / 4.6 KB gzip). Модалка налаштувань тепер не тягнеться в initial bundle, а підвантажується при першому відкритті',
   ],
