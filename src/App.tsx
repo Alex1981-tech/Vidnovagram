@@ -3696,6 +3696,8 @@ function App() {
               }}
               onCompose={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }}
             />
+          ) : selectedBusiness ? (
+            <div className="sidebar-empty-hint">У бізнес-месенджерах клієнт має написати першим</div>
           ) : (
             hasMessengerAccounts ? (
               <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>

@@ -24,7 +24,8 @@ interface Props {
  */
 export function InlineButtons({ message: m, selectedAccount, token, shellOpen }: Props) {
   const rows = m.reply_markup as unknown as InlineButton[][] | undefined
-  if (!rows || rows.length === 0) return null
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  if (!rows.every(Array.isArray)) return null
 
   return (
     <div className="msg-inline-keyboard">

@@ -56,7 +56,41 @@ export function AccountRail({
   onOpenSettings,
   currentVersion,
 }: Props) {
-  const hasBusiness = businessAccounts.length > 0
+  const SOCIAL_PROVIDERS = new Set(['facebook_messenger', 'instagram_direct'])
+  const bizItems = businessAccounts.filter(b => !SOCIAL_PROVIDERS.has(b.provider))
+  const socialItems = businessAccounts.filter(b => SOCIAL_PROVIDERS.has(b.provider))
+  const renderBizItem = (b: BusinessAccountSummary) => (
+    <button
+      key={b.id}
+      className={`rail-item ${selectedBusiness === b.id ? 'active' : ''}`}
+      onClick={() => onBusinessClick?.(b.id)}
+      title={`${b.label} — ${b.sender_name}`}
+    >
+      <span className="rail-item-icon">
+        {b.profile_picture_url
+          ? <img src={b.profile_picture_url.startsWith('http')
+                     ? b.profile_picture_url
+                     : `https://cc.vidnova.app${b.profile_picture_url}`}
+                 alt="" className="rail-avatar-img" />
+          : <>
+              {b.provider === 'viber_turbosms' && <ViberIcon size={18} />}
+              {b.provider === 'facebook_messenger' && <FacebookIcon size={18} />}
+              {b.provider === 'instagram_direct' && <InstagramIcon size={18} />}
+              {b.provider === 'whatsapp_cloud' && <WhatsAppIcon size={18} color="#25D366" />}
+              {b.provider === 'telegram_bot' && <TelegramBotIcon size={18} />}
+            </>
+        }
+        {businessUnreads[b.id] > 0 && <span className="rail-badge">{businessUnreads[b.id] > 99 ? '99+' : businessUnreads[b.id]}</span>}
+        <span className={`rail-status ${b.status === 'active' ? 'online' : ''}`} />
+      </span>
+      {expanded && (
+        <span className="rail-item-text">
+          <span className="rail-item-name">{b.label}</span>
+          <span className="rail-item-phone">{b.sender_name}</span>
+        </span>
+      )}
+    </button>
+  )
   return (
     <div
       className={`account-rail ${expanded ? 'expanded' : ''}`}
@@ -77,43 +111,20 @@ export function AccountRail({
           </span>
           {expanded && <span className="rail-item-label">Усі месенджери</span>}
         </button>
-        {hasBusiness && (
+        {bizItems.length > 0 && (
           <>
             <div className="rail-section-label">{expanded ? 'Бізнес' : 'Б'}</div>
-            {businessAccounts.map(b => (
-              <button
-                key={b.id}
-                className={`rail-item ${selectedBusiness === b.id ? 'active' : ''}`}
-                onClick={() => onBusinessClick?.(b.id)}
-                title={`${b.label} — ${b.sender_name}`}
-              >
-                <span className="rail-item-icon">
-                  {b.profile_picture_url
-                    ? <img src={b.profile_picture_url.startsWith('http')
-                               ? b.profile_picture_url
-                               : `https://cc.vidnova.app${b.profile_picture_url}`}
-                           alt="" className="rail-avatar-img" />
-                    : <>
-                        {b.provider === 'viber_turbosms' && <ViberIcon size={18} />}
-                        {b.provider === 'facebook_messenger' && <FacebookIcon size={18} />}
-                        {b.provider === 'instagram_direct' && <InstagramIcon size={18} />}
-                        {b.provider === 'whatsapp_cloud' && <WhatsAppIcon size={18} color="#25D366" />}
-                        {b.provider === 'telegram_bot' && <TelegramBotIcon size={18} />}
-                      </>
-                  }
-                  {businessUnreads[b.id] > 0 && <span className="rail-badge">{businessUnreads[b.id] > 99 ? '99+' : businessUnreads[b.id]}</span>}
-                  <span className={`rail-status ${b.status === 'active' ? 'online' : ''}`} />
-                </span>
-                {expanded && (
-                  <span className="rail-item-text">
-                    <span className="rail-item-name">{b.label}</span>
-                    <span className="rail-item-phone">{b.sender_name}</span>
-                  </span>
-                )}
-              </button>
-            ))}
-            <div className="rail-section-label">{expanded ? 'Месенджери' : 'М'}</div>
+            {bizItems.map(renderBizItem)}
           </>
+        )}
+        {socialItems.length > 0 && (
+          <>
+            <div className="rail-section-label">{expanded ? 'Соцмережі' : 'С'}</div>
+            {socialItems.map(renderBizItem)}
+          </>
+        )}
+        {(bizItems.length > 0 || socialItems.length > 0) && (
+          <div className="rail-section-label">{expanded ? 'Месенджери' : 'М'}</div>
         )}
         {accounts.map(acc => (
           <button
