@@ -491,6 +491,9 @@ function App() {
   const [selectedBusiness, setSelectedBusiness] = useState<string>('')
   const [businessUnreads] = useState<Record<string, number>>({})
   const [showViberNewChat, setShowViberNewChat] = useState(false)
+  const [bizButtonOpen, setBizButtonOpen] = useState(false)
+  const [bizButtonText, setBizButtonText] = useState('')
+  const [bizButtonUrl, setBizButtonUrl] = useState('')
   const selectedBusinessAccount = businessAccounts.find(b => b.id === selectedBusiness)
   const canInitiateBusinessChat = selectedBusinessAccount?.provider === 'viber_turbosms'
 
@@ -1074,15 +1077,45 @@ function App() {
     if (selectedBusiness) {
       const text = messageText.trim()
       const bizFile = file ?? (attachedFiles.length > 0 ? attachedFiles[0] : null)
-      if (!text && !bizFile) return
+      const bizAccount = businessAccounts.find(b => b.id === selectedBusiness)
+      const isViber = bizAccount?.provider === 'viber_turbosms'
+      if (!text && !bizFile && !(bizButtonText.trim() && bizButtonUrl.trim())) return
+
+      // For Viber — TurboSMS only accepts JPEG/PNG ≤ 1 MB as a native image.
+      // For anything else we fall back to "link mode": upload to our storage,
+      // send a Viber text + download button with a signed URL.
+      let useLinkMode = false
+      if (isViber && bizFile) {
+        const mime = (bizFile as File).type || ''
+        const okMime = mime === 'image/jpeg' || mime === 'image/png'
+        const okSize = (bizFile as File).size <= 1024 * 1024
+        if (!okMime || !okSize) {
+          const go = confirm(
+            `Viber Business приймає напряму лише JPEG/PNG до 1 МБ.\n\n` +
+            `Надіслати "${(bizFile as File).name}" як посилання на завантаження?\n\n` +
+            `Що побачить клієнт у Viber:\n` +
+            `• назва файлу\n` +
+            `• пояснення чому документ прийшов як посилання (обмеження Viber Business)\n` +
+            `• кнопка «Завантажити» → відкриває файл з нашого сайту по захищеному URL\n\n` +
+            `У чаті VG це буде відображатись як надісланий документ.`
+          )
+          if (!go) { return }
+          useLinkMode = true
+        }
+      }
+
       setSending(true)
       try {
         // Step 1 (optional): upload the attached file so the provider can fetch it.
         let mediaPath = ''
+        let linkFilePath = ''
+        let linkFileName = ''
+        let linkFileMime = ''
         if (bizFile) {
           const fd = new FormData()
           fd.append('account_id', selectedBusiness)
           fd.append('file', bizFile, (bizFile as File).name || 'upload.bin')
+          if (useLinkMode) fd.append('as_link', 'true')
           const up = await authFetch(`${API_BASE}/business/upload-media/`, auth.token, {
             method: 'POST',
             body: fd,
@@ -1094,10 +1127,16 @@ function App() {
             return
           }
           const uData = await up.json()
-          mediaPath = uData.path || ''
+          if (useLinkMode) {
+            linkFilePath = uData.path || ''
+            linkFileName = (bizFile as File).name || 'file'
+            linkFileMime = (bizFile as File).type || ''
+          } else {
+            mediaPath = uData.path || ''
+          }
         }
 
-        // Step 2: send the message (with optional media_path).
+        // Step 2: send the message (with optional media_path + optional button).
         const body: Record<string, unknown> = {
           account_id: selectedBusiness,
           client_id: selectedClient,
@@ -1106,6 +1145,20 @@ function App() {
         if (mediaPath) {
           body.media_path = mediaPath
           if (text) body.caption = text  // TurboSMS Viber supports caption on image
+        }
+        if (linkFilePath) {
+          body.link_file_path = linkFilePath
+          body.link_file_name = linkFileName
+          body.link_file_mime = linkFileMime
+        }
+        const btnText = bizButtonText.trim()
+        const btnUrl = bizButtonUrl.trim()
+        if (btnText && btnUrl && !linkFilePath) {
+          // Viber button: `caption` = button label, `action` = URL. When media
+          // is also attached, caption is overridden above (image caption wins).
+          // In link-file mode the backend builds its own button automatically.
+          if (!mediaPath) body.caption = btnText.slice(0, 30)
+          body.action = btnUrl
         }
 
         const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
@@ -1118,6 +1171,9 @@ function App() {
           if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
           setMessageText('')
           setAttachedFiles([])
+          setBizButtonText('')
+          setBizButtonUrl('')
+          setBizButtonOpen(false)
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         } else {
           const err = await r.json().catch(() => ({ error: r.statusText }))
@@ -4236,6 +4292,45 @@ function App() {
                       previews={attachedPreviews}
                       onClear={clearAttachment}
                     />
+                  )}
+                  {/* Viber button composer (link button under the message) */}
+                  {selectedBusinessAccount?.provider === 'viber_turbosms' && (
+                    <div className="viber-btn-composer">
+                      {!bizButtonOpen ? (
+                        <button
+                          type="button"
+                          className="viber-btn-toggle"
+                          onClick={() => setBizButtonOpen(true)}
+                        >
+                          🔗 Додати кнопку-посилання
+                        </button>
+                      ) : (
+                        <div className="viber-btn-fields">
+                          <div className="viber-btn-header">
+                            <span>Кнопка під повідомленням</span>
+                            <button
+                              type="button"
+                              className="viber-btn-close"
+                              onClick={() => { setBizButtonOpen(false); setBizButtonText(''); setBizButtonUrl('') }}
+                              title="Прибрати"
+                            >×</button>
+                          </div>
+                          <input
+                            className="viber-btn-input"
+                            placeholder="Текст кнопки (до 30 символів)"
+                            value={bizButtonText}
+                            maxLength={30}
+                            onChange={e => setBizButtonText(e.target.value)}
+                          />
+                          <input
+                            className="viber-btn-input"
+                            placeholder="URL (https://…)"
+                            value={bizButtonUrl}
+                            onChange={e => setBizButtonUrl(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
                   )}
                   {/* Reply / Edit bar */}
                   <ReplyEditBar

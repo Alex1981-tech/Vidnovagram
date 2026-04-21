@@ -2209,6 +2209,64 @@ body {
   font-size: 0.8125rem;
   text-align: center;
 }
+/* Viber button composer (inline link button attached to outgoing message) */
+.viber-btn-composer {
+  margin: 4px 8px 0;
+}
+.viber-btn-toggle {
+  background: transparent;
+  border: 1px dashed color-mix(in oklch, oklch(0.55 0.18 310) 40%, var(--border));
+  color: oklch(0.55 0.18 310);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.viber-btn-toggle:hover {
+  background: color-mix(in oklch, oklch(0.55 0.18 310) 10%, transparent);
+}
+.viber-btn-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: color-mix(in oklch, oklch(0.55 0.18 310) 8%, transparent);
+  border: 1px solid color-mix(in oklch, oklch(0.55 0.18 310) 35%, var(--border));
+  border-radius: 10px;
+}
+.viber-btn-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.viber-btn-close {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.viber-btn-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--input);
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  outline: none;
+  box-sizing: border-box;
+}
+.viber-btn-input:focus {
+  border-color: oklch(0.55 0.18 310);
+}
+
 .viber-has-badge {
   display: inline-flex;
   align-items: center;
