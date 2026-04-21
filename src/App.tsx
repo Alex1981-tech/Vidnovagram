@@ -2788,13 +2788,18 @@ function App() {
     }
   }, [auth?.authorized, loadAccounts, loadTemplateCategories])
 
-  // Load contacts with debounce on search change
+  // Load contacts with debounce on search change.
+  // Skip when a business account (Viber / TG-bot / Meta) is active — the
+  // business branch drives contacts through `loadBusinessContacts`, and the
+  // TG endpoint here would race and overwrite the business list with TG
+  // contacts (empty if selectedAccount='').
   useEffect(() => {
     if (!auth?.authorized) return
+    if (selectedBusiness) return
     clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(loadContacts, 300)
     return () => clearTimeout(searchTimerRef.current)
-  }, [search, selectedAccount, auth?.authorized, loadContacts])
+  }, [search, selectedAccount, selectedBusiness, auth?.authorized, loadContacts])
 
   // Poll updates every 30s, but only when WS is stale (>30s without activity).
   // Initial call runs once so startup state is populated before WS connects.

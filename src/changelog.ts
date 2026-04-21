@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.94': [
+    'Фікс: при виборі бізнес-акаунта (Viber / TG-bot / Meta) список контактів інколи бував пустим. Причина — race між двома fetch-ами (TG-контактами і бізнес-контактами). Тепер TG-виклик пропускається, поки активний business rail',
+  ],
   '0.17.93': [
     'Viber: operator може надсилати фото клієнту — перетягуєш файл у чат → Send. Обмеження TurboSMS API: JPEG/PNG ≤ 1 MB. Якщо є підпис у полі вводу — піде як caption до фото',
     'Viber: вхідні фото/файли/voice від клієнтів зберігаються локально (pending → ready), UI показує прев\'ю одразу з CDN, після скачування — з нашого signed URL',
