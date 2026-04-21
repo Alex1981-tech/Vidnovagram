@@ -2209,6 +2209,43 @@ body {
   font-size: 0.8125rem;
   text-align: center;
 }
+/* Viber link-button launcher — small icon above composer that opens the modal */
+.viber-btn-launcher {
+  display: flex;
+  justify-content: flex-end;
+  margin: 2px 10px 0;
+}
+.viber-btn-launcher-icon {
+  background: transparent;
+  border: 1px solid color-mix(in oklch, oklch(0.55 0.18 310) 35%, var(--border));
+  color: oklch(0.55 0.18 310);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.viber-btn-launcher-icon:hover {
+  background: color-mix(in oklch, oklch(0.55 0.18 310) 14%, transparent);
+}
+.viber-btn-modal-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 10px 0 4px;
+}
+.viber-btn-modal-hint {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
 /* Viber button composer (inline link button attached to outgoing message) */
 .viber-btn-composer {
   margin: 4px 8px 0;

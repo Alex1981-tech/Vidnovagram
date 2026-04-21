@@ -152,7 +152,9 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
           if (data.type === 'new_message') {
             const msg = data.message || {}
             const clientId = data.client_id
-            const accountId = data.account_id
+            // Business providers (Viber/FB/IG/TG-bot) broadcast business_account_id;
+            // TG/WA use account_id. Normalize here so downstream code doesn't care.
+            const accountId = data.account_id || data.business_account_id
             const isMediaUpdate = !!msg._media_update
             const selectedClientId = o.selectedClientRef.current
             const selectedContact = selectedClientId

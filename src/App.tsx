@@ -47,6 +47,7 @@ import { FileUploadModal } from './components/FileUploadModal'
 import { AddToAccountModal } from './components/AddToAccountModal'
 import { AddContactModal } from './components/AddContactModal'
 import { ViberNewChatModal } from './components/ViberNewChatModal'
+import { ViberButtonMessageModal } from './components/ViberButtonMessageModal'
 import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { SidebarSearch } from './components/SidebarSearch'
@@ -492,8 +493,6 @@ function App() {
   const [businessUnreads] = useState<Record<string, number>>({})
   const [showViberNewChat, setShowViberNewChat] = useState(false)
   const [bizButtonOpen, setBizButtonOpen] = useState(false)
-  const [bizButtonText, setBizButtonText] = useState('')
-  const [bizButtonUrl, setBizButtonUrl] = useState('')
   const selectedBusinessAccount = businessAccounts.find(b => b.id === selectedBusiness)
   const canInitiateBusinessChat = selectedBusinessAccount?.provider === 'viber_turbosms'
 
@@ -1079,7 +1078,7 @@ function App() {
       const bizFile = file ?? (attachedFiles.length > 0 ? attachedFiles[0] : null)
       const bizAccount = businessAccounts.find(b => b.id === selectedBusiness)
       const isViber = bizAccount?.provider === 'viber_turbosms'
-      if (!text && !bizFile && !(bizButtonText.trim() && bizButtonUrl.trim())) return
+      if (!text && !bizFile) return
 
       // For Viber — TurboSMS only accepts JPEG/PNG ≤ 1 MB as a native image.
       // For anything else we fall back to "link mode": upload to our storage,
@@ -1151,15 +1150,6 @@ function App() {
           body.link_file_name = linkFileName
           body.link_file_mime = linkFileMime
         }
-        const btnText = bizButtonText.trim()
-        const btnUrl = bizButtonUrl.trim()
-        if (btnText && btnUrl && !linkFilePath) {
-          // Viber button: `caption` = button label, `action` = URL. When media
-          // is also attached, caption is overridden above (image caption wins).
-          // In link-file mode the backend builds its own button automatically.
-          if (!mediaPath) body.caption = btnText.slice(0, 30)
-          body.action = btnUrl
-        }
 
         const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
           method: 'POST',
@@ -1171,9 +1161,6 @@ function App() {
           if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
           setMessageText('')
           setAttachedFiles([])
-          setBizButtonText('')
-          setBizButtonUrl('')
-          setBizButtonOpen(false)
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         } else {
           const err = await r.json().catch(() => ({ error: r.statusText }))
@@ -3431,6 +3418,16 @@ function App() {
     setSelectedGmail(null)
     setGmailSelectedMsg(null)
 
+    // Business (Viber / FB / IG / TG-bot) account — switch to business rail
+    // and open the chat directly. Skips the TG pendingToastChatRef path.
+    const bizHit = businessAccounts.find(b => b.id === accountId)
+    if (bizHit) {
+      setSelectedAccount('')
+      setSelectedBusiness(accountId)
+      setSelectedClient(clientId)
+      return
+    }
+
     if (accountId && accountId !== selectedAccount) {
       pendingToastChatRef.current = { clientId, accountId, sender }
       setSelectedAccount(accountId)
@@ -3443,7 +3440,7 @@ function App() {
       )
     }
     selectClient(clientId)
-  }, [selectedAccount, contacts, selectClient])
+  }, [selectedAccount, contacts, selectClient, businessAccounts])
 
   const addContactToAccount = useCallback(async () => {
     if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
@@ -4293,43 +4290,20 @@ function App() {
                       onClear={clearAttachment}
                     />
                   )}
-                  {/* Viber button composer (link button under the message) */}
+                  {/* Viber link-button launcher (opens modal) */}
                   {selectedBusinessAccount?.provider === 'viber_turbosms' && (
-                    <div className="viber-btn-composer">
-                      {!bizButtonOpen ? (
-                        <button
-                          type="button"
-                          className="viber-btn-toggle"
-                          onClick={() => setBizButtonOpen(true)}
-                        >
-                          🔗 Додати кнопку-посилання
-                        </button>
-                      ) : (
-                        <div className="viber-btn-fields">
-                          <div className="viber-btn-header">
-                            <span>Кнопка під повідомленням</span>
-                            <button
-                              type="button"
-                              className="viber-btn-close"
-                              onClick={() => { setBizButtonOpen(false); setBizButtonText(''); setBizButtonUrl('') }}
-                              title="Прибрати"
-                            >×</button>
-                          </div>
-                          <input
-                            className="viber-btn-input"
-                            placeholder="Текст кнопки (до 30 символів)"
-                            value={bizButtonText}
-                            maxLength={30}
-                            onChange={e => setBizButtonText(e.target.value)}
-                          />
-                          <input
-                            className="viber-btn-input"
-                            placeholder="URL (https://…)"
-                            value={bizButtonUrl}
-                            onChange={e => setBizButtonUrl(e.target.value)}
-                          />
-                        </div>
-                      )}
+                    <div className="viber-btn-launcher">
+                      <button
+                        type="button"
+                        className="viber-btn-launcher-icon"
+                        onClick={() => setBizButtonOpen(true)}
+                        title="Надіслати повідомлення з кнопкою"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                      </button>
                     </div>
                   )}
                   {/* Reply / Edit bar */}
@@ -4778,6 +4752,35 @@ function App() {
             <button className="tpl-btn-secondary" onClick={() => setLabAssignMsg(null)}>Скасувати</button>
           </div>
         </div>
+      )}
+
+      {/* Viber "message with link button" modal */}
+      {auth?.token && selectedBusinessAccount?.provider === 'viber_turbosms' && (
+        <ViberButtonMessageModal
+          open={bizButtonOpen}
+          onClose={() => setBizButtonOpen(false)}
+          onSend={async ({ text: btnMsgText, buttonText, buttonUrl }) => {
+            if (!selectedClient) return
+            const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                account_id: selectedBusinessAccount.id,
+                client_id: selectedClient,
+                text: btnMsgText,
+                caption: buttonText.slice(0, 30),
+                action: buttonUrl,
+              }),
+            })
+            if (r.ok) {
+              const data = await r.json()
+              if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
+            } else {
+              const err = await r.json().catch(() => ({ error: r.statusText }))
+              alert(`Viber: ${err.error || r.statusText}`)
+            }
+          }}
+        />
       )}
 
       {/* New Viber chat (initiate from our side) */}
