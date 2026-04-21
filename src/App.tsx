@@ -3609,6 +3609,8 @@ function App() {
             accounts={accounts}
             hasMessengerAccounts={hasMessengerAccounts}
             contacts={contacts}
+            selectedBusiness={selectedBusiness}
+            businessAccounts={businessAccounts}
           />
           <SidebarSearch
             isGmailMode={!!selectedGmail}

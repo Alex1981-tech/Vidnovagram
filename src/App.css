@@ -461,6 +461,85 @@ body {
   white-space: nowrap;
 }
 
+/* --- Branded (colored) variant: shown for a specific selected account --- */
+.active-account-card.branded {
+  padding: 12px 14px;
+  gap: 12px;
+  min-height: 64px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  color: #fff;
+}
+
+.aac-avatar-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+.aac-avatar,
+.aac-avatar-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+.aac-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+.aac-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aac-title {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: inherit;
+}
+.aac-subtitle {
+  font-size: 0.75rem;
+  opacity: 0.88;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aac-status {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
+}
+.aac-status.online {
+  background: #34D399;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12), 0 0 8px rgba(52, 211, 153, 0.6);
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
