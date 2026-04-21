@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.96': [
+    'Viber: можна писати клієнту першими. Коли обрано Viber-акаунт — з\'являється кнопка "Новий чат": пошук клієнта з нашої БД (ПІБ/телефон), далі — текст і надсилання. Для FB/IG/TG-бот залишається підказка "клієнт має написати першим" (24-hour window)',
+  ],
   '0.17.95': [
     'КРИТИЧНИЙ фікс: VG падав з "i.map is not a function" при відкритті Viber-чату (приклад — Кузьменко). Причина — бекенд повертав у полі reply_markup словник метаданих фото замість масиву inline-кнопок, і рендер крашився. Додано guard у InlineButtons + бекенд більше не шле reply_markup для бізнес-повідомлень',
     'Нова секція "Соцмережі" в лівому рейлі — Facebook Messenger і Instagram Direct винесені окремо від "Бізнес" (Viber / TG-bot / WhatsApp Cloud)',

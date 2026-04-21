@@ -46,6 +46,7 @@ import { LightboxOverlay } from './components/LightboxOverlay'
 import { FileUploadModal } from './components/FileUploadModal'
 import { AddToAccountModal } from './components/AddToAccountModal'
 import { AddContactModal } from './components/AddContactModal'
+import { ViberNewChatModal } from './components/ViberNewChatModal'
 import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { SidebarSearch } from './components/SidebarSearch'
@@ -489,6 +490,9 @@ function App() {
   const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
   const [selectedBusiness, setSelectedBusiness] = useState<string>('')
   const [businessUnreads] = useState<Record<string, number>>({})
+  const [showViberNewChat, setShowViberNewChat] = useState(false)
+  const selectedBusinessAccount = businessAccounts.find(b => b.id === selectedBusiness)
+  const canInitiateBusinessChat = selectedBusinessAccount?.provider === 'viber_turbosms'
 
   // Track selectedBusiness in a ref so loadMessages can skip TG endpoint
   // when the user is browsing a business (Viber/FB/IG) chat — otherwise
@@ -3697,7 +3701,14 @@ function App() {
               onCompose={() => { setShowCompose(true); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFiles([]) }}
             />
           ) : selectedBusiness ? (
-            <div className="sidebar-empty-hint">У бізнес-месенджерах клієнт має написати першим</div>
+            canInitiateBusinessChat ? (
+              <button className="add-contact-btn" onClick={() => setShowViberNewChat(true)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+                Новий чат
+              </button>
+            ) : (
+              <div className="sidebar-empty-hint">У цьому месенджері клієнт має написати першим</div>
+            )
           ) : (
             hasMessengerAccounts ? (
               <button className="add-contact-btn" onClick={() => { setShowAddContact(true); setAddContactAccount(selectedAccount) }}>
@@ -4672,6 +4683,21 @@ function App() {
             <button className="tpl-btn-secondary" onClick={() => setLabAssignMsg(null)}>Скасувати</button>
           </div>
         </div>
+      )}
+
+      {/* New Viber chat (initiate from our side) */}
+      {auth?.token && selectedBusinessAccount && (
+        <ViberNewChatModal
+          open={showViberNewChat}
+          onClose={() => setShowViberNewChat(false)}
+          token={auth.token}
+          accountId={selectedBusinessAccount.id}
+          accountLabel={selectedBusinessAccount.label}
+          onStarted={(clientId) => {
+            loadBusinessContacts(selectedBusinessAccount.id)
+            setSelectedClient(clientId)
+          }}
+        />
       )}
 
       {/* New Chat / Add Contact Modal */}
