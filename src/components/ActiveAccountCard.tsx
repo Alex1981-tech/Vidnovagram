@@ -46,11 +46,14 @@ function resolvePicUrl(url?: string): string | undefined {
 function Card({
   preset, avatar, title, subtitle, online,
 }: { preset: BrandPreset; avatar?: string; title: string; subtitle?: string; online?: boolean }) {
+  const gradient = `linear-gradient(135deg, ${preset.colorLight} 0%, ${preset.color} 100%)`
   return (
     <div
       className="active-account-card branded"
       style={{
-        background: `linear-gradient(135deg, ${preset.colorLight} 0%, ${preset.color} 100%)`,
+        // CSS var consumed by the frosted overlay in App.css
+        ['--aac-gradient' as any]: gradient,
+        background: gradient,
         color: preset.text,
       }}
     >

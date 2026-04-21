@@ -461,14 +461,42 @@ body {
   white-space: nowrap;
 }
 
-/* --- Branded (colored) variant: shown for a specific selected account --- */
+/* --- Branded (colored) variant: glass-morphism card per messenger --- */
 .active-account-card.branded {
+  position: relative;
+  margin: 10px;
   padding: 12px 14px;
   gap: 12px;
   min-height: 64px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 22px 0 rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05);
   color: #fff;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  /* Slight frosted overlay — works over whatever base gradient the component sets */
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.30) 0%,
+    rgba(255, 255, 255, 0.04) 60%,
+    rgba(255, 255, 255, 0.12) 100%
+  ), var(--aac-gradient, none);
+  background-blend-mode: overlay, normal;
+  overflow: hidden;
+}
+.active-account-card.branded::before {
+  /* Soft glossy highlight on the top edge */
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 16px 16px 0 0;
 }
 
 .aac-avatar-slot {

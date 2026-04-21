@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.90': [
+    'Картка активного акаунту тепер з ефектом матового скла (backdrop-blur + saturate), напівпрозора, із заокругленими кутами 16 px і м\'якою тінню. Бренд-кольори месенджера просвічуються крізь glass-overlay',
+  ],
   '0.17.89': [
     'Фікс 404 у консолі: URL `/api/api/telegram/pinned-message/` мав подвійний `/api/` через зайвий префікс у коді запиту — прибрано. Функціонально ніяк не впливало (запит і так падав), але чистить консоль',
   ],
