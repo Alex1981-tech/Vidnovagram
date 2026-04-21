@@ -3426,10 +3426,14 @@ function App() {
     setSelectedGmail(null)
     setGmailSelectedMsg(null)
 
-    // Business (Viber / FB / IG / TG-bot) account — switch to business rail
-    // and open the chat directly. Skips the TG pendingToastChatRef path.
+    // Business (Viber / FB / IG / TG-bot / WA Cloud) — direct match, or
+    // fallback: accountId that's NOT a TG/WA account must be business, even
+    // if businessAccounts list hasn't arrived yet (race after cold start).
+    // We set selectedBusiness eagerly; loadBusinessContacts/Messages effects
+    // will fire once the account is recognized.
     const bizHit = businessAccounts.find(b => b.id === accountId)
-    if (bizHit) {
+    const tgWaHit = accounts.find(a => a.id === accountId)
+    if (bizHit || (accountId && !tgWaHit)) {
       setSelectedAccount('')
       setSelectedBusiness(accountId)
       setSelectedClient(clientId)
@@ -3448,7 +3452,7 @@ function App() {
       )
     }
     selectClient(clientId)
-  }, [selectedAccount, contacts, selectClient, businessAccounts])
+  }, [selectedAccount, contacts, selectClient, businessAccounts, accounts])
 
   const addContactToAccount = useCallback(async () => {
     if (!auth?.token || !addToAcctModal || !addToAcctSelected) return
