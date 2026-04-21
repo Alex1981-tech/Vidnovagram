@@ -334,6 +334,21 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
           }
 
           if (data.type === 'read_outbox') {
+            if (data.source === 'whatsapp') {
+              // WA bridge reports read per-message-id batch (ack >= 3).
+              const waIds = new Set((data.wa_message_ids || []).map((x: unknown) => String(x)))
+              if (waIds.size > 0) {
+                o.setMessages((prev) => prev.map((m) => {
+                  if (m.direction !== 'sent' || m.is_read || m.source !== 'whatsapp') return m
+                  const rawId = String(m.id)
+                  const normalized = rawId.startsWith('wa_') ? rawId.slice(3) : rawId
+                  return waIds.has(rawId) || waIds.has(normalized) || waIds.has(`wa_${rawId}`)
+                    ? { ...m, is_read: true }
+                    : m
+                }))
+              }
+              return
+            }
             const maxId = data.max_id
             if (maxId) {
               o.setMessages((prev) => prev.map((m) =>
