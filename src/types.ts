@@ -61,7 +61,7 @@ export interface Contact {
 export interface ChatMessage {
   id: number | string
   type?: 'call'
-  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber'
+  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber' | 'viber_turbosms' | 'telegram_bot' | 'facebook_messenger' | 'instagram_direct' | 'whatsapp_cloud'
   direction: 'sent' | 'received' | 'incoming' | 'outgoing'
   text: string
   has_media: boolean
@@ -134,6 +134,11 @@ export interface ChatMessage {
   local_status?: 'sending' | 'failed'
   local_error?: string
   retry_data?: { text: string; replyMsgId?: string | number }
+  // Business-provider delivery status (Viber DLR): pending → delivered → read,
+  // or failed / expired. Not used by TG/WA (those use is_read).
+  status?: 'pending' | 'delivered' | 'read' | 'failed' | 'expired'
+  provider_msg_id?: string
+  error_code?: string
 }
 
 export interface AlbumGroup {
@@ -143,7 +148,7 @@ export interface AlbumGroup {
   direction: 'sent' | 'received'
   message_date: string
   caption?: string
-  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber'
+  source?: 'telegram' | 'whatsapp' | 'binotel' | 'viber' | 'viber_turbosms' | 'telegram_bot' | 'facebook_messenger' | 'instagram_direct' | 'whatsapp_cloud'
 }
 
 export interface WsReactionEvent {

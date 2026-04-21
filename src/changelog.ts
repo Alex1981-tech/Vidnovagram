@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.17.99': [
+    'Viber: у чаті під надісланим повідомленням тепер видно реальний статус — "Надіслано" → "Доставлено" → "Прочитано" (або "Помилка (код)" / "Прострочено"). Бекенд уже отримував DLR від TurboSMS, але VG їх не відображав',
+    'Viber/FB/IG/TG-bot: іконка біля часу тепер відповідає месенджеру (ViberIcon / FacebookIcon / InstagramIcon / TelegramBotIcon) — раніше всюди показувалась іконка Telegram',
+  ],
   '0.17.98': [
     'Viber: фото в чаті відображаються (бекенд надсилав media_type=\'image\', а клієнт чекав \'photo\' — нормалізовано)',
     'Viber: вхідні медіа від клієнтів більше не губляться — у БД побільшено поле URL (TurboSMS CDN signed URLs бували >500 символів і webhook падав з DataError)',

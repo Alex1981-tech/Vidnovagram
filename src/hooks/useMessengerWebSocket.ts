@@ -359,6 +359,27 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
             }
           }
 
+          if (data.type === 'message_status') {
+            // Business-provider DLR: pending → delivered → read / failed / expired.
+            // Backend broadcasts with provider_msg_id; match on that, fall back to id.
+            const pmid = data.provider_msg_id ? String(data.provider_msg_id) : ''
+            const targetId = data.id ? String(data.id) : ''
+            const newStatus = data.status
+            if (newStatus && (pmid || targetId)) {
+              const order: Record<string, number> = { pending: 0, delivered: 1, read: 2, failed: 3, expired: 3 }
+              o.setMessages((prev) => prev.map((m) => {
+                if (m.direction !== 'sent') return m
+                const matchesPmid = pmid && m.provider_msg_id && String(m.provider_msg_id) === pmid
+                const matchesId = targetId && String(m.id) === targetId
+                if (!matchesPmid && !matchesId) return m
+                const curRank = order[m.status || 'pending'] ?? 0
+                const newRank = order[newStatus] ?? 0
+                if (newRank < curRank) return m
+                return { ...m, status: newStatus, error_code: data.error_code || m.error_code }
+              }))
+            }
+          }
+
           if (data.type === 'tg_typing' || data.type === 'typing') {
             const clientId = data.client_id
             if (clientId) {
