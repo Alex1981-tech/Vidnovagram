@@ -2185,6 +2185,41 @@ body {
   border-color: var(--ring);
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 25%, transparent);
 }
+
+/* New-Viber-chat picker — reuses .contact layout from the sidebar */
+.viber-new-chat-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--background);
+}
+.viber-new-chat-list .contact.viber-pick-row {
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+}
+.viber-new-chat-list .contact.viber-pick-row:last-child { border-bottom: none; }
+.viber-new-chat-list .contact.viber-pick-row:hover {
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+.viber-new-chat-hint {
+  padding: 14px 12px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+.viber-has-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px 5px;
+  border-radius: 10px;
+  background: color-mix(in oklch, oklch(0.55 0.18 310) 20%, transparent);
+  color: oklch(0.55 0.18 310);
+  line-height: 1;
+}
 .forward-modal-list {
   flex: 1;
   overflow-y: auto;

@@ -4691,11 +4691,13 @@ function App() {
           open={showViberNewChat}
           onClose={() => setShowViberNewChat(false)}
           token={auth.token}
-          accountId={selectedBusinessAccount.id}
           accountLabel={selectedBusinessAccount.label}
-          onStarted={(clientId) => {
-            loadBusinessContacts(selectedBusinessAccount.id)
+          onPick={(clientId) => {
+            // Opens the regular chat view — user writes in the normal composer.
             setSelectedClient(clientId)
+            loadBusinessMessages(selectedBusinessAccount.id, clientId, true)
+            // Refresh contact list so the new pick appears at the top after first send.
+            loadBusinessContacts(selectedBusinessAccount.id)
           }}
         />
       )}
