@@ -2209,6 +2209,24 @@ body {
   font-size: 0.8125rem;
   text-align: center;
 }
+/* Viber button rendered inside message bubble (button_text + button_url) */
+.msg-viber-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: oklch(0.55 0.18 310);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.msg-viber-btn:hover { background: oklch(0.5 0.2 310); }
+
 /* Viber link-button launcher — small icon above composer that opens the modal */
 .viber-btn-launcher {
   display: flex;

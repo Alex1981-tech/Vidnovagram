@@ -139,6 +139,9 @@ export interface ChatMessage {
   status?: 'pending' | 'delivered' | 'read' | 'failed' | 'expired'
   provider_msg_id?: string
   error_code?: string
+  // Viber/business link button (populated from reply_markup caption/action)
+  button_text?: string
+  button_url?: string
 }
 
 export interface AlbumGroup {

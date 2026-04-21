@@ -48,6 +48,7 @@ import { AddToAccountModal } from './components/AddToAccountModal'
 import { AddContactModal } from './components/AddContactModal'
 import { ViberNewChatModal } from './components/ViberNewChatModal'
 import { ViberButtonMessageModal } from './components/ViberButtonMessageModal'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { SidebarSearch } from './components/SidebarSearch'
@@ -493,6 +494,12 @@ function App() {
   const [businessUnreads] = useState<Record<string, number>>({})
   const [showViberNewChat, setShowViberNewChat] = useState(false)
   const [bizButtonOpen, setBizButtonOpen] = useState(false)
+  const [confirmState, setConfirmState] = useState<{ title?: string; message: string; resolve: (ok: boolean) => void } | null>(null)
+  const askConfirm = useCallback((title: string | undefined, message: string) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmState({ title, message, resolve })
+    })
+  }, [])
   const selectedBusinessAccount = businessAccounts.find(b => b.id === selectedBusiness)
   const canInitiateBusinessChat = selectedBusinessAccount?.provider === 'viber_turbosms'
 
@@ -1089,9 +1096,10 @@ function App() {
         const okMime = mime === 'image/jpeg' || mime === 'image/png'
         const okSize = (bizFile as File).size <= 1024 * 1024
         if (!okMime || !okSize) {
-          const go = confirm(
+          const go = await askConfirm(
+            'Надіслати як посилання?',
             `Viber Business приймає напряму лише JPEG/PNG до 1 МБ.\n\n` +
-            `Надіслати "${(bizFile as File).name}" як посилання на завантаження?\n\n` +
+            `Файл: "${(bizFile as File).name}"\n\n` +
             `Що побачить клієнт у Viber:\n` +
             `• назва файлу\n` +
             `• пояснення чому документ прийшов як посилання (обмеження Viber Business)\n` +
@@ -4753,6 +4761,15 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Generic confirm (replaces window.confirm which Tauri v2 blocks) */}
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title}
+        message={confirmState?.message || ''}
+        onConfirm={() => { confirmState?.resolve(true); setConfirmState(null) }}
+        onCancel={() => { confirmState?.resolve(false); setConfirmState(null) }}
+      />
 
       {/* Viber "message with link button" modal */}
       {auth?.token && selectedBusinessAccount?.provider === 'viber_turbosms' && (
