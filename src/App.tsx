@@ -3225,7 +3225,7 @@ function App() {
     let cancelled = false
     ;(async () => {
       try {
-        const url = `${API_BASE}/api/telegram/pinned-message/?account_id=${encodeURIComponent(selectedAccount)}&peer_id=${peer}`
+        const url = `${API_BASE}/telegram/pinned-message/?account_id=${encodeURIComponent(selectedAccount)}&peer_id=${peer}`
         const r = await authFetch(url, auth.token)
         if (!r.ok) return
         const data = await r.json()
