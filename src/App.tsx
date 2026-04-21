@@ -1066,25 +1066,54 @@ function App() {
   const sendMessage = useCallback(async (file?: File | Blob, mediaType?: string) => {
     if (!selectedClient || !auth?.token || sending) return
 
-    // --- Business (Viber) branch ---
+    // --- Business (Viber / Telegram bot / Meta / etc.) branch ---
     if (selectedBusiness) {
       const text = messageText.trim()
-      if (!text) return
+      const bizFile = file ?? (attachedFiles.length > 0 ? attachedFiles[0] : null)
+      if (!text && !bizFile) return
       setSending(true)
       try {
+        // Step 1 (optional): upload the attached file so the provider can fetch it.
+        let mediaPath = ''
+        if (bizFile) {
+          const fd = new FormData()
+          fd.append('account_id', selectedBusiness)
+          fd.append('file', bizFile, (bizFile as File).name || 'upload.bin')
+          const up = await authFetch(`${API_BASE}/business/upload-media/`, auth.token, {
+            method: 'POST',
+            body: fd,
+          })
+          if (!up.ok) {
+            const err = await up.json().catch(() => ({ error: up.statusText }))
+            alert(`Viber upload: ${err.error || up.statusText}`)
+            setSending(false)
+            return
+          }
+          const uData = await up.json()
+          mediaPath = uData.path || ''
+        }
+
+        // Step 2: send the message (with optional media_path).
+        const body: Record<string, unknown> = {
+          account_id: selectedBusiness,
+          client_id: selectedClient,
+        }
+        if (text) body.text = text
+        if (mediaPath) {
+          body.media_path = mediaPath
+          if (text) body.caption = text  // TurboSMS Viber supports caption on image
+        }
+
         const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_id: selectedBusiness,
-            client_id: selectedClient,
-            text,
-          }),
+          body: JSON.stringify(body),
         })
         if (r.ok) {
           const data = await r.json()
           if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
           setMessageText('')
+          setAttachedFiles([])
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
         } else {
           const err = await r.json().catch(() => ({ error: r.statusText }))
