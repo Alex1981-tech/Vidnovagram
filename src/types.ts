@@ -11,6 +11,12 @@ export interface AuthState {
   name: string
   token: string
   isAdmin: boolean
+  /**
+   * Local calendar date of the most recent successful login, in `YYYY-MM-DD`.
+   * Session auto-expires when this date is no longer "today" — user must
+   * re-login once per calendar day (00:00 — 24:00 local).
+   */
+  loginDate?: string
 }
 
 export interface Wallpaper {
