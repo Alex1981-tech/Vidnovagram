@@ -2824,7 +2824,9 @@ function App() {
       const r = await authFetch(`${API_BASE}/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
       if (!r.ok) return
       const data = await r.json()
-      const list = (data.messages || []) as ChatMessage[]
+      // API returns newest-first (DESC); the chat UI renders bottom-to-top so
+      // we reverse → oldest-first (ASC), same as Telegram/WhatsApp chats.
+      const list = ((data.messages || []) as ChatMessage[]).slice().reverse()
       setMessages(prev => {
         // Skip rerender if head/tail ids and length unchanged (polling idempotency)
         if (!replaceScroll && prev.length === list.length && list.length > 0
@@ -4794,6 +4796,7 @@ function App() {
         dismissToast={dismissToast}
         accounts={accounts}
         gmailAccounts={gmailAccounts}
+        businessAccounts={businessAccounts}
         photoMap={photoMap}
         selectedGmail={selectedGmail}
         gmailEmails={gmailEmails}

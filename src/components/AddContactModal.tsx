@@ -64,21 +64,29 @@ export function AddContactModal({
 }: Props) {
   if (!open) return null
 
+  // When a specific account is already selected in the sidebar, initiate the new
+  // chat directly on that account (no picker). Picker only appears in "All accounts"
+  // mode where `selectedAccount` is empty.
+  const needsPicker = !selectedAccount
+  const pickedAccount = accounts.find(a => a.id === selectedAccount)
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="forward-modal" onClick={e => e.stopPropagation()} style={{ minWidth: 380 }}>
-        <h3>Новий чат</h3>
-        <select
-          className="forward-modal-search"
-          value={addContactAccount || selectedAccount}
-          onChange={e => setAddContactAccount(e.target.value)}
-          style={{ marginBottom: 8 }}
-        >
-          <option value="">-- Оберіть акаунт --</option>
-          {accounts.filter(a => a.status === 'active' || a.status === 'connected').map(a => (
-            <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
-          ))}
-        </select>
+        <h3>Новий чат {pickedAccount ? `— ${pickedAccount.type === 'telegram' ? 'TG' : 'WA'} ${pickedAccount.label}` : ''}</h3>
+        {needsPicker && (
+          <select
+            className="forward-modal-search"
+            value={addContactAccount}
+            onChange={e => setAddContactAccount(e.target.value)}
+            style={{ marginBottom: 8 }}
+          >
+            <option value="">-- Оберіть акаунт --</option>
+            {accounts.filter(a => a.status === 'active' || a.status === 'connected').map(a => (
+              <option key={a.id} value={a.id}>{a.type === 'telegram' ? 'TG' : 'WA'} {a.label}</option>
+            ))}
+          </select>
+        )}
         <div style={{ position: 'relative' }}>
           <input
             className="forward-modal-search"

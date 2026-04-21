@@ -11,6 +11,7 @@ export interface ToastsContainerProps {
   // Cross-domain state needed to decorate/route the toast.
   accounts: Account[]
   gmailAccounts: GmailAccount[]
+  businessAccounts?: { id: string; provider: string }[]
   photoMap: Record<string, string>
 
   // Gmail routing when a Gmail toast is clicked.
@@ -33,7 +34,7 @@ export interface ToastsContainerProps {
 export function ToastsContainer(props: ToastsContainerProps) {
   const {
     toasts, expandedToastGroup, setExpandedToastGroup, dismissAll, dismissToast,
-    accounts, gmailAccounts, photoMap,
+    accounts, gmailAccounts, businessAccounts, photoMap,
     selectedGmail, gmailEmails, pendingGmailMsgRef, setGmailSelectedMsg,
     loadGmailEmails, handleGmailAccountClick,
     openToastChat,
@@ -66,7 +67,15 @@ export function ToastsContainer(props: ToastsContainerProps) {
         const isExpanded = expandedToastGroup === gk
         const acctType = accounts.find(a => a.id === latest.accountId)?.type
         const isGmail = gmailAccounts.some(g => g.id === latest.accountId)
-        const toastTypeClass = isGmail ? 'toast-gmail' : acctType === 'whatsapp' ? 'toast-wa' : 'toast-tg'
+        const biz = businessAccounts?.find(b => b.id === latest.accountId)
+        let toastTypeClass: string
+        if (isGmail) toastTypeClass = 'toast-gmail'
+        else if (biz?.provider === 'viber_turbosms') toastTypeClass = 'toast-viber'
+        else if (biz?.provider === 'telegram_bot') toastTypeClass = 'toast-tg-bot'
+        else if (biz?.provider === 'facebook_messenger') toastTypeClass = 'toast-fb'
+        else if (biz?.provider === 'instagram_direct') toastTypeClass = 'toast-ig'
+        else if (acctType === 'whatsapp') toastTypeClass = 'toast-wa'
+        else toastTypeClass = 'toast-tg'
         const avatarUrl = photoMap[latest.clientId]
         const stackCount = group.length
 

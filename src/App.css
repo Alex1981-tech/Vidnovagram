@@ -4770,11 +4770,40 @@ body {
   background: oklch(0.55 0.12 25 / 0.2);
   border-color: oklch(0.6 0.12 25 / 0.3);
 }
+/* Viber purple (#7360F2) */
+.toast-item.toast-viber {
+  background: oklch(0.55 0.22 290 / 0.22);
+  border-color: oklch(0.62 0.22 290 / 0.35);
+}
+/* Telegram-Bot blue (same as TG-personal but slightly different to distinguish bot chats) */
+.toast-item.toast-tg-bot {
+  background: oklch(0.62 0.14 230 / 0.22);
+  border-color: oklch(0.68 0.14 230 / 0.35);
+}
+/* Facebook Messenger blue (#0084FF) */
+.toast-item.toast-fb {
+  background: oklch(0.58 0.18 255 / 0.22);
+  border-color: oklch(0.64 0.18 255 / 0.35);
+}
+/* Instagram rose/orange gradient */
+.toast-item.toast-ig {
+  background: linear-gradient(135deg, oklch(0.58 0.20 10 / 0.22) 0%, oklch(0.65 0.18 40 / 0.22) 100%);
+  border-color: oklch(0.6 0.20 15 / 0.35);
+}
 .toast-item:hover {
   background: oklch(0.55 0.12 240 / 0.3);
 }
 .toast-item.toast-wa:hover {
   background: oklch(0.55 0.12 155 / 0.3);
+}
+.toast-item.toast-viber:hover {
+  background: oklch(0.55 0.22 290 / 0.32);
+}
+.toast-item.toast-tg-bot:hover {
+  background: oklch(0.62 0.14 230 / 0.32);
+}
+.toast-item.toast-fb:hover {
+  background: oklch(0.58 0.18 255 / 0.32);
 }
 .toast-item.toast-gmail:hover {
   background: oklch(0.55 0.12 25 / 0.3);
