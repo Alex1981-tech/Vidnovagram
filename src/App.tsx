@@ -2988,7 +2988,21 @@ function App() {
   const pendingMessagesRefreshRef = useRef<{ clientId: string; scrollToEnd: boolean } | null>(null)
   const addToastRef = useRef<(clientId: string, accountId: string, sender: string, account: string, text: string, hasMedia: boolean, mediaType: string) => void>(() => {})
   useEffect(() => { loadContactsRef.current = reloadCurrentContactList }, [reloadCurrentContactList])
-  useEffect(() => { loadMessagesRef.current = loadMessages }, [loadMessages])
+  useEffect(() => {
+    // Route refresh to the right source: business chats reload from
+    // /api/business/messages/, TG/WA chats from /api/telegram/.../messages/.
+    // Without this, WS new_message events in a Viber/TG-bot/FB chat would
+    // silently refresh the wrong endpoint and UI wouldn't update until the
+    // user closed+re-opened the chat.
+    loadMessagesRef.current = async (clientId: string, scrollToEnd = false) => {
+      const biz = selectedBusinessRef.current
+      if (biz) {
+        await loadBusinessMessages(biz, clientId, scrollToEnd)
+        return
+      }
+      await loadMessages(clientId, scrollToEnd)
+    }
+  }, [loadMessages, loadBusinessMessages])
   useEffect(() => { soundEnabledRef.current = soundEnabled }, [soundEnabled])
   const appSettingsRef = useRef(appSettings)
   useEffect(() => { appSettingsRef.current = appSettings }, [appSettings])
