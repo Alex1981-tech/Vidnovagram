@@ -1085,6 +1085,27 @@ body {
   background: oklch(0.22 0.03 150 / 0.6);
   color: oklch(0.9 0.02 150);
 }
+/* Viber — purple accent (brand #7360F2 / hue 310) */
+.msg.src-viber.sent .msg-bubble,
+.msg.src-viber_turbosms.sent .msg-bubble {
+  background: oklch(0.9 0.09 310 / 0.75);
+  color: oklch(0.2 0.06 310);
+}
+.msg.src-viber.received .msg-bubble,
+.msg.src-viber_turbosms.received .msg-bubble {
+  background: oklch(0.95 0.04 310 / 0.72);
+  color: oklch(0.22 0.04 310);
+}
+.dark .msg.src-viber.sent .msg-bubble,
+.dark .msg.src-viber_turbosms.sent .msg-bubble {
+  background: oklch(0.34 0.12 310 / 0.72);
+  color: oklch(0.96 0.03 310);
+}
+.dark .msg.src-viber.received .msg-bubble,
+.dark .msg.src-viber_turbosms.received .msg-bubble {
+  background: oklch(0.24 0.05 310 / 0.6);
+  color: oklch(0.92 0.03 310);
+}
 
 /* Reply quote inside message bubble */
 .msg-reply-quote {
