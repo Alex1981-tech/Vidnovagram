@@ -2914,9 +2914,16 @@ function App() {
       const r = await authFetch(`${API_BASE}/business/messages/?account_id=${accountId}&client_id=${clientId}&limit=50`, auth.token)
       if (!r.ok) return
       const data = await r.json()
-      // API returns newest-first (DESC); the chat UI renders bottom-to-top so
-      // we reverse → oldest-first (ASC), same as Telegram/WhatsApp chats.
-      const list = ((data.messages || []) as ChatMessage[]).slice().reverse()
+      // Backend returns merged timeline sorted oldest→newest already (see
+      // business_messages in calls/views/business.py). No reverse needed.
+      // Historical fallback: if the first item is newer than last, reverse.
+      const raw = (data.messages || []) as ChatMessage[]
+      const list = raw.length >= 2
+        && raw[0]?.message_date && raw[raw.length - 1]?.message_date
+        && new Date(raw[0].message_date) > new Date(raw[raw.length - 1].message_date)
+          ? raw.slice().reverse()
+          : raw
+      let changed = false
       setMessages(prev => {
         // Skip rerender if head/tail ids and length unchanged (polling idempotency)
         if (!replaceScroll && prev.length === list.length && list.length > 0
@@ -2924,8 +2931,15 @@ function App() {
             && prev[prev.length - 1]?.id === list[list.length - 1]?.id) {
           return prev
         }
+        changed = true
         return list
       })
+      // Scroll to newest on initial chat-open (replaceScroll=true) and also
+      // when polling brought in new messages (length/tail changed).
+      if ((replaceScroll || changed) && list.length > 0) {
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50)
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 300)
+      }
     } catch (e) { console.error('business messages:', e) }
   }, [auth?.token, setMessages])
 
