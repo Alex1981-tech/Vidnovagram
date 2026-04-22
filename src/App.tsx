@@ -3833,7 +3833,19 @@ function App() {
               usernameSearchResult={usernameSearchResult}
               globalSearchResults={globalSearchResults}
               onSelectClient={(clientId, opts) => {
-                selectClient(clientId, opts)
+                // In "All accounts" mode, make sure we land on a concrete TG/WA
+                // account so loadMessages has context. Global search already
+                // returns account_id; we only fall back when it's missing.
+                let finalOpts = opts
+                if (!finalOpts?.accountId) {
+                  const hit = globalSearchResults.find(r => String(r.id) === String(finalOpts?.jumpToMessageId))
+                  const source = hit?.source
+                  const fallbackAccountId = hit?.account_id
+                    || accounts.find(a => a.type === (source === 'whatsapp' ? 'whatsapp' : 'telegram'))?.id
+                    || accounts[0]?.id
+                  finalOpts = { ...(finalOpts || {}), accountId: fallbackAccountId || undefined }
+                }
+                selectClient(clientId, finalOpts)
                 setSearch('')
                 setGlobalSearchResults([])
                 setUsernameSearchResult(null)
