@@ -1170,6 +1170,9 @@ function App() {
           setMessageText('')
           setAttachedFiles([])
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+          // Scroll to the message we just sent — otherwise it ends up below
+          // the input area and the operator has to scroll manually.
+          requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
         } else {
           const err = await r.json().catch(() => ({ error: r.statusText }))
           console.error('[Viber] send failed:', err)
@@ -4812,6 +4815,7 @@ function App() {
             if (r.ok) {
               const data = await r.json()
               if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
+              requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
             } else {
               const err = await r.json().catch(() => ({ error: r.statusText }))
               alert(`Viber: ${err.error || r.statusText}`)
