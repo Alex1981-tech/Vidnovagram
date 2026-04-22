@@ -71,11 +71,15 @@ export function CallCardBubble({
   token,
 }: Props) {
   const callId = m.call_id || ''
-  const isOpen = expandedCallId === callId
   const dur = m.duration_seconds || 0
   const mm = String(Math.floor(dur / 60)).padStart(2, '0')
   const ss = String(dur % 60).padStart(2, '0')
   const isIncoming = m.direction === 'incoming' || m.direction === 'received'
+  // Missed / cancelled / busy / no-answer calls never have a recording
+  // or transcription — nothing to show in the expand panel, so leave
+  // the card as a static summary.
+  const isAnswered = (m.disposition === 'ANSWER' || !m.disposition) && dur > 0
+  const isOpen = isAnswered && expandedCallId === callId
 
   const [detail, setDetail] = useState<CallDetail | null>(() =>
     callId ? detailCache.get(callId) || null : null
@@ -114,7 +118,7 @@ export function CallCardBubble({
   }, [isOpen, callId, token])
 
   const toggle = () => {
-    if (!callId) return
+    if (!callId || !isAnswered) return
     setExpandedCallId(prev => (prev === callId ? null : callId))
   }
 
@@ -127,11 +131,11 @@ export function CallCardBubble({
   return (
     <div className="call-card-wrapper">
       <div
-        className={`call-card expandable${isOpen ? ' has-audio-open' : ''}`}
-        onClick={toggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
+        className={`call-card${isAnswered ? ' expandable' : ''}${isOpen ? ' has-audio-open' : ''}`}
+        onClick={isAnswered ? toggle : undefined}
+        role={isAnswered ? 'button' : undefined}
+        tabIndex={isAnswered ? 0 : undefined}
+        onKeyDown={isAnswered ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }) : undefined}
       >
         <div className="call-card-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isIncoming ? '#22c55e' : '#3b82f6'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -154,11 +158,13 @@ export function CallCardBubble({
             )}
           </div>
         </div>
-        <span className={`call-card-chevron${isOpen ? ' open' : ''}`} aria-hidden>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </span>
+        {isAnswered && (
+          <span className={`call-card-chevron${isOpen ? ' open' : ''}`} aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </span>
+        )}
       </div>
 
       {/* Accordion-style smooth expand (grid-template-rows 0fr → 1fr) */}
