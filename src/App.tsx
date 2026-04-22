@@ -5057,6 +5057,7 @@ function App() {
             setSoundDropdownOpen={setSoundDropdownOpen}
             accounts={accounts}
             gmailAccounts={gmailAccounts}
+            businessAccounts={businessAccounts}
             appSettings={appSettings}
             setAppSettings={setAppSettings}
             previewSound={previewSound}

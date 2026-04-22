@@ -1,15 +1,30 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react'
 import { SOUND_OPTIONS } from '../constants'
 import {
   type AccountSettings,
   type AppSettings,
   DEFAULT_ACCOUNT_SETTINGS,
 } from '../settings'
-import { WhatsAppIcon, GmailIcon } from './icons'
+import {
+  WhatsAppIcon,
+  GmailIcon,
+  ViberIcon,
+  TelegramBotIcon,
+  FacebookIcon,
+  InstagramIcon,
+} from './icons'
 import type { Account, GmailAccount, Wallpaper } from '../types'
 import type { WaSettingsController } from '../hooks/useWaSettings'
 
 type SettingsTab = 'notifications' | 'background' | 'whatsapp'
+
+interface BusinessAccountLike {
+  id: string
+  provider: string
+  label: string
+  sender_name?: string
+  status?: string
+}
 
 interface SettingsModalProps {
   open: boolean
@@ -20,6 +35,7 @@ interface SettingsModalProps {
   setSoundDropdownOpen: Dispatch<SetStateAction<string | null>>
   accounts: Account[]
   gmailAccounts: GmailAccount[]
+  businessAccounts: BusinessAccountLike[]
   appSettings: AppSettings
   setAppSettings: Dispatch<SetStateAction<AppSettings>>
   previewSound: string | null
@@ -28,6 +44,13 @@ interface SettingsModalProps {
   waSettings: WaSettingsController
   wallpapers: Wallpaper[]
   currentVersion: string
+}
+
+const PROVIDER_META: Record<string, { icon: ReactNode; label: string }> = {
+  viber_turbosms: { icon: <ViberIcon size={14} />, label: 'Viber' },
+  telegram_bot: { icon: <TelegramBotIcon size={14} />, label: 'Telegram bot' },
+  facebook_messenger: { icon: <FacebookIcon size={14} />, label: 'Facebook' },
+  instagram_direct: { icon: <InstagramIcon size={14} />, label: 'Instagram' },
 }
 
 export function SettingsModal({
@@ -39,6 +62,7 @@ export function SettingsModal({
   setSoundDropdownOpen,
   accounts,
   gmailAccounts,
+  businessAccounts,
   appSettings,
   setAppSettings,
   previewSound,
@@ -77,6 +101,114 @@ export function SettingsModal({
     setTimeout(() => setPreviewSound(null), 2000)
   }
 
+  const renderNotifRow = (rowId: string, iconNode: ReactNode, name: string) => {
+    const as = appSettings.accounts[rowId] || DEFAULT_ACCOUNT_SETTINGS
+    const updateAcct = (patch: Partial<AccountSettings>) => {
+      setAppSettings(prev => ({
+        ...prev,
+        accounts: { ...prev.accounts, [rowId]: { ...as, ...patch } },
+      }))
+    }
+    const currentSound = SOUND_OPTIONS.find(s => s.id === as.soundId) || SOUND_OPTIONS[0]
+    return (
+      <div key={rowId} className="settings-notif-row">
+        <div className="settings-notif-acct">
+          {iconNode}
+          <span className="settings-notif-name">{name}</span>
+        </div>
+        <div className="settings-notif-controls">
+          <div className="settings-tip-wrap">
+            <button
+              className={`settings-notif-icon-btn${as.popupEnabled ? ' on' : ''}`}
+              onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}
+              aria-label={as.popupEnabled ? 'Вимкнути спливаючі сповіщення' : 'Увімкнути спливаючі сповіщення'}
+            >
+              {as.popupEnabled ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              )}
+            </button>
+            <div className="settings-tooltip">
+              <div className="settings-tooltip-title">
+                {as.popupEnabled ? 'Спливаючі сповіщення увімкнено' : 'Спливаючі сповіщення вимкнено'}
+              </div>
+              <div className="settings-tooltip-desc">
+                Керує показом тостів у куті екрана з новими повідомленнями
+              </div>
+            </div>
+          </div>
+          <div className="settings-tip-wrap">
+            <button
+              className={`settings-notif-icon-btn${as.soundEnabled ? ' on' : ''}`}
+              onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}
+              aria-label={as.soundEnabled ? 'Вимкнути звук сповіщень' : 'Увімкнути звук сповіщень'}
+            >
+              {as.soundEnabled ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              )}
+            </button>
+            <div className="settings-tooltip">
+              <div className="settings-tooltip-title">
+                {as.soundEnabled ? 'Звук сповіщень увімкнено' : 'Звук сповіщень вимкнено'}
+              </div>
+              <div className="settings-tooltip-desc">
+                Керує аудіо-сигналом при отриманні нового повідомлення
+              </div>
+            </div>
+          </div>
+          {as.soundEnabled && (
+            <div className="settings-sound-dropdown-wrap">
+              <button
+                className="settings-sound-select"
+                onClick={e => { e.stopPropagation(); setSoundDropdownOpen(prev => prev === rowId ? null : rowId) }}
+              >
+                <span>{currentSound.label}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {soundDropdownOpen === rowId && (
+                <div className="settings-sound-dropdown" onClick={e => e.stopPropagation()}>
+                  {SOUND_OPTIONS.map(s => (
+                    <div
+                      key={s.id}
+                      className={`settings-sound-item${as.soundId === s.id ? ' active' : ''}`}
+                      onClick={() => {
+                        updateAcct({ soundId: s.id })
+                        setSoundDropdownOpen(null)
+                      }}
+                    >
+                      <span className="settings-sound-item-label">{s.label}</span>
+                      <button
+                        className={`settings-sound-play${previewSound === s.id ? ' playing' : ''}`}
+                        onClick={e => { e.stopPropagation(); previewSoundFor(s.id, s.src) }}
+                        title="Прослухати"
+                      >
+                        {previewSound === s.id ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const tgIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+  )
+  const waLegacyIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M20.52 3.449A11.94 11.94 0 0 0 12.003.002C5.376.002.003 5.376.003 12c0 2.119.553 4.187 1.602 6.012L0 24l6.176-1.62A11.96 11.96 0 0 0 12.003 24C18.628 24 24 18.624 24 12c0-3.205-1.248-6.219-3.48-8.551zM12.003 21.785a9.74 9.74 0 0 1-5.212-1.51l-.373-.222-3.866 1.014 1.032-3.77-.244-.387A9.765 9.765 0 0 1 2.218 12c0-5.39 4.39-9.78 9.783-9.78a9.725 9.725 0 0 1 6.918 2.868 9.727 9.727 0 0 1 2.864 6.919c-.002 5.388-4.39 9.778-9.78 9.778z"/></svg>
+  )
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="settings-modal" onClick={e => { e.stopPropagation(); setSoundDropdownOpen(null) }}>
@@ -103,170 +235,28 @@ export function SettingsModal({
         <div className="settings-modal-body">
           {settingsTab === 'notifications' && (
             <div className="settings-section">
+              <div className="settings-notif-hint">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>Наведіть на 🔔 або 🔊 щоб побачити, що вмикає кожен перемикач</span>
+              </div>
               <div className="settings-notif-list">
-                {accounts.map(acct => {
-                  const as = appSettings.accounts[acct.id] || DEFAULT_ACCOUNT_SETTINGS
-                  const updateAcct = (patch: Partial<AccountSettings>) => {
-                    setAppSettings(prev => ({
-                      ...prev,
-                      accounts: { ...prev.accounts, [acct.id]: { ...as, ...patch } },
-                    }))
-                  }
-                  const currentSound = SOUND_OPTIONS.find(s => s.id === as.soundId) || SOUND_OPTIONS[0]
-                  return (
-                    <div key={acct.id} className="settings-notif-row">
-                      <div className="settings-notif-acct">
-                        {acct.type === 'telegram' ? (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-                        ) : (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M20.52 3.449A11.94 11.94 0 0 0 12.003.002C5.376.002.003 5.376.003 12c0 2.119.553 4.187 1.602 6.012L0 24l6.176-1.62A11.96 11.96 0 0 0 12.003 24C18.628 24 24 18.624 24 12c0-3.205-1.248-6.219-3.48-8.551zM12.003 21.785a9.74 9.74 0 0 1-5.212-1.51l-.373-.222-3.866 1.014 1.032-3.77-.244-.387A9.765 9.765 0 0 1 2.218 12c0-5.39 4.39-9.78 9.783-9.78a9.725 9.725 0 0 1 6.918 2.868 9.727 9.727 0 0 1 2.864 6.919c-.002 5.388-4.39 9.778-9.78 9.778z"/></svg>
-                        )}
-                        <span className="settings-notif-name">{acct.label || acct.phone}</span>
-                      </div>
-                      <div className="settings-notif-controls">
-                        <button
-                          className={`settings-notif-icon-btn${as.popupEnabled ? ' on' : ''}`}
-                          onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}
-                          title={as.popupEnabled ? 'Сповіщення увімкнено' : 'Сповіщення вимкнено'}
-                        >
-                          {as.popupEnabled ? (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                          ) : (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          )}
-                        </button>
-                        <button
-                          className={`settings-notif-icon-btn${as.soundEnabled ? ' on' : ''}`}
-                          onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}
-                          title={as.soundEnabled ? 'Звук увімкнено' : 'Звук вимкнено'}
-                        >
-                          {as.soundEnabled ? (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                          ) : (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-                          )}
-                        </button>
-                        {as.soundEnabled && (
-                          <div className="settings-sound-dropdown-wrap">
-                            <button
-                              className="settings-sound-select"
-                              onClick={e => { e.stopPropagation(); setSoundDropdownOpen(prev => prev === acct.id ? null : acct.id) }}
-                            >
-                              <span>{currentSound.label}</span>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                            </button>
-                            {soundDropdownOpen === acct.id && (
-                              <div className="settings-sound-dropdown" onClick={e => e.stopPropagation()}>
-                                {SOUND_OPTIONS.map(s => (
-                                  <div
-                                    key={s.id}
-                                    className={`settings-sound-item${as.soundId === s.id ? ' active' : ''}`}
-                                    onClick={() => {
-                                      updateAcct({ soundId: s.id })
-                                      setSoundDropdownOpen(null)
-                                    }}
-                                  >
-                                    <span className="settings-sound-item-label">{s.label}</span>
-                                    <button
-                                      className={`settings-sound-play${previewSound === s.id ? ' playing' : ''}`}
-                                      onClick={e => { e.stopPropagation(); previewSoundFor(s.id, s.src) }}
-                                      title="Прослухати"
-                                    >
-                                      {previewSound === s.id ? (
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                                      ) : (
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                      )}
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-                {gmailAccounts.map(gm => {
-                  const as = appSettings.accounts[gm.id] || DEFAULT_ACCOUNT_SETTINGS
-                  const updateAcct = (patch: Partial<AccountSettings>) => {
-                    setAppSettings(prev => ({
-                      ...prev,
-                      accounts: { ...prev.accounts, [gm.id]: { ...as, ...patch } },
-                    }))
-                  }
-                  const currentSound = SOUND_OPTIONS.find(s => s.id === as.soundId) || SOUND_OPTIONS[0]
-                  return (
-                    <div key={gm.id} className="settings-notif-row">
-                      <div className="settings-notif-acct">
-                        <GmailIcon size={14} />
-                        <span className="settings-notif-name">{gm.label || gm.email}</span>
-                      </div>
-                      <div className="settings-notif-controls">
-                        <button
-                          className={`settings-notif-icon-btn${as.popupEnabled ? ' on' : ''}`}
-                          onClick={() => updateAcct({ popupEnabled: !as.popupEnabled })}
-                          title={as.popupEnabled ? 'Сповіщення увімкнено' : 'Сповіщення вимкнено'}
-                        >
-                          {as.popupEnabled ? (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                          ) : (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          )}
-                        </button>
-                        <button
-                          className={`settings-notif-icon-btn${as.soundEnabled ? ' on' : ''}`}
-                          onClick={() => updateAcct({ soundEnabled: !as.soundEnabled })}
-                          title={as.soundEnabled ? 'Звук увімкнено' : 'Звук вимкнено'}
-                        >
-                          {as.soundEnabled ? (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                          ) : (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-                          )}
-                        </button>
-                        {as.soundEnabled && (
-                          <div className="settings-sound-dropdown-wrap">
-                            <button
-                              className="settings-sound-select"
-                              onClick={e => { e.stopPropagation(); setSoundDropdownOpen(prev => prev === gm.id ? null : gm.id) }}
-                            >
-                              <span>{currentSound.label}</span>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                            </button>
-                            {soundDropdownOpen === gm.id && (
-                              <div className="settings-sound-dropdown" onClick={e => e.stopPropagation()}>
-                                {SOUND_OPTIONS.map(s => (
-                                  <div
-                                    key={s.id}
-                                    className={`settings-sound-item${as.soundId === s.id ? ' active' : ''}`}
-                                    onClick={() => {
-                                      updateAcct({ soundId: s.id })
-                                      setSoundDropdownOpen(null)
-                                    }}
-                                  >
-                                    <span className="settings-sound-item-label">{s.label}</span>
-                                    <button
-                                      className={`settings-sound-play${previewSound === s.id ? ' playing' : ''}`}
-                                      onClick={e => { e.stopPropagation(); previewSoundFor(s.id, s.src) }}
-                                      title="Прослухати"
-                                    >
-                                      {previewSound === s.id ? (
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                                      ) : (
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                      )}
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
+                {accounts.map(acct => renderNotifRow(
+                  acct.id,
+                  acct.type === 'telegram' ? tgIcon : waLegacyIcon,
+                  acct.label || acct.phone,
+                ))}
+                {gmailAccounts.map(gm => renderNotifRow(
+                  gm.id,
+                  <GmailIcon size={14} />,
+                  gm.label || gm.email,
+                ))}
+                {businessAccounts.length > 0 && (
+                  <div className="settings-notif-group-label">Бізнес-чати та соцмережі</div>
+                )}
+                {businessAccounts.map(biz => {
+                  const meta = PROVIDER_META[biz.provider] || { icon: null, label: biz.provider }
+                  const name = biz.label || biz.sender_name || meta.label
+                  return renderNotifRow(biz.id, meta.icon, name)
                 })}
               </div>
             </div>

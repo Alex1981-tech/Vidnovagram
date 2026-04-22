@@ -4670,6 +4670,99 @@ body {
 }
 .settings-notif-icon-btn:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); opacity: 0.8; }
 .settings-notif-icon-btn.on { color: var(--primary); opacity: 1; }
+
+/* Group label (Business / Social) */
+.settings-notif-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  padding: 10px 10px 4px;
+  opacity: 0.65;
+}
+
+/* Hint line above the notif list */
+.settings-notif-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--primary) 18%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+.settings-notif-hint svg { color: var(--primary); flex-shrink: 0; }
+
+/* Frosted-glass tooltip wrapper */
+.settings-tip-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+}
+.settings-tip-wrap .settings-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  min-width: 220px;
+  max-width: 260px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--popover) 75%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.35), 0 2px 8px -2px rgba(0, 0, 0, 0.18);
+  color: var(--popover-foreground);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 100;
+  white-space: normal;
+  text-align: left;
+}
+.settings-tip-wrap .settings-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-right: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  backdrop-filter: inherit;
+  -webkit-backdrop-filter: inherit;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  margin-top: -5px;
+  rotate: 45deg;
+}
+.settings-tip-wrap:hover .settings-tooltip,
+.settings-tip-wrap:focus-within .settings-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  transition-delay: 0.25s;
+}
+.settings-tooltip-title {
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 2px;
+}
+.settings-tooltip-desc {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
 /* Sound dropdown */
 .settings-sound-dropdown-wrap {
   position: relative;
