@@ -2878,7 +2878,7 @@ function App() {
       const list = (data.contacts || []) as Array<{
         client_id: string; account_id: string; account_label: string; phone: string;
         full_name: string; last_message: string; last_message_date: string; unread: number;
-        tg_photo_url?: string; is_new_patient?: boolean; source?: string;
+        tg_photo_url?: string; is_new_patient?: boolean; source?: string; is_employee?: boolean;
       }>
       const mapped: Contact[] = list.map(c => ({
         client_id: c.client_id,
@@ -2888,6 +2888,7 @@ function App() {
         last_message_date: c.last_message_date,
         tg_photo_url: c.tg_photo_url,
         is_new_patient: c.is_new_patient,
+        is_employee: !!c.is_employee,
         source: (c.source || 'viber'),
       } as unknown as Contact))
       setContacts(mapped)
