@@ -120,7 +120,13 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
       setContacts(list)
       setContactCount(data.count || 0)
       setContactPage(1)
-      setHasMore(list.length >= (data.per_page || 50) && list.length < (data.count || 0))
+      // Page-based pagination: more to load if we haven't covered the total.
+      // Don't gate on list.length — backend deduplicates TG+WA per client so
+      // a single page can arrive with fewer than `per_page` items even when
+      // more pages exist.
+      const perPage = data.per_page || 50
+      const total = data.count || 0
+      setHasMore(1 * perPage < total)
 
       if (search) telemetry.trackSearch(search.length, data.count || 0)
 
@@ -191,7 +197,9 @@ export function useContacts(opts: UseContactsOptions): ContactsController {
         const list: Contact[] = data.results || []
         setContacts(prev => [...prev, ...list])
         setContactPage(nextPage)
-        setHasMore(list.length >= (data.per_page || 50))
+        const perPage = data.per_page || 50
+        const total = data.count || 0
+        setHasMore(nextPage * perPage < total)
 
         const ids = list.map(c => c.client_id).join(',')
         if (ids) {
