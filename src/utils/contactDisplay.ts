@@ -32,12 +32,13 @@ export function isPlaceholderName(name?: string): boolean {
 
 export function resolveLinkedDisplay(linked?: LinkedPhone[]): DisplayName | null {
   if (!linked?.length) return null
+  // full_name wins over tg_name — same reasoning as resolveContactDisplay.
   const preferred =
-    linked.find(lp => (lp.tg_name || '').trim())
-    || linked.find(lp => {
+    linked.find(lp => {
       const value = (lp.full_name || '').trim()
       return !!value && !isPlaceholderName(value)
     })
+    || linked.find(lp => (lp.tg_name || '').trim())
     || linked.find(lp => (lp.tg_username || '').trim())
     || linked.find(lp => (lp.phone || '').trim())
     || null
@@ -48,7 +49,7 @@ export function resolveLinkedDisplay(linked?: LinkedPhone[]): DisplayName | null
   const fullName = isPlaceholderName(fullNameRaw) ? '' : fullNameRaw
   const phone = (preferred.phone || '').trim()
   return {
-    name: tgName || fullName || (username ? `@${username}` : phone),
+    name: fullName || tgName || (username ? `@${username}` : phone),
     subtitle: username ? `@${username}` : (phone || ''),
   }
 }
@@ -70,7 +71,10 @@ export function resolveContactDisplay(contact?: ContactLike): DisplayName {
     }
   }
 
-  const name = tgName || fullName || (username ? `@${username}` : (!isPlaceholderPhone(phone) ? phone : ''))
+  // full_name wins over tg_name: Binotel/KeyCRM is our source of truth, while
+  // tg_name can carry stale contact labels imported from someone else's TG
+  // addressbook (e.g. old contact under the same phone).
+  const name = fullName || tgName || (username ? `@${username}` : (!isPlaceholderPhone(phone) ? phone : ''))
   let subtitle = ''
   if (username) subtitle = `@${username}`
   else if (!isPlaceholderPhone(phone) && phone && phone !== name) subtitle = phone

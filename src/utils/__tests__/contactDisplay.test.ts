@@ -40,11 +40,11 @@ describe('resolveLinkedDisplay', () => {
     expect(resolveLinkedDisplay([])).toBeNull()
   })
 
-  it('prefers tg_name over full_name', () => {
+  it('prefers full_name over tg_name (CRM wins)', () => {
     const out = resolveLinkedDisplay([
       { phone: '0971886225', full_name: 'Real Name', tg_name: 'Тг Ім\'я' },
     ])
-    expect(out?.name).toBe('Тг Ім\'я')
+    expect(out?.name).toBe('Real Name')
   })
 
   it('falls back to full_name when no tg_name', () => {
@@ -73,10 +73,18 @@ describe('resolveContactDisplay', () => {
     expect(resolveContactDisplay({})).toEqual({ name: 'Невідомий', subtitle: '' })
   })
 
-  it('uses tg_name as primary name', () => {
+  it('prefers full_name over tg_name (CRM is source of truth)', () => {
     const out = resolveContactDisplay({
       tg_name: 'Телеграм',
       full_name: 'Паспорт',
+      phone: '0971886225',
+    })
+    expect(out.name).toBe('Паспорт')
+  })
+
+  it('falls back to tg_name when full_name is missing', () => {
+    const out = resolveContactDisplay({
+      tg_name: 'Телеграм',
       phone: '0971886225',
     })
     expect(out.name).toBe('Телеграм')
