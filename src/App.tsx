@@ -314,8 +314,10 @@ function App() {
 
   // Avatar photos
   const [photoMap, setPhotoMap] = useState<Record<string, string>>({})
-  const [audioBlobMap, setAudioBlobMap] = useState<Record<string, string>>({})
-  const [audioLoading, setAudioLoading] = useState<Record<string, boolean>>({})
+  // Legacy audioBlobMap/audioLoading removed — CallCardBubble fetches its
+  // own blob via signed URL now. setAudioBlobMap still used by chat-switch
+  // cleanup path below.
+  const [, setAudioBlobMap] = useState<Record<string, string>>({})
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
   // Generic media blobs (voice, video, documents, full-size images)
   const [mediaBlobMap, setMediaBlobMap] = useState<Record<string, string>>({})
@@ -2296,25 +2298,8 @@ function App() {
     }
   }, [selectedClient, selectedAccount, auth?.token, loadMessages])
 
-  // Load call audio via auth → blob URL
-  const loadCallAudio = useCallback(async (callId: string, mediaPath: string) => {
-    // If already loaded, just toggle expand
-    if (audioBlobMap[callId]) {
-      setExpandedCallId(prev => prev === callId ? null : callId)
-      return
-    }
-    if (!auth?.token || audioLoading[callId]) return
-    setAudioLoading(prev => ({ ...prev, [callId]: true }))
-    try {
-      const resp = await authFetch(`${API_BASE.replace('/api', '')}${mediaPath}`, auth.token)
-      if (resp.ok) {
-        const blob = await resp.blob()
-        setAudioBlobMap(prev => ({ ...prev, [callId]: URL.createObjectURL(blob) }))
-        setExpandedCallId(callId)
-      }
-    } catch { /* ignore */ }
-    setAudioLoading(prev => ({ ...prev, [callId]: false }))
-  }, [auth?.token, audioBlobMap, audioLoading])
+  // Legacy loadCallAudio removed — CallCardBubble now fetches /messenger/calls/{id}/
+  // itself and uses signed audio URL + CallAudioPlayer.
 
   // Load any media file via auth → blob URL
   // Thumbnails (key starts with "thumb_") are cached in IndexedDB
@@ -4304,9 +4289,7 @@ function App() {
                         message={m}
                         expandedCallId={expandedCallId}
                         setExpandedCallId={setExpandedCallId}
-                        audioLoading={audioLoading}
-                        audioBlobMap={audioBlobMap}
-                        loadCallAudio={loadCallAudio}
+                        token={auth?.token}
                       />
                     )
                   }
