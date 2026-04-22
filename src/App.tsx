@@ -1179,11 +1179,24 @@ function App() {
         } else {
           const err = await r.json().catch(() => ({ error: r.statusText }))
           console.error('[Viber] send failed:', err)
-          alert(`Viber: ${err.error || r.statusText}`)
+          const raw = String(err.error || r.statusText)
+          let human = raw
+          if (raw.includes('REQUIRED_MESSAGE_RECIPIENT')) {
+            human = 'Клієнт недоступний у Viber (номер не прив\'язаний до Viber-акаунта або заблокований).'
+          } else if (raw.includes('NOT_ALLOWED_MESSAGE_TEXT')) {
+            human = 'Viber класифікував повідомлення як промо. Відповідати можна лише коли клієнт написав першим за останні 24 години.'
+          } else if (raw.includes('invalid phone')) {
+            human = 'Некоректний формат номера телефону клієнта.'
+          }
+          alert(`Viber: ${human}`)
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
         console.error('[Viber] send error:', e)
-        alert(`Viber: ${e.message || 'network error'}`)
+        alert(
+          `Viber: не вдалося зв'язатись із сервером (${msg || 'network error'}). ` +
+          `Можливо, сервіс оновлюється — спробуйте ще раз через 10-15 секунд.`
+        )
       } finally {
         setSending(false)
       }

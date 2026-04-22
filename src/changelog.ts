@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.19.5': [
+    'Viber send: зрозумілі повідомлення про помилки замість "CORS / Failed to fetch". Тепер видно чітко: «Клієнт недоступний у Viber» (номер не прив\'язаний), «Viber класифікував як промо» (вийшло 24h-вікно) або «Сервіс оновлюється — спробуйте через 10-15 сек» при transient timeout',
+  ],
   '0.19.4': [
     'Telegram-bot / Viber / FB / IG чати: нові повідомлення від клієнтів тепер з\'являються в реальному часі, без потреби виходити та заходити в чат. Виправлено роутинг WS new_message-події: у бізнес-чаті рефреш тепер іде на business/messages (а не TG endpoint), і бекенд шле source=telegram_bot/fb/ig/viber замість хардкодного viber',
   ],
