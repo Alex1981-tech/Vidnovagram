@@ -102,7 +102,7 @@ export function useOperatorPresence(opts: PresenceOptions): PresenceController {
     const atype = accountTypeRef.current
     if (!t || !aid || !cid) return null
     try {
-      const res = await authFetch(t, `${API_BASE}/presence/${path}/`, {
+      const res = await authFetch(`${API_BASE}/presence/${path}/`, t, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -131,7 +131,7 @@ export function useOperatorPresence(opts: PresenceOptions): PresenceController {
       const t = tokenRef.current
       if (t) {
         // Fire-and-forget — server also auto-expires in 30s.
-        authFetch(t, `${API_BASE}/presence/stop/`, {
+        authFetch(`${API_BASE}/presence/stop/`, t, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -190,7 +190,7 @@ export function useOperatorPresence(opts: PresenceOptions): PresenceController {
       const prev = previousChatRef.current
       const t = tokenRef.current
       if (!prev || !t) return
-      authFetch(t, `${API_BASE}/presence/stop/`, {
+      authFetch(`${API_BASE}/presence/stop/`, t, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

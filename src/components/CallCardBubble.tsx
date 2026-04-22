@@ -97,7 +97,7 @@ export function CallCardBubble({
     fetchedRef.current = true
     setLoading(true)
     setError('')
-    authFetch(token, `${API_BASE}/messenger/calls/${callId}/`)
+    authFetch(`${API_BASE}/messenger/calls/${callId}/`, token)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
