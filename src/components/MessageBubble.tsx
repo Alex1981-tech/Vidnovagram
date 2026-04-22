@@ -2,6 +2,7 @@ import type { Dispatch, MouseEvent, SetStateAction } from 'react'
 import { BubbleHeader } from './BubbleHeader'
 import { ReplyQuote } from './ReplyQuote'
 import { PhotoBubble } from './PhotoBubble'
+import { BubbleOrigin } from './BubbleOrigin'
 import { VoiceBubble } from './VoiceBubble'
 import { VideoNoteBubble } from './VideoNoteBubble'
 import { VideoBubble } from './VideoBubble'
@@ -47,6 +48,7 @@ interface Props {
   messages: ChatMessage[]
   selectedClient: string | null
   selectedAccount: string
+  selectedBusiness?: string
   token: string
 
   forwardMode: boolean
@@ -96,6 +98,7 @@ export function MessageBubble({
   messages,
   selectedClient,
   selectedAccount,
+  selectedBusiness = '',
   token,
   forwardMode,
   selectedMsgIds,
@@ -300,6 +303,10 @@ export function MessageBubble({
           clientInitial={clientInitial}
         />
         <MessageFooter message={m} />
+        <BubbleOrigin
+          message={m}
+          activeAccountId={selectedBusiness || selectedAccount || ''}
+        />
         <FailedStatusLabel message={m} />
       </div>
       <LabResultStrip

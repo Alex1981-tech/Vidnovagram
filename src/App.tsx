@@ -4198,6 +4198,7 @@ function App() {
                       messages={messages}
                       selectedClient={selectedClient}
                       selectedAccount={selectedAccount}
+                      selectedBusiness={selectedBusiness}
                       token={auth?.token || ''}
                       forwardMode={forwardMode}
                       selectedMsgIds={selectedMsgIds}

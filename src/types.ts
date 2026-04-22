@@ -148,6 +148,10 @@ export interface ChatMessage {
   // Viber/business link button (populated from reply_markup caption/action)
   button_text?: string
   button_url?: string
+  // Origin badge data: who sent it (sent only) + which account it went to.
+  // sent_by_name — empty for historical rows and for inbound messages.
+  sent_by_name?: string
+  account_phone?: string
 }
 
 export interface AlbumGroup {
