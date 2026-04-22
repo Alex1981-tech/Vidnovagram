@@ -65,6 +65,7 @@ import { ClientCardTab, type ClientCardData } from './components/ClientCardTab'
 import { ChatHeader } from './components/ChatHeader'
 import { ChatSearchBar } from './components/ChatSearchBar'
 import { MessageInputBar } from './components/MessageInputBar'
+import { PresenceBar } from './components/PresenceBar'
 import { TodoListModal } from './components/TodoListModal'
 import { AttachedPreview } from './components/AttachedPreview'
 import { ReplyEditBar } from './components/ReplyEditBar'
@@ -98,6 +99,7 @@ import {
 } from './components/ConfirmDialogs'
 import { useToasts } from './hooks/useToasts'
 import { useMessengerWebSocket } from './hooks/useMessengerWebSocket'
+import { useOperatorPresence } from './hooks/useOperatorPresence'
 import { useWaSettings } from './hooks/useWaSettings'
 import { useNotificationSound } from './hooks/useNotificationSound'
 import { useContacts } from './hooks/useContacts'
@@ -3046,22 +3048,8 @@ function App() {
     }, delay)
   }, [])
 
-  const sendTypingIndicator = useCallback(() => {
-    if (!selectedClient || !selectedAccount) return
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    const now = Date.now()
-    const key = `${selectedAccount}:${selectedClient}`
-    if (now - (typingSentAtRef.current[key] || 0) < 3000) return
-    typingSentAtRef.current[key] = now
-    try {
-      ws.send(JSON.stringify({
-        type: 'typing',
-        account_id: selectedAccount,
-        client_id: selectedClient,
-      }))
-    } catch {}
-  }, [selectedAccount, selectedClient])
+  // sendTypingIndicator moved below useMessengerWebSocket + useOperatorPresence
+  // so `wsRef` and `operatorPresence` are already in scope.
 
   useEffect(() => {
     return () => {
@@ -3133,6 +3121,29 @@ function App() {
 
   // addToastRef updated below after addToast is defined
 
+  // Operator presence (who's viewing / typing) — scoped by (account, client).
+  // Business chats (Viber/FB/IG/TG-bot) use selectedBusiness; TG/WA use
+  // selectedAccount. The hook handles heartbeat, typing throttle, and WS
+  // event application — App just has to feed it the current chat coords.
+  const presenceAccountId = selectedBusiness || selectedAccount || null
+  const presenceAccountType: 'tg' | 'wa' | 'business' = selectedBusiness
+    ? 'business'
+    : (accounts.find(a => a.id === selectedAccount)?.type === 'whatsapp' ? 'wa' : 'tg')
+  // VG token format: "{user_id}:{timestamp}:{hmac[:32]}" — see calls/authentication.py
+  const selfUserId = (() => {
+    const tok = auth?.token
+    if (!tok) return null
+    const uid = parseInt(tok.split(':')[0] || '', 10)
+    return Number.isFinite(uid) ? uid : null
+  })()
+  const operatorPresence = useOperatorPresence({
+    token: auth?.token,
+    accountId: presenceAccountId,
+    clientId: selectedClient,
+    accountType: presenceAccountType,
+    selfUserId,
+  })
+
   // Messenger WebSocket ownership lives entirely in useMessengerWebSocket().
   const { wsRef, wsLastActivityRef } = useMessengerWebSocket({
     token: auth?.token,
@@ -3146,6 +3157,7 @@ function App() {
     setMessages,
     setTypingIndicators,
     setPeerPresence,
+    applyOperatorPresence: operatorPresence.applyWsUpdate,
     setNewChatClient,
     setAccountUnreads,
     scheduleMessagesRefresh,
@@ -3167,6 +3179,27 @@ function App() {
     },
   })
 
+
+  // Typing indicator — relies on both operatorPresence (cross-messenger presence)
+  // and wsRef (TG-native typing action). Declared here so both are in scope.
+  const sendTypingIndicator = useCallback(() => {
+    // Operator presence throttles internally.
+    operatorPresence.notifyTyping()
+    if (!selectedClient || !selectedAccount) return
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const now = Date.now()
+    const key = `${selectedAccount}:${selectedClient}`
+    if (now - (typingSentAtRef.current[key] || 0) < 3000) return
+    typingSentAtRef.current[key] = now
+    try {
+      ws.send(JSON.stringify({
+        type: 'typing',
+        account_id: selectedAccount,
+        client_id: selectedClient,
+      }))
+    } catch {}
+  }, [selectedAccount, selectedClient, wsRef, operatorPresence])
 
   const addToastViaRef = useCallback<(...args: Parameters<typeof addToast>) => void>((...args) => {
     addToastRef.current(...args)
@@ -3889,6 +3922,9 @@ function App() {
               isUnread={isUnread}
               photoMap={photoMap}
               peerPresence={peerPresence}
+              operatorPresenceByChat={operatorPresence.presenceByChat}
+              operatorPresenceAccountId={presenceAccountId}
+              selfUserId={selfUserId}
               draftsRef={draftsRef}
               loadMoreContacts={loadMoreContacts}
               loadingMoreContacts={loadingMoreContacts}
@@ -4407,6 +4443,8 @@ function App() {
                       </button>
                     </div>
                   )}
+                  {/* Operator presence bar (who else is viewing/typing) */}
+                  <PresenceBar viewers={operatorPresence.activeViewers} />
                   {/* Reply / Edit bar */}
                   <ReplyEditBar
                     editingMsg={editingMsg}

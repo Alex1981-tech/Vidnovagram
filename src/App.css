@@ -4671,6 +4671,69 @@ body {
 .settings-notif-icon-btn:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); opacity: 0.8; }
 .settings-notif-icon-btn.on { color: var(--primary); opacity: 1; }
 
+/* Presence bar (above message input + contact list badge) */
+.presence-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--primary) 15%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: presence-fade-in 0.18s ease-out;
+}
+@keyframes presence-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.presence-icon {
+  display: inline-flex;
+  color: var(--primary);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.presence-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presence-name { font-weight: 600; color: var(--foreground); }
+.presence-verb { color: var(--muted-foreground); }
+.presence-dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 2px;
+}
+.presence-dots span {
+  opacity: 0.3;
+  animation: presence-dot 1.2s infinite;
+}
+.presence-dots span:nth-child(2) { animation-delay: 0.15s; }
+.presence-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes presence-dot {
+  0%, 60%, 100% { opacity: 0.3; }
+  30% { opacity: 1; }
+}
+
+/* Badge in contact list — small dot showing someone else is viewing */
+.contact-presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--background), 0 0 6px color-mix(in oklch, var(--primary) 60%, transparent);
+  flex-shrink: 0;
+  animation: presence-pulse 2s ease-in-out infinite;
+}
+.contact-presence-dot.typing {
+  background: oklch(75% 0.15 145); /* soft green — more "active" */
+  box-shadow: 0 0 0 2px var(--background), 0 0 6px oklch(75% 0.15 145 / 0.6);
+}
+@keyframes presence-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
 /* Group label (Business / Social) */
 .settings-notif-group-label {
   font-size: 0.7rem;

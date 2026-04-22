@@ -38,6 +38,11 @@ export interface MessengerWebSocketOptions {
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
   setTypingIndicators: React.Dispatch<React.SetStateAction<Record<string, number>>>
   setPeerPresence: React.Dispatch<React.SetStateAction<Record<number, { status: string; was_online: number | null }>>>
+  /**
+   * Called on `operator_presence` frames. The hook just forwards the
+   * payload — state ownership lives in useOperatorPresence.
+   */
+  applyOperatorPresence?: (accountId: string, clientId: string, viewers: Array<{ user_id: number; name: string; is_typing: boolean }>) => void
   setNewChatClient: React.Dispatch<React.SetStateAction<{ client_id: string; phone: string; full_name: string } | null>>
   setAccountUnreads: React.Dispatch<React.SetStateAction<Record<string, number>>>
 
@@ -412,6 +417,14 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
                 ...prev,
                 [peerId]: { status: data.status || 'unknown', was_online: data.was_online || null },
               }))
+            }
+          }
+
+          if (data.type === 'operator_presence' && o.applyOperatorPresence) {
+            const aid = data.account_id
+            const cid = data.client_id
+            if (aid && cid) {
+              o.applyOperatorPresence(aid, cid, Array.isArray(data.viewers) ? data.viewers : [])
             }
           }
 

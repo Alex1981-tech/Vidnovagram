@@ -23,6 +23,12 @@ interface UsernameSearchResult {
   username?: string
 }
 
+interface OperatorPresenceViewer {
+  user_id: number
+  name: string
+  is_typing: boolean
+}
+
 interface Props {
   hasMessengerAccounts: boolean
   contacts: Contact[]
@@ -31,6 +37,12 @@ interface Props {
   isUnread: (contact: Contact) => boolean
   photoMap: Record<string, string>
   peerPresence: Record<string | number, PeerPresenceEntry>
+  /** Viewers per chat keyed by `"{accountId}:{clientId}"`. */
+  operatorPresenceByChat?: Record<string, OperatorPresenceViewer[]>
+  /** Currently-active account ID used to scope the presence lookup for each row. */
+  operatorPresenceAccountId?: string | null
+  /** Self user_id — filtered out of presence display. */
+  selfUserId?: number | null
   draftsRef: MutableRefObject<Map<string, DraftEntry>>
   loadMoreContacts: () => void
   loadingMoreContacts: boolean
@@ -51,6 +63,9 @@ export function ContactList({
   isUnread,
   photoMap,
   peerPresence,
+  operatorPresenceByChat,
+  operatorPresenceAccountId,
+  selfUserId,
   draftsRef,
   loadMoreContacts,
   loadingMoreContacts,
@@ -78,6 +93,22 @@ export function ContactList({
               const display = resolveContactDisplay(c)
               const peerId = c.tg_peer_id
               const isOnline = peerId != null && peerPresence[peerId]?.status === 'online'
+              // Presence from other operators — drives the pulsing dot
+              // next to the avatar. Lookup uses the current active account
+              // because the backend keys presence by (account, client).
+              const opKey = operatorPresenceAccountId
+                ? `${operatorPresenceAccountId}:${c.client_id}`
+                : null
+              const rawViewers = opKey ? operatorPresenceByChat?.[opKey] : undefined
+              const otherViewers = (rawViewers || []).filter(v =>
+                selfUserId ? v.user_id !== selfUserId : true
+              )
+              const hasOtherViewer = otherViewers.length > 0
+              const hasOtherTyping = otherViewers.some(v => v.is_typing)
+              const viewersLabel = hasOtherViewer
+                ? otherViewers.map(v => v.name || '—').join(', ') +
+                  (hasOtherTyping ? ' набирає' : ' дивиться в чаті')
+                : ''
               return (
                 <div
                   key={c.client_id}
@@ -89,6 +120,12 @@ export function ContactList({
                       ? <img src={photoMap[c.client_id]} className="avatar-img" alt="" />
                       : <UserIcon />}
                     {isOnline && <span className="online-dot" />}
+                    {hasOtherViewer && (
+                      <span
+                        className={`contact-presence-dot${hasOtherTyping ? ' typing' : ''}`}
+                        title={viewersLabel}
+                      />
+                    )}
                   </div>
                   <div className="contact-body">
                     <div className="contact-row">
