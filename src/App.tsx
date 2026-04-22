@@ -49,6 +49,7 @@ import { AddContactModal } from './components/AddContactModal'
 import { ViberNewChatModal } from './components/ViberNewChatModal'
 import { ViberButtonMessageModal } from './components/ViberButtonMessageModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { AccountPickerModal, type PickableAccount } from './components/AccountPickerModal'
 import { AccountRail } from './components/AccountRail'
 import { ActiveAccountCard } from './components/ActiveAccountCard'
 import { SidebarSearch } from './components/SidebarSearch'
@@ -386,6 +387,7 @@ function App() {
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const selectedClientRef = useRef<string | null>(null)
   const contactsRef = useRef<Contact[]>([])
+  const selectClientRef = useRef<(clientId: string, opts?: { accountId?: string; jumpToMessageId?: string | number }) => void>(() => {})
   const messagesRef = useRef<ChatMessage[]>([])
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const linkSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -495,6 +497,7 @@ function App() {
   const [showViberNewChat, setShowViberNewChat] = useState(false)
   const [bizButtonOpen, setBizButtonOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<{ title?: string; message: string; resolve: (ok: boolean) => void } | null>(null)
+  const [accountPicker, setAccountPicker] = useState<{ clientId: string; clientName: string; accounts: PickableAccount[] } | null>(null)
   const askConfirm = useCallback((title: string | undefined, message: string) => {
     return new Promise<boolean>((resolve) => {
       setConfirmState({ title, message, resolve })
@@ -3346,6 +3349,38 @@ function App() {
   }, [auth?.token, selectedAccount, selectedClient, chatContact, messages, hasOlderMessages])
 
   // Select client handler
+  // When a contact has conversations in multiple channels (TG, WA, Viber,
+  // FB, IG, TG-bot), asking the server which accounts actually hold history
+  // lets us either jump straight in (single channel) or prompt the operator.
+  const openClientWithPicker = useCallback(async (clientId: string) => {
+    if (!auth?.token || !clientId) return
+    // If an account is already active in the sidebar, respect it — operator
+    // is intentionally scoped to one channel.
+    if (selectedAccount || selectedBusiness) {
+      selectClientRef.current(clientId)
+      return
+    }
+    try {
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/accounts/`, auth.token)
+      if (!resp.ok) {
+        selectClientRef.current(clientId)
+        return
+      }
+      const data = await resp.json() as { accounts: PickableAccount[] }
+      const accs = data.accounts || []
+      if (accs.length <= 1) {
+        const accountId = accs[0]?.id
+        selectClientRef.current(clientId, accountId ? { accountId } : undefined)
+        return
+      }
+      const contact = contactsRef.current?.find(c => c.client_id === clientId)
+      const clientName = contact ? (contact.full_name || contact.phone || 'Клієнт') : 'Клієнт'
+      setAccountPicker({ clientId, clientName, accounts: accs })
+    } catch {
+      selectClientRef.current(clientId)
+    }
+  }, [auth?.token, selectedAccount, selectedBusiness])
+
   const selectClient = useCallback((clientId: string, opts?: { accountId?: string; jumpToMessageId?: string | number }) => {
     // Save scroll position for current client
     if (selectedClient && chatContainerRef.current) {
@@ -3400,6 +3435,7 @@ function App() {
     if (!contact?.is_employee) loadClientCard(clientId)
     telemetry.trackChatView(clientId, selectedAccount)
   }, [loadMessages, loadClientNotes, loadClientCard, selectedAccount, selectedClient, messageText])
+  useEffect(() => { selectClientRef.current = selectClient }, [selectClient])
 
   useEffect(() => {
     const pending = pendingSearchOpenRef.current
@@ -3833,22 +3869,17 @@ function App() {
               usernameSearchResult={usernameSearchResult}
               globalSearchResults={globalSearchResults}
               onSelectClient={(clientId, opts) => {
-                // In "All accounts" mode, make sure we land on a concrete TG/WA
-                // account so loadMessages has context. Global search already
-                // returns account_id; we only fall back when it's missing.
-                let finalOpts = opts
-                if (!finalOpts?.accountId) {
-                  const hit = globalSearchResults.find(r => String(r.id) === String(finalOpts?.jumpToMessageId))
-                  const source = hit?.source
-                  const fallbackAccountId = hit?.account_id
-                    || accounts.find(a => a.type === (source === 'whatsapp' ? 'whatsapp' : 'telegram'))?.id
-                    || accounts[0]?.id
-                  finalOpts = { ...(finalOpts || {}), accountId: fallbackAccountId || undefined }
-                }
-                selectClient(clientId, finalOpts)
                 setSearch('')
                 setGlobalSearchResults([])
                 setUsernameSearchResult(null)
+                // Global search → opts carries account_id directly.
+                if (opts?.accountId) {
+                  selectClient(clientId, opts)
+                  return
+                }
+                // Plain contact click → ask backend which channels hold
+                // history and either auto-open (single) or show a picker.
+                openClientWithPicker(clientId)
               }}
               onUsernameSelect={async (result) => {
                 const peerId = result.peer_id
@@ -4795,6 +4826,28 @@ function App() {
             <button className="tpl-btn-secondary" onClick={() => setLabAssignMsg(null)}>Скасувати</button>
           </div>
         </div>
+      )}
+
+      {/* Account picker — shown when a contact has conversations in multiple channels */}
+      {accountPicker && (
+        <AccountPickerModal
+          open={true}
+          clientName={accountPicker.clientName}
+          accounts={accountPicker.accounts}
+          onPick={(acc) => {
+            const businessSources = new Set(['viber', 'viber_turbosms', 'telegram_bot', 'facebook_messenger', 'instagram_direct', 'whatsapp_cloud'])
+            if (businessSources.has(acc.source)) {
+              setSelectedAccount('')
+              setSelectedBusiness(acc.id)
+              setSelectedClient(accountPicker.clientId)
+            } else {
+              setSelectedBusiness('')
+              selectClientRef.current(accountPicker.clientId, { accountId: acc.id })
+            }
+            setAccountPicker(null)
+          }}
+          onClose={() => setAccountPicker(null)}
+        />
       )}
 
       {/* Generic confirm (replaces window.confirm which Tauri v2 blocks) */}

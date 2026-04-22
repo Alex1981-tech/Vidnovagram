@@ -1085,6 +1085,46 @@ body {
   background: oklch(0.22 0.03 150 / 0.6);
   color: oklch(0.9 0.02 150);
 }
+/* Account picker modal (shown when contact exists in multiple channels) */
+.account-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.account-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--background);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.account-picker-item:hover {
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+.account-picker-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.account-picker-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.account-picker-label { font-weight: 500; font-size: 0.875rem; }
+.account-picker-phone { font-size: 0.75rem; color: var(--muted-foreground); }
+.account-picker-date { font-size: 0.7rem; color: var(--muted-foreground); flex-shrink: 0; }
+
 /* Origin badge under the bubble (operator + account) */
 .msg-bubble-origin {
   display: flex;
