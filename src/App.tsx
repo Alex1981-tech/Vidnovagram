@@ -73,6 +73,7 @@ import { DateSeparator } from './components/DateSeparator'
 import { NoteItem } from './components/NoteItem'
 import { AlbumBubble } from './components/AlbumBubble'
 import { CallCardBubble } from './components/CallCardBubble'
+import { LeadCard } from './components/LeadCard'
 import { ServiceMessage } from './components/ServiceMessage'
 import { MessageBubble } from './components/MessageBubble'
 import { MessageContextMenu } from './components/MessageContextMenu'
@@ -4292,6 +4293,12 @@ function App() {
                         token={auth?.token}
                       />
                     )
+                  }
+                  /* Consultation lead — patient mini-app's «Запис на
+                     консультацію» flow. Shows a counter + accept
+                     button while open, accepted-by footer after. */
+                  if (m.lead) {
+                    return <LeadCard key={m.id} message={m} token={auth?.token} />
                   }
                   /* Service messages — centered text, no bubble */
                   if (m.is_service) {

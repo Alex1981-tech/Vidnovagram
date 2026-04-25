@@ -152,6 +152,20 @@ export interface ChatMessage {
   // sent_by_name — empty for historical rows and for inbound messages.
   sent_by_name?: string
   account_phone?: string
+  // Consultation lead companion record (mini-app «Запис на консультацію»).
+  // Drives the lead-card UI: live counter while open, accept button,
+  // accepted-by footer once taken.
+  lead?: {
+    id: string
+    status: 'open' | 'accepted' | 'closed'
+    contact_methods: string[]
+    wishes: string
+    created_at: string | null
+    accepted_at: string | null
+    accepted_by_id: number | null
+    accepted_by_name: string
+    seconds_to_accept: number | null
+  } | null
 }
 
 export interface AlbumGroup {

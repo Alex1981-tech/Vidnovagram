@@ -8779,3 +8779,75 @@ body {
   from { opacity: 1; }
   to { opacity: 0; }
 }
+
+/* --- Consultation lead card -----------------------------------------
+   Sits in the message stream like a regular bubble but with a stronger
+   coloured border so leads are impossible to miss. Three colour states
+   match the wait stage (open / stale / accepted). */
+.lead-card-wrapper {
+  display: flex;
+  justify-content: flex-start;
+  margin: 6px 0;
+}
+.lead-card {
+  max-width: 92%;
+  border: 2px solid;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 6px oklch(0% 0 0 / 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lead-card.open    { background: oklch(95% 0.07 80 / 0.7);  border-color: oklch(75% 0.15 80); }
+.lead-card.stale   { background: oklch(94% 0.08 25 / 0.7);  border-color: oklch(70% 0.18 25); }
+.lead-card.accepted { background: oklch(94% 0.08 150 / 0.55); border-color: oklch(70% 0.15 150); }
+.lead-card-head {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 13px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.lead-card-icon { font-size: 18px; }
+.lead-card-title { flex: 1; min-width: 0; }
+.lead-card-timer {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  text-transform: none; letter-spacing: 0;
+}
+.lead-card-timer.open    { background: oklch(80% 0.13 80 / 0.25);  color: oklch(40% 0.13 80); }
+.lead-card-timer.stale   { background: oklch(75% 0.16 25 / 0.25);  color: oklch(40% 0.16 25); }
+.lead-card-timer.accepted { background: oklch(75% 0.13 150 / 0.25); color: oklch(35% 0.13 150); }
+.lead-card-methods { display: flex; flex-wrap: wrap; gap: 6px; }
+.lead-card-method {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  background: oklch(100% 0 0 / 0.55);
+  border: 1px solid oklch(0% 0 0 / 0.08);
+  font-weight: 500;
+}
+.lead-card-wishes {
+  font-size: 13px; line-height: 1.4;
+  background: oklch(100% 0 0 / 0.4);
+  border-radius: 8px; padding: 8px 10px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.lead-card-foot { display: flex; align-items: center; }
+.lead-card-accept-btn {
+  width: 100%; padding: 8px 12px;
+  border-radius: 10px; border: none; cursor: pointer;
+  background: oklch(60% 0.16 150); color: white;
+  font-weight: 600; font-size: 13px;
+  transition: background-color 120ms;
+}
+.lead-card-accept-btn:hover:not(:disabled) { background: oklch(54% 0.17 150); }
+.lead-card-accept-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.lead-card-accepted { font-size: 13px; color: oklch(38% 0.13 150); font-weight: 500; }
+.lead-card-speed    { font-size: 12px; opacity: 0.7; font-weight: 400; }
+.lead-card-error    { font-size: 12px; color: oklch(50% 0.18 25); margin-top: 4px; }
+.dark .lead-card.open      { background: oklch(28% 0.06 80 / 0.55);  }
+.dark .lead-card.stale     { background: oklch(28% 0.07 25 / 0.55);  }
+.dark .lead-card.accepted  { background: oklch(28% 0.06 150 / 0.50); }
+.dark .lead-card-method     { background: oklch(20% 0 0 / 0.5); border-color: oklch(100% 0 0 / 0.08); }
+.dark .lead-card-wishes     { background: oklch(20% 0 0 / 0.4); }
+.dark .lead-card-accepted   { color: oklch(80% 0.15 150); }
