@@ -43,13 +43,22 @@ export function LeadCard({ message, token }: { message: ChatMessage; token?: str
     return () => clearInterval(t)
   }, [lead.status])
 
-  const created = lead.created_at ? new Date(lead.created_at).getTime() : Date.now()
-  const elapsed = lead.status === 'accepted' && lead.seconds_to_accept != null
-    ? lead.seconds_to_accept
-    : Math.max(0, Math.floor((now - created) / 1000))
-
+  // Server hands us the moment the response-time clock should start —
+  // created_at during work hours, next 09:00 Kyiv otherwise. Until that
+  // instant the card shows «Очікує робочого часу» instead of a counter
+  // so operators don't get penalised for after-hours requests.
+  const workStart = lead.work_started_at
+    ? new Date(lead.work_started_at).getTime()
+    : (lead.created_at ? new Date(lead.created_at).getTime() : Date.now())
   const isAccepted = lead.status === 'accepted'
-  const isStale = !isAccepted && elapsed > 60
+  const isWaitingForWork = !isAccepted && now < workStart
+  const elapsed = isAccepted && lead.seconds_to_accept != null
+    ? lead.seconds_to_accept
+    : isWaitingForWork
+      ? 0
+      : Math.max(0, Math.floor((now - workStart) / 1000))
+
+  const isStale = !isAccepted && !isWaitingForWork && elapsed > 60
 
   const onAccept = async () => {
     if (accepting || isAccepted || !token) return
@@ -73,12 +82,12 @@ export function LeadCard({ message, token }: { message: ChatMessage; token?: str
 
   return (
     <div className="lead-card-wrapper">
-      <div className={`lead-card ${isAccepted ? 'accepted' : isStale ? 'stale' : 'open'}`}>
+      <div className={`lead-card ${isAccepted ? 'accepted' : isStale ? 'stale' : isWaitingForWork ? 'waiting' : 'open'}`}>
         <div className="lead-card-head">
           <span className="lead-card-icon" aria-hidden>✨</span>
           <span className="lead-card-title">Запит на консультацію</span>
-          <span className={`lead-card-timer ${isAccepted ? 'accepted' : isStale ? 'stale' : 'open'}`}>
-            ⏱ {fmtDuration(elapsed)}
+          <span className={`lead-card-timer ${isAccepted ? 'accepted' : isStale ? 'stale' : isWaitingForWork ? 'waiting' : 'open'}`}>
+            {isWaitingForWork ? '🌙 Поза робочим часом' : `⏱ ${fmtDuration(elapsed)}`}
           </span>
         </div>
 

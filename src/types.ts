@@ -165,6 +165,10 @@ export interface ChatMessage {
     accepted_by_id: number | null
     accepted_by_name: string
     seconds_to_accept: number | null
+    // Effective start of the response-time clock — created_at if filed
+    // during work hours (09:00–19:00 Kyiv), otherwise the next 09:00.
+    // The card shows «Очікує робочого часу» until this moment passes.
+    work_started_at?: string | null
   } | null
 }
 

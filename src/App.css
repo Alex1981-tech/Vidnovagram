@@ -8801,6 +8801,7 @@ body {
 }
 .lead-card.open    { background: oklch(95% 0.07 80 / 0.7);  border-color: oklch(75% 0.15 80); }
 .lead-card.stale   { background: oklch(94% 0.08 25 / 0.7);  border-color: oklch(70% 0.18 25); }
+.lead-card.waiting { background: oklch(94% 0.04 270 / 0.7); border-color: oklch(70% 0.10 270); }
 .lead-card.accepted { background: oklch(94% 0.08 150 / 0.55); border-color: oklch(70% 0.15 150); }
 .lead-card-head {
   display: flex; align-items: center; gap: 8px;
@@ -8815,9 +8816,13 @@ body {
   font-variant-numeric: tabular-nums; font-weight: 600;
   text-transform: none; letter-spacing: 0;
 }
-.lead-card-timer.open    { background: oklch(80% 0.13 80 / 0.25);  color: oklch(40% 0.13 80); }
-.lead-card-timer.stale   { background: oklch(75% 0.16 25 / 0.25);  color: oklch(40% 0.16 25); }
-.lead-card-timer.accepted { background: oklch(75% 0.13 150 / 0.25); color: oklch(35% 0.13 150); }
+/* Solid pills with white text — the previous translucent versions blended
+   into the matching card background (yellow-on-yellow / red-on-red) and
+   the timer was practically invisible. */
+.lead-card-timer.open     { background: oklch(58% 0.18 80);  color: white; }
+.lead-card-timer.stale    { background: oklch(55% 0.21 25);  color: white; }
+.lead-card-timer.waiting  { background: oklch(55% 0.12 270); color: white; }
+.lead-card-timer.accepted { background: oklch(50% 0.16 150); color: white; }
 .lead-card-methods { display: flex; flex-wrap: wrap; gap: 6px; }
 .lead-card-method {
   display: inline-flex; align-items: center; gap: 4px;
@@ -8847,6 +8852,7 @@ body {
 .lead-card-error    { font-size: 12px; color: oklch(50% 0.18 25); margin-top: 4px; }
 .dark .lead-card.open      { background: oklch(28% 0.06 80 / 0.55);  }
 .dark .lead-card.stale     { background: oklch(28% 0.07 25 / 0.55);  }
+.dark .lead-card.waiting   { background: oklch(28% 0.04 270 / 0.55); }
 .dark .lead-card.accepted  { background: oklch(28% 0.06 150 / 0.50); }
 .dark .lead-card-method     { background: oklch(20% 0 0 / 0.5); border-color: oklch(100% 0 0 / 0.08); }
 .dark .lead-card-wishes     { background: oklch(20% 0 0 / 0.4); }
