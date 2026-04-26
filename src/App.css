@@ -8823,6 +8823,13 @@ body {
 .lead-card-timer.stale    { background: oklch(55% 0.21 25);  color: white; }
 .lead-card-timer.waiting  { background: oklch(55% 0.12 270); color: white; }
 .lead-card-timer.accepted { background: oklch(50% 0.16 150); color: white; }
+.lead-card-source {
+  font-size: 12px; line-height: 1.35;
+  color: oklch(38% 0 0); opacity: 0.85;
+  padding: 4px 0;
+  word-break: break-word;
+}
+.dark .lead-card-source { color: oklch(85% 0 0); }
 .lead-card-methods { display: flex; flex-wrap: wrap; gap: 6px; }
 .lead-card-method {
   display: inline-flex; align-items: center; gap: 4px;

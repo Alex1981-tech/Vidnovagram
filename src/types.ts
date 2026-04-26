@@ -169,6 +169,10 @@ export interface ChatMessage {
     // during work hours (09:00–19:00 Kyiv), otherwise the next 09:00.
     // The card shows «Очікує робочого часу» until this moment passes.
     work_started_at?: string | null
+    // Where the patient tapped «Запис на консультацію» — Home page or a
+    // specific article. Helps operator route the lead to the right
+    // doctor/department.
+    source?: string
   } | null
 }
 

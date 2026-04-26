@@ -91,6 +91,12 @@ export function LeadCard({ message, token }: { message: ChatMessage; token?: str
           </span>
         </div>
 
+        {lead.source && (
+          <div className="lead-card-source" title={lead.source}>
+            <span aria-hidden>📄</span> Джерело: <strong>{lead.source}</strong>
+          </div>
+        )}
+
         {lead.contact_methods.length > 0 && (
           <div className="lead-card-methods">
             {lead.contact_methods.map(m => {
