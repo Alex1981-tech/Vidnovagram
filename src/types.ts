@@ -166,9 +166,15 @@ export interface ChatMessage {
     accepted_by_name: string
     seconds_to_accept: number | null
     // Effective start of the response-time clock — created_at if filed
-    // during work hours (09:00–19:00 Kyiv), otherwise the next 09:00.
-    // The card shows «Очікує робочого часу» until this moment passes.
+    // during work hours, otherwise the next work-window opening.
+    // Legacy field kept for back-compat with cached payloads.
     work_started_at?: string | null
+    // Modern timer fields — front uses `work_seconds_elapsed` as the
+    // base value, ticks +1/sec while `in_work_hours_now` is true.
+    // When the clinic is closed it freezes and shows resume time.
+    work_seconds_elapsed?: number
+    in_work_hours_now?: boolean
+    next_work_resume_at?: string | null
     // Where the patient tapped «Запис на консультацію» — Home page or a
     // specific article. Helps operator route the lead to the right
     // doctor/department.

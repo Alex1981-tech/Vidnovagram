@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../types'
 import { API_BASE } from '../constants'
 import { authFetch } from '../utils/authFetch'
@@ -25,6 +25,25 @@ function fmtDuration(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
+/** Compact human-readable resume label — «о 09:00» if today, «завтра 09:00»
+ *  if next day, otherwise full date so the operator immediately sees how
+ *  long the clock will stay frozen (e.g. holiday spanning a week). */
+function fmtResume(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const now = new Date()
+    const sameDay = d.toDateString() === now.toDateString()
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+    const isTomorrow = d.toDateString() === tomorrow.toDateString()
+    const time = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
+    if (sameDay)    return `о ${time}`
+    if (isTomorrow) return `завтра ${time}`
+    return d.toLocaleDateString('uk-UA', { day: '2-digit', month: 'short' }) + ` ${time}`
+  } catch {
+    return ''
+  }
+}
+
 export function LeadCard({ message, token }: { message: ChatMessage; token?: string }) {
   // Local copy so the optimistic-accept render is instant — backend
   // round-trip + WS broadcast catches up shortly after.
@@ -36,29 +55,36 @@ export function LeadCard({ message, token }: { message: ChatMessage; token?: str
   // Sync from props if the upstream message updates (WS push or refetch).
   useEffect(() => { setLead(message.lead!) }, [message.lead])
 
-  // Tick the counter every second while the lead is still open.
+  // Tick the counter every second while the lead is open AND the clinic
+  // is currently within working hours. Outside hours the timer is frozen
+  // server-side, no need to re-render.
   useEffect(() => {
-    if (lead.status !== 'open') return
+    if (lead.status !== 'open' || !lead.in_work_hours_now) return
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
-  }, [lead.status])
+  }, [lead.status, lead.in_work_hours_now])
 
-  // Server hands us the moment the response-time clock should start —
-  // created_at during work hours, next 09:00 Kyiv otherwise. Until that
-  // instant the card shows «Очікує робочого часу» instead of a counter
-  // so operators don't get penalised for after-hours requests.
-  const workStart = lead.work_started_at
-    ? new Date(lead.work_started_at).getTime()
-    : (lead.created_at ? new Date(lead.created_at).getTime() : Date.now())
+  // Server-driven work-time math: it's already counted only the seconds
+  // that fell inside the clinic's open windows. While `in_work_hours_now`
+  // is true the front ticks +1/sec on top of `work_seconds_elapsed`;
+  // otherwise the timer freezes and we surface `next_work_resume_at`
+  // («Очікує робочого часу до hh:mm»).
   const isAccepted = lead.status === 'accepted'
-  const isWaitingForWork = !isAccepted && now < workStart
+  const inHoursNow = !!lead.in_work_hours_now
+  const baseSeconds = lead.work_seconds_elapsed ?? 0
+  // Snapshot the wall-clock moment we received `baseSeconds` so we can
+  // compute the live tick locally without re-fetching every second.
+  const baseAtRef = useRef<number>(Date.now())
+  useEffect(() => { baseAtRef.current = Date.now() }, [baseSeconds])
+  const tickedSeconds = inHoursNow
+    ? Math.max(0, Math.floor((now - baseAtRef.current) / 1000))
+    : 0
+
   const elapsed = isAccepted && lead.seconds_to_accept != null
     ? lead.seconds_to_accept
-    : isWaitingForWork
-      ? 0
-      : Math.max(0, Math.floor((now - workStart) / 1000))
-
-  const isStale = !isAccepted && !isWaitingForWork && elapsed > 60
+    : baseSeconds + tickedSeconds
+  const isWaitingForWork = !isAccepted && !inHoursNow
+  const isStale = !isAccepted && inHoursNow && elapsed > 60
 
   const onAccept = async () => {
     if (accepting || isAccepted || !token) return
@@ -87,7 +113,9 @@ export function LeadCard({ message, token }: { message: ChatMessage; token?: str
           <span className="lead-card-icon" aria-hidden>✨</span>
           <span className="lead-card-title">Запит на консультацію</span>
           <span className={`lead-card-timer ${isAccepted ? 'accepted' : isStale ? 'stale' : isWaitingForWork ? 'waiting' : 'open'}`}>
-            {isWaitingForWork ? '🌙 Поза робочим часом' : `⏱ ${fmtDuration(elapsed)}`}
+            {isWaitingForWork
+              ? `🌙 ${lead.next_work_resume_at ? `Старт ${fmtResume(lead.next_work_resume_at)}` : 'Поза робочим часом'}`
+              : `⏱ ${fmtDuration(elapsed)}`}
           </span>
         </div>
 
