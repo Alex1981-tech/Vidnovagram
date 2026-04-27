@@ -329,3 +329,59 @@ export interface GmailEmail {
   attachments: { filename: string; mime_type: string; size: number; attachment_id: string }[]
   labels: string[]
 }
+
+// ── Meta (Facebook Messenger + Instagram Direct) ────────────────────────
+
+export type MetaPlatform = 'facebook' | 'instagram'
+export type MetaAccountStatus = 'connected' | 'disconnected' | 'needs_reauth' | 'needs_review' | 'error'
+
+export interface MetaAccount {
+  id: string
+  label: string
+  platform: MetaPlatform
+  username: string                  // page name або @ig_handle
+  meta_user_id: string              // FB Page ID або IG Business ID
+  fb_page_id?: string               // для платформи instagram — пов'язана FB Page
+  business_account_id?: string
+  brand_group: string               // "Vidnova Clinic", "Happy Dental", "Other", ...
+  status: MetaAccountStatus
+  error_message?: string
+  avatar_url?: string
+  last_message_at?: string | null
+  last_sync_at?: string | null
+  created_at: string
+}
+
+export type MetaDirection = 'incoming' | 'outgoing'
+export type MetaMediaType =
+  | ''
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'file'
+  | 'sticker'
+  | 'story_reply'
+  | 'story_mention'
+  | 'share'
+  | 'template'
+
+export interface MetaMessage {
+  id: string
+  account_id: string
+  meta_message_id: string
+  sender_id: string
+  sender_name: string
+  direction: MetaDirection
+  text: string
+  media_type: MetaMediaType
+  media_url: string
+  media_file: string
+  thumbnail: string
+  reply_to_msg_id: string
+  reply_to_text: string
+  reactions: Record<string, unknown>
+  is_deleted: boolean
+  is_edited: boolean
+  message_date: string
+  client_id: string | null
+}
