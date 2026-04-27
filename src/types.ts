@@ -390,4 +390,6 @@ export interface MetaMessage {
   is_edited: boolean
   message_date: string
   client_id: string | null
+  delivered_at?: string | null
+  read_at?: string | null
 }

@@ -9310,3 +9310,32 @@ body {
   font-size: 12px;
 }
 .dark .meta-24h-warning-row select { background: oklch(0% 0 0 / 0.4); color: oklch(96% 0 0); }
+
+/* ── Meta: ticks (✓ / ✓✓) and emoji picker ─────────────────────── */
+.meta-msg-tick { font-family: monospace; font-size: 11px; }
+.meta-tick-sent      { opacity: 0.7; }
+.meta-tick-delivered { opacity: 0.85; }
+.meta-tick-read      { color: oklch(75% 0.18 240); opacity: 1; font-weight: 600; }
+.meta-msg.sent .meta-tick-read { color: oklch(85% 0.16 240); }
+
+.meta-emoji-picker {
+  position: absolute;
+  bottom: 60px; left: 50px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px oklch(0% 0 0 / 0.25);
+  padding: 8px;
+  display: grid; grid-template-columns: repeat(10, 28px); gap: 2px;
+  z-index: 20;
+}
+.dark .meta-emoji-picker { background: oklch(20% 0 0 / 0.95); }
+.meta-emoji-btn {
+  width: 28px; height: 28px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 18px; line-height: 1;
+  border-radius: 6px;
+}
+.meta-emoji-btn:hover { background: oklch(0% 0 0 / 0.06); }
+.dark .meta-emoji-btn:hover { background: oklch(100% 0 0 / 0.08); }
+.meta-chat-input { position: relative; }

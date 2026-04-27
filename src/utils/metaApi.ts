@@ -96,6 +96,25 @@ export interface MetaUploadResponse {
   stored_path?: string
 }
 
+/** Send a sender_action: mark_seen / typing_on / typing_off (FB only). */
+export async function metaSenderAction(
+  token: string,
+  account_id: string,
+  recipient_id: string,
+  action: 'mark_seen' | 'typing_on' | 'typing_off',
+): Promise<void> {
+  const r = await authFetch(`${API_BASE}/meta/sender-action/${account_id}/`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient_id, action }),
+  })
+  if (!r.ok) {
+    // Don't throw — sender actions are best-effort UX glue, not critical.
+    // eslint-disable-next-line no-console
+    console.warn('metaSenderAction', action, r.status)
+  }
+}
+
 /** Upload a file for Meta DM. Backend picks the right strategy:
  *    FB Messenger → calls Meta's message_attachments → returns
  *      { attachment_id, media_type }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment } from '../utils/metaApi'
+import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment, metaSenderAction } from '../utils/metaApi'
 import { useMetaContacts } from '../hooks/useMetaContacts'
 import { FacebookIcon, InstagramIcon, SendIcon } from './icons'
 import type { MetaAccount, MetaMessage } from '../types'
@@ -57,6 +57,7 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
   const [messageTag, setMessageTag] = useState<
     '' | 'HUMAN_AGENT' | 'ACCOUNT_UPDATE' | 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE'
   >('HUMAN_AGENT')
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const isInactive = account.status !== 'connected'
 
@@ -107,7 +108,7 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
   useEffect(() => {
     type MetaEventDetail = {
       account_id?: string
-      meta_event?: 'meta.message' | 'meta.delete' | 'meta.edit' | 'meta.reaction'
+      meta_event?: 'meta.message' | 'meta.delete' | 'meta.edit' | 'meta.reaction' | 'meta.delivery' | 'meta.read'
       message?: MetaMessage
     }
     const handler = (ev: Event) => {
@@ -148,6 +149,32 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
             ? { ...x, reactions: m.reactions || x.reactions }
             : x,
         ))
+        return
+      }
+      // Delivery / read receipts arrive without a `message` payload —
+      // backend just sends sender_id + watermark. Patch every outgoing
+      // bubble for that sender that's older than the watermark.
+      type ReceiptDetail = MetaEventDetail & {
+        sender_id?: string
+        watermark?: number | string
+      }
+      if (evType === 'meta.delivery' || evType === 'meta.read') {
+        const d2 = detail as ReceiptDetail
+        if (!d2.sender_id) return
+        const wmDate = d2.watermark
+          ? new Date(typeof d2.watermark === 'number'
+              ? (d2.watermark > 1e12 ? d2.watermark : d2.watermark * 1000)
+              : d2.watermark)
+          : new Date()
+        const nowIso = new Date().toISOString()
+        setMessages(prev => prev.map(x => {
+          if (x.direction !== 'outgoing') return x
+          if (new Date(x.message_date) > wmDate) return x
+          if (evType === 'meta.read') {
+            return { ...x, delivered_at: x.delivered_at || nowIso, read_at: x.read_at || nowIso }
+          }
+          return { ...x, delivered_at: x.delivered_at || nowIso }
+        }))
         return
       }
     }
@@ -251,6 +278,30 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [replyTo])
+
+  // Mark conversation as seen when we open it (FB only).
+  useEffect(() => {
+    if (!selectedSender || account.platform !== 'facebook' || isInactive) return
+    metaSenderAction(token, account.id, selectedSender, 'mark_seen').catch(() => {})
+  }, [selectedSender, account.id, account.platform, isInactive, token])
+
+  // typing_on while operator is typing — debounce stop after 4s of idle.
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastTypingSentRef = useRef(0)
+  useEffect(() => {
+    if (!selectedSender || !draft || account.platform !== 'facebook' || isInactive) return
+    const now = Date.now()
+    if (now - lastTypingSentRef.current > 3000) {
+      lastTypingSentRef.current = now
+      metaSenderAction(token, account.id, selectedSender, 'typing_on').catch(() => {})
+    }
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    typingTimerRef.current = setTimeout(() => {
+      metaSenderAction(token, account.id, selectedSender, 'typing_off').catch(() => {})
+      lastTypingSentRef.current = 0
+    }, 4000)
+    return () => { if (typingTimerRef.current) clearTimeout(typingTimerRef.current) }
+  }, [draft, selectedSender, account.id, account.platform, isInactive, token])
 
   return (
     <div className="meta-panel">
@@ -378,6 +429,17 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
                       <div className="meta-msg-meta">
                         {m.is_edited && <span className="meta-msg-edited">edit · </span>}
                         {fmtTime(m.message_date)}
+                        {m.direction === 'outgoing' && (
+                          <span className="meta-msg-tick" title={
+                            m.read_at ? `Прочитано ${fmtTime(m.read_at)}` :
+                            m.delivered_at ? `Доставлено ${fmtTime(m.delivered_at)}` : 'Надіслано'
+                          }>
+                            {' '}
+                            {m.read_at ? <span className="meta-tick-read">✓✓</span> :
+                             m.delivered_at ? <span className="meta-tick-delivered">✓✓</span> :
+                             <span className="meta-tick-sent">✓</span>}
+                          </span>
+                        )}
                       </div>
                       {Object.keys(reactionCounts).length > 0 && (
                         <div className="meta-msg-reactions">
@@ -448,6 +510,32 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               >
                 📎
               </button>
+              <button
+                onClick={() => setEmojiOpen(v => !v)}
+                disabled={isInactive}
+                className="meta-attach-btn"
+                title="Emoji"
+              >
+                😀
+              </button>
+              {emojiOpen && (
+                <div className="meta-emoji-picker">
+                  {[
+                    '😀','😁','😂','🤣','😊','😍','😘','😎','🤔','🙏',
+                    '👍','👎','👌','💪','🙌','👏','🤝','✌️','🤞','💔',
+                    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💯',
+                    '🌸','🌺','🌷','💐','🌹','🌟','✨','💫','🌙','☀️',
+                    '🦷','💉','💊','🏥','🩺','📅','📞','✅','❌','⚠️',
+                  ].map(e => (
+                    <button
+                      key={e}
+                      type="button"
+                      className="meta-emoji-btn"
+                      onClick={() => { setDraft(d => d + e); setEmojiOpen(false) }}
+                    >{e}</button>
+                  ))}
+                </div>
+              )}
               <textarea
                 value={draft}
                 onChange={e => setDraft(e.target.value)}
