@@ -213,6 +213,7 @@ export function ContactProfileModal({
                 clientId={selectedClient}
                 accountId={accountId}
                 token={token}
+                contactProfileId={(chatContact as unknown as { contact_profile_id?: string | null }).contact_profile_id || null}
               />
             )}
             {isGroup && peerId != null && accountId && (

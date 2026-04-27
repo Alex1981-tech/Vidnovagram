@@ -8864,3 +8864,93 @@ body {
 .dark .lead-card-method     { background: oklch(20% 0 0 / 0.5); border-color: oklch(100% 0 0 / 0.08); }
 .dark .lead-card-wishes     { background: oklch(20% 0 0 / 0.4); }
 .dark .lead-card-accepted   { color: oklch(80% 0.15 150); }
+
+/* ── ContactProfileEditor (CRM card) ─────────────────────────────── */
+.cp-editor {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: oklch(100% 0 0 / 0.5);
+  border: 1px solid oklch(0% 0 0 / 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+.cp-editor-loading, .cp-editor-error { padding: 8px; opacity: 0.7; }
+.cp-editor-error { color: oklch(50% 0.18 25); }
+.cp-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.cp-editor-title { font-weight: 600; opacity: 0.85; }
+.cp-editor-stage {
+  font-size: 11px; padding: 2px 10px; border-radius: 999px; font-weight: 600;
+}
+.cp-field { display: flex; flex-direction: column; gap: 4px; }
+.cp-field > span { font-size: 11px; opacity: 0.6; font-weight: 500; }
+.cp-field input,
+.cp-field select,
+.cp-field textarea {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid oklch(0% 0 0 / 0.12);
+  background: oklch(100% 0 0 / 0.7);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 120ms;
+}
+.cp-field input:focus,
+.cp-field select:focus,
+.cp-field textarea:focus {
+  border-color: oklch(60% 0.15 280);
+}
+.cp-field textarea { resize: vertical; min-height: 60px; }
+.cp-row { display: flex; gap: 6px; align-items: stretch; }
+.cp-row > input { flex: 1; }
+.cp-btn-sm {
+  padding: 0 12px;
+  border-radius: 8px; border: 1px solid oklch(0% 0 0 / 0.15);
+  background: oklch(100% 0 0 / 0.6); cursor: pointer;
+  font-size: 12px;
+}
+.cp-btn-sm:hover:not(:disabled) { background: oklch(98% 0 0 / 0.85); }
+.cp-btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-btn-primary {
+  padding: 8px 16px;
+  border-radius: 10px; border: none; cursor: pointer;
+  background: oklch(55% 0.15 280); color: white; font-weight: 600;
+  font-size: 13px; transition: background-color 120ms;
+}
+.cp-btn-primary:hover:not(:disabled) { background: oklch(48% 0.16 280); }
+.cp-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-merge-banner {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: oklch(95% 0.06 80 / 0.6);
+  border: 1px solid oklch(60% 0.14 80 / 0.4);
+  display: flex; flex-direction: column; gap: 8px; font-size: 12px;
+}
+.cp-merge-actions { display: flex; gap: 6px; }
+.cp-linked-banner {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: oklch(94% 0.07 150 / 0.55);
+  border: 1px solid oklch(60% 0.14 150 / 0.35);
+  font-size: 12px; color: oklch(38% 0.13 150);
+}
+.cp-footer {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 4px;
+}
+.cp-saved { color: oklch(50% 0.16 150); font-size: 12px; font-weight: 500; }
+.cp-error { color: oklch(50% 0.18 25); font-size: 11px; }
+.cp-footer-meta { font-size: 10px; opacity: 0.5; margin-top: 2px; }
+.dark .cp-editor { background: oklch(20% 0 0 / 0.5); border-color: oklch(100% 0 0 / 0.08); }
+.dark .cp-field input,
+.dark .cp-field select,
+.dark .cp-field textarea { background: oklch(15% 0 0 / 0.6); border-color: oklch(100% 0 0 / 0.1); color: oklch(96% 0 0); }
+.dark .cp-btn-sm { background: oklch(25% 0 0 / 0.6); border-color: oklch(100% 0 0 / 0.1); color: oklch(96% 0 0); }
+.dark .cp-btn-sm:hover:not(:disabled) { background: oklch(30% 0 0 / 0.7); }
+.dark .cp-merge-banner { background: oklch(28% 0.06 80 / 0.55); border-color: oklch(50% 0.14 80 / 0.4); }
+.dark .cp-linked-banner { background: oklch(28% 0.07 150 / 0.5); border-color: oklch(50% 0.14 150 / 0.4); color: oklch(80% 0.15 150); }

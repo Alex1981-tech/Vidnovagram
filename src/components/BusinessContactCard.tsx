@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { API_BASE } from '../constants'
+import { ContactProfileEditor } from './ContactProfileEditor'
 
 interface Appointment {
   id: string
@@ -32,6 +33,7 @@ interface Props {
   accountId: string
   token: string
   open: boolean
+  contactProfileId?: string | null
 }
 
 function formatDate(iso: string): string {
@@ -49,12 +51,17 @@ function formatHryvnia(n: number): string {
   return new Intl.NumberFormat('uk-UA').format(n) + ' грн'
 }
 
-export function BusinessContactCard({ clientId, accountId, token, open }: Props) {
+export function BusinessContactCard({ clientId, accountId, token, open, contactProfileId }: Props) {
   const [profile, setProfile] = useState<BusinessProfile | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // Skip the BusinessProfile fetch for synthetic "bot:<uuid>" client_ids —
+  // those have no Client row, the legacy endpoint would 404. The CRM
+  // editor below still renders against the supplied contactProfileId.
+  const isSynthetic = typeof clientId === 'string' && clientId.startsWith('bot:')
+
   useEffect(() => {
-    if (!open || !clientId || !accountId || !token) return
+    if (!open || !clientId || !accountId || !token || isSynthetic) return
     let cancelled = false
     setLoading(true)
     const url = `${API_BASE}/business/contacts/${clientId}/profile/?account_id=${accountId}`
@@ -67,9 +74,12 @@ export function BusinessContactCard({ clientId, accountId, token, open }: Props)
       .catch(() => { /* silent */ })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [open, clientId, accountId, token])
+  }, [open, clientId, accountId, token, isSynthetic])
 
-  if (!open || (!profile && !loading)) return null
+  if (!open) return null
+  // For unlinked profiles we show only the CRM editor — no business
+  // appointments / bonuses to fetch since there's no Client.
+  if (!profile && !loading && !contactProfileId) return null
 
   return (
     <div className="business-profile">
@@ -122,6 +132,12 @@ export function BusinessContactCard({ clientId, accountId, token, open }: Props)
             </div>
           )}
         </>
+      )}
+      {contactProfileId && (
+        <ContactProfileEditor
+          contactProfileId={contactProfileId}
+          token={token}
+        />
       )}
     </div>
   )
