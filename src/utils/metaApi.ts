@@ -10,7 +10,7 @@ export interface MetaAccountsResponse {
 }
 
 export async function fetchMetaAccounts(token: string): Promise<MetaAccount[]> {
-  const r = await authFetch(`${API_BASE}/api/meta/accounts/`, token)
+  const r = await authFetch(`${API_BASE}/meta/accounts/`, token)
   if (!r.ok) throw new Error(`fetchMetaAccounts ${r.status}`)
   const data: MetaAccountsResponse = await r.json()
   return data.results || []
@@ -38,7 +38,7 @@ export async function fetchMetaMessages(
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
   })
-  const r = await authFetch(`${API_BASE}/api/meta/messages/?${qs.toString()}`, token)
+  const r = await authFetch(`${API_BASE}/meta/messages/?${qs.toString()}`, token)
   if (!r.ok) throw new Error(`fetchMetaMessages ${r.status}`)
   return r.json()
 }
@@ -61,7 +61,7 @@ export async function sendMetaMessage(
   account_id: string,
   body: SendMetaMessageBody,
 ): Promise<SendMetaMessageResponse> {
-  const r = await authFetch(`${API_BASE}/api/meta/send/${account_id}/`, token, {
+  const r = await authFetch(`${API_BASE}/meta/send/${account_id}/`, token, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

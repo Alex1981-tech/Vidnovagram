@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.10': [
+    'Виправлено: 11 FB + 7 IG акаунтів реально з\'являються у rail (попередня версія мала помилку 404 у URL до бекенду).',
+  ],
   '0.20.9': [
     'Meta (FB Messenger + Instagram Direct): додано перші 18 акаунтів у rail (11 FB Pages + 7 IG бізнесу) з брендовою прив\'язкою — Vidnova Clinic, Happy Dental, Dental HUB, Світлана Работенко, Юрій Сидорчук, Іван Нікулін, Dr. Kononihin тощо.',
     'Іконки FB/IG у boczi rail з brand-кольорами при активному виборі. Клік показує тост (UI чату прийде у наступному оновленні).',
