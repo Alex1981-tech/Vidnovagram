@@ -58,6 +58,14 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     '' | 'HUMAN_AGENT' | 'ACCOUNT_UPDATE' | 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE'
   >('HUMAN_AGENT')
   const [emojiOpen, setEmojiOpen] = useState(false)
+  // Voice recorder state — MediaRecorder over webm/opus, the
+  // browser-native format. Meta accepts ogg/webm/mp4 audio in
+  // attachment.payload, so no transcoding step needed.
+  const [recording, setRecording] = useState(false)
+  const [recordSec, setRecordSec] = useState(0)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recordChunksRef = useRef<BlobPart[]>([])
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const isInactive = account.status !== 'connected'
 
@@ -247,6 +255,51 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
       setSending(false)
     }
   }, [selectedSender, sending, token, account.id, refreshContacts])
+
+  // ── Voice recording ──────────────────────────────────────────────
+  const startRecording = useCallback(async () => {
+    if (recording || isInactive || !selectedSender) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Pick a MIME the browser actually has. webm/opus is universal in
+      // Chromium-based Tauri; Safari uses mp4 audio. Both fly with Meta.
+      const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+      const mime = candidates.find(c => MediaRecorder.isTypeSupported(c)) || ''
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      recordChunksRef.current = []
+      rec.ondataavailable = e => { if (e.data.size > 0) recordChunksRef.current.push(e.data) }
+      rec.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(recordChunksRef.current, { type: mime || 'audio/webm' })
+        const ext = mime.includes('mp4') ? '.m4a' : (mime.includes('ogg') ? '.ogg' : '.webm')
+        const file = new File([blob], `voice_${Date.now()}${ext}`, { type: mime || 'audio/webm' })
+        await sendMedia(file)   // re-uses existing media-send path → uploadMetaAttachment + send
+      }
+      rec.start()
+      recorderRef.current = rec
+      setRecording(true)
+      setRecordSec(0)
+      recordTimerRef.current = setInterval(() => setRecordSec(s => s + 1), 1000)
+    } catch (e) {
+      setSendError(`Не вдалося отримати мікрофон: ${(e as Error).message}`)
+    }
+  }, [recording, isInactive, selectedSender, sendMedia])
+
+  const stopRecording = useCallback((cancel = false) => {
+    if (!recording) return
+    const rec = recorderRef.current
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current)
+    setRecording(false)
+    setRecordSec(0)
+    if (!rec) return
+    if (cancel) {
+      // discard chunks before stop fires sendMedia
+      rec.ondataavailable = null
+      rec.onstop = () => rec.stream.getTracks().forEach(t => t.stop())
+    }
+    try { rec.stop() } catch { /* already stopped */ }
+    recorderRef.current = null
+  }, [recording])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -518,6 +571,31 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               >
                 😀
               </button>
+              {!recording ? (
+                <button
+                  onClick={startRecording}
+                  disabled={sending || isInactive}
+                  className="meta-attach-btn"
+                  title="Голосове повідомлення"
+                >🎤</button>
+              ) : (
+                <div className="meta-recorder">
+                  <span className="meta-recorder-dot" />
+                  <span className="meta-recorder-time">
+                    {Math.floor(recordSec/60)}:{String(recordSec%60).padStart(2,'0')}
+                  </span>
+                  <button
+                    onClick={() => stopRecording(true)}
+                    className="meta-attach-btn"
+                    title="Скасувати"
+                  >✕</button>
+                  <button
+                    onClick={() => stopRecording(false)}
+                    className="meta-send-btn"
+                    title="Надіслати голосове"
+                  ><SendIcon /></button>
+                </div>
+              )}
               {emojiOpen && (
                 <div className="meta-emoji-picker">
                   {[

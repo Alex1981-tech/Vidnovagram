@@ -9339,3 +9339,27 @@ body {
 .meta-emoji-btn:hover { background: oklch(0% 0 0 / 0.06); }
 .dark .meta-emoji-btn:hover { background: oklch(100% 0 0 / 0.08); }
 .meta-chat-input { position: relative; }
+
+/* ── Meta voice recorder UI ─────────────────────────────────────── */
+.meta-recorder {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: 999px;
+  background: oklch(95% 0.05 25 / 0.5);
+  margin: 0 4px;
+}
+.dark .meta-recorder { background: oklch(28% 0.06 25 / 0.5); }
+.meta-recorder-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: oklch(60% 0.18 25);
+  animation: meta-rec-pulse 1.2s infinite ease-in-out;
+}
+@keyframes meta-rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.8); }
+}
+.meta-recorder-time {
+  font-family: ui-monospace, monospace; font-size: 13px; min-width: 38px;
+  color: oklch(50% 0.18 25);
+}
+.dark .meta-recorder-time { color: oklch(80% 0.16 25); }
