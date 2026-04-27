@@ -80,6 +80,11 @@ export interface SendMetaMessageBody {
   media_type?: string
   attachment_id?: string         // from prior /api/meta/upload/
   reply_to_msg_id?: string
+  // FB Messenger only: required when last incoming is older than 24h.
+  // One of HUMAN_AGENT / ACCOUNT_UPDATE / CONFIRMED_EVENT_UPDATE /
+  // POST_PURCHASE_UPDATE. Backend defaults to messaging_type=RESPONSE
+  // when not set, which only works inside the 24h window.
+  message_tag?: 'HUMAN_AGENT' | 'ACCOUNT_UPDATE' | 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE'
 }
 
 export interface MetaUploadResponse {

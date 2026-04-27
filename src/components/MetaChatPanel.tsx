@@ -49,6 +49,14 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  // Reply-to: when set, the next outgoing carries reply_to_msg_id and
+  // shows a quoted preview block above the textarea. ESC clears it.
+  const [replyTo, setReplyTo] = useState<MetaMessage | null>(null)
+  // 24h-rule message_tag dropdown — only shown when last24hOk=false on
+  // FB. RESPONSE is the implicit default when this is null.
+  const [messageTag, setMessageTag] = useState<
+    '' | 'HUMAN_AGENT' | 'ACCOUNT_UPDATE' | 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE'
+  >('HUMAN_AGENT')
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const isInactive = account.status !== 'connected'
 
@@ -147,26 +155,38 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     return () => window.removeEventListener('vidnova:meta_event', handler)
   }, [account.id, selectedSender, refreshContacts])
 
+  // last24hOk computed below; we read messages.last_incoming_age once
+  // here too so send-effects can decide if we need a tag. Keep this
+  // in sync with the useMemo lower in the file.
+  const last24hOkRef = useRef(true)
+
   const send = useCallback(async () => {
     const text = draft.trim()
     if (!text || !selectedSender || sending) return
     setSending(true)
     setSendError(null)
     try {
-      const r = await sendMetaMessage(token, account.id, {
+      const body: import('../utils/metaApi').SendMetaMessageBody = {
         recipient_id: selectedSender,
         text,
-      })
+      }
+      if (replyTo) body.reply_to_msg_id = replyTo.meta_message_id
+      // FB only: outside the 24h window, attach the manager-chosen tag.
+      if (account.platform === 'facebook' && !last24hOkRef.current && messageTag) {
+        body.message_tag = messageTag
+      }
+      const r = await sendMetaMessage(token, account.id, body)
       // Optimistic: append the returned message
       setMessages(prev => [...prev, r.message])
       setDraft('')
+      setReplyTo(null)
       refreshContacts()
     } catch (e) {
       setSendError((e as Error).message)
     } finally {
       setSending(false)
     }
-  }, [draft, selectedSender, sending, token, account.id, refreshContacts])
+  }, [draft, selectedSender, sending, token, account.id, account.platform, refreshContacts, replyTo, messageTag])
 
   // Media send (FB only — IG attachment upload is unsupported by Meta).
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -212,12 +232,23 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
   )
 
   // 24h rule for Meta DMs — outgoing messages outside the 24h window
-  // since the last incoming need a message_tag (not implemented yet).
+  // since the last incoming need a message_tag (manager picks one).
   const last24hOk = useMemo(() => {
     const lastIncoming = [...messages].reverse().find(m => m.direction === 'incoming')
     if (!lastIncoming) return false
     return Date.now() - new Date(lastIncoming.message_date).getTime() < 24 * 60 * 60 * 1000
   }, [messages])
+  // Mirror into a ref so send() reads the latest value without
+  // becoming part of its dependency closure.
+  useEffect(() => { last24hOkRef.current = last24hOk }, [last24hOk])
+
+  // ESC clears reply-to selection.
+  useEffect(() => {
+    if (!replyTo) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setReplyTo(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [replyTo])
 
   return (
     <div className="meta-panel">
@@ -301,33 +332,96 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               {!messagesLoading && messages.length === 0 && (
                 <div className="meta-empty">Поки що порожньо</div>
               )}
-              {messages.map(m => (
-                <div key={m.id} className={`meta-msg ${m.direction === 'outgoing' ? 'sent' : 'received'}`}>
-                  <div className="meta-msg-bubble">
-                    {m.is_deleted ? <span className="meta-msg-deleted">Повідомлення видалено</span> : (
-                      <>
-                        {m.media_url && m.media_type === 'image' && (
-                          <img src={m.media_url} alt="" className="meta-msg-image" />
-                        )}
-                        {m.media_url && m.media_type !== 'image' && (
-                          <a href={m.media_url} target="_blank" rel="noreferrer" className="meta-msg-link">
-                            📎 {m.media_type || 'attachment'}
-                          </a>
-                        )}
-                        {m.text && <div className="meta-msg-text">{m.text}</div>}
-                      </>
-                    )}
-                    <div className="meta-msg-meta">
-                      {m.is_edited && <span className="meta-msg-edited">edit · </span>}
-                      {fmtTime(m.message_date)}
+              {messages.map(m => {
+                // Reactions arrive from Meta as { "<sender>": "love" | … }
+                // We collapse into a list of unique emojis with counts.
+                const reactionEntries = Object.values(m.reactions || {}) as string[]
+                const reactionCounts: Record<string, number> = {}
+                for (const r of reactionEntries) reactionCounts[r] = (reactionCounts[r] || 0) + 1
+                const isStoryReply = m.media_type === 'story_reply' || m.media_type === 'story_mention'
+                return (
+                  <div
+                    key={m.id}
+                    className={`meta-msg ${m.direction === 'outgoing' ? 'sent' : 'received'}`}
+                    onDoubleClick={() => setReplyTo(m)}
+                    title="Подвійний клік — відповісти"
+                  >
+                    <div className="meta-msg-bubble">
+                      {isStoryReply && (
+                        <div className="meta-story-banner">
+                          {m.media_type === 'story_reply' ? '↩ Відповідь на сторіс' : '@️ Згадка у сторіс'}
+                        </div>
+                      )}
+                      {m.reply_to_text && (
+                        <div className="meta-msg-quote">
+                          <div className="meta-msg-quote-bar" />
+                          <div className="meta-msg-quote-text">{m.reply_to_text}</div>
+                        </div>
+                      )}
+                      {m.is_deleted ? <span className="meta-msg-deleted">Повідомлення видалено</span> : (
+                        <>
+                          {m.media_url && m.media_type === 'image' && (
+                            <img src={m.media_url} alt="" className="meta-msg-image" />
+                          )}
+                          {m.media_url && m.media_type !== 'image' && !isStoryReply && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer" className="meta-msg-link">
+                              📎 {m.media_type || 'attachment'}
+                            </a>
+                          )}
+                          {m.text && <div className="meta-msg-text">{m.text}</div>}
+                        </>
+                      )}
+                      <div className="meta-msg-meta">
+                        {m.is_edited && <span className="meta-msg-edited">edit · </span>}
+                        {fmtTime(m.message_date)}
+                      </div>
+                      {Object.keys(reactionCounts).length > 0 && (
+                        <div className="meta-msg-reactions">
+                          {Object.entries(reactionCounts).map(([emoji, count]) => (
+                            <span key={emoji} className="meta-msg-reaction">
+                              {emoji}{count > 1 ? ` ${count}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             {!last24hOk && messages.length > 0 && account.platform === 'facebook' && (
               <div className="meta-24h-warning">
-                ⚠ Минуло понад 24 години від останнього повідомлення клієнта. За правилами Meta для нового вихідного потрібен <strong>message_tag</strong> (тимчасово не підтримується UI).
+                <div className="meta-24h-warning-text">
+                  ⚠ Минуло понад 24 години від останнього повідомлення клієнта. Meta вимагає <strong>message_tag</strong> для нового вихідного.
+                </div>
+                <div className="meta-24h-warning-row">
+                  <label>Тип:</label>
+                  <select
+                    value={messageTag}
+                    onChange={e => setMessageTag(e.target.value as typeof messageTag)}
+                  >
+                    <option value="HUMAN_AGENT">HUMAN_AGENT — підтримка клієнта</option>
+                    <option value="ACCOUNT_UPDATE">ACCOUNT_UPDATE — оновлення картки</option>
+                    <option value="CONFIRMED_EVENT_UPDATE">CONFIRMED_EVENT_UPDATE — нагадування про прийом</option>
+                    <option value="POST_PURCHASE_UPDATE">POST_PURCHASE_UPDATE — після оплати/прийому</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            {replyTo && (
+              <div className="meta-reply-preview">
+                <div className="meta-reply-preview-bar" />
+                <div className="meta-reply-preview-text">
+                  <div className="meta-reply-preview-label">Відповідь на:</div>
+                  <div className="meta-reply-preview-body">
+                    {replyTo.text || (replyTo.media_type ? `[${replyTo.media_type}]` : '...')}
+                  </div>
+                </div>
+                <button
+                  className="meta-reply-preview-close"
+                  onClick={() => setReplyTo(null)}
+                  title="Скасувати відповідь (Esc)"
+                >×</button>
               </div>
             )}
             <div className="meta-chat-input">
