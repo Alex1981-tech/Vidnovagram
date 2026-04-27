@@ -1157,6 +1157,32 @@ function App() {
         }
 
         // Step 2: send the message (with optional media_path + optional button).
+        // Special case for unlinked TG-bot ContactProfiles — they use
+        // their own endpoint (no Client, no BusinessMessage row, just TG
+        // Bot API). selectedClient looks like "bot:<contact_profile_uuid>".
+        if (typeof selectedClient === 'string' && selectedClient.startsWith('bot:')) {
+          const cpId = selectedClient.slice(4)
+          const r = await authFetch(
+            `${API_BASE}/contacts/${cpId}/send-bot-message/`,
+            auth.token,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            },
+          )
+          if (r.ok) {
+            setMessageText('')
+            setAttachedFiles([])
+            if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+          } else {
+            const err = await r.json().catch(() => ({ detail: r.statusText }))
+            alert(`Не вдалося надіслати: ${err.detail || r.statusText}`)
+          }
+          setSending(false)
+          return
+        }
+
         const body: Record<string, unknown> = {
           account_id: selectedBusiness,
           client_id: selectedClient,
@@ -2891,6 +2917,7 @@ function App() {
         client_id: string; account_id: string; account_label: string; phone: string;
         full_name: string; last_message: string; last_message_date: string; unread: number;
         tg_photo_url?: string; is_new_patient?: boolean; source?: string; is_employee?: boolean;
+        contact_profile_id?: string | null; is_linked?: boolean;
       }>
       const mapped: Contact[] = list.map(c => ({
         client_id: c.client_id,
@@ -2902,6 +2929,8 @@ function App() {
         is_new_patient: c.is_new_patient,
         is_employee: !!c.is_employee,
         source: (c.source || 'viber'),
+        contact_profile_id: c.contact_profile_id ?? null,
+        is_linked: c.is_linked !== false,
       } as unknown as Contact))
       setContacts(mapped)
       // Prime photoMap with business avatars so ContactList's <img src={photoMap[id]}>

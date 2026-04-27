@@ -134,6 +134,17 @@ export function ContactList({
                         {c.is_new_patient && (
                           <span className="badge-new-patient" title="Новий клієнт">🆕</span>
                         )}
+                        {c.is_linked === false && (
+                          <span
+                            className="badge-unlinked"
+                            title="Не привʼязаний — пацієнт не поділився номером"
+                            style={{
+                              fontSize: 10, padding: '1px 6px', borderRadius: 6,
+                              background: 'rgba(139,115,184,0.15)',
+                              color: '#8B73B8', marginLeft: 6, fontWeight: 500,
+                            }}
+                          >не привʼязаний</span>
+                        )}
                       </span>
                       {isUnread(c) && <span className="unread-dot" />}
                       <span className="contact-time">

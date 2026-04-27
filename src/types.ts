@@ -62,6 +62,12 @@ export interface Contact {
   // Business / bot contacts
   tg_photo_url?: string
   is_new_patient?: boolean
+  // CRM layer (Iter 3 of CRM_ContactProfile_Plan).
+  // is_linked=false means a TG-bot user who hasn't shared their phone
+  // yet — no Client row exists, only a ContactProfile. Send-message
+  // flow uses /api/contacts/{contact_profile_id}/send-bot-message/.
+  contact_profile_id?: string | null
+  is_linked?: boolean
 }
 
 export interface ChatMessage {
