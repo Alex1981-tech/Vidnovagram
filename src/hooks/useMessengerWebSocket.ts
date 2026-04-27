@@ -155,6 +155,18 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
           const o = optsRef.current
 
           if (data.type === 'new_message') {
+            // Meta (FB Messenger / IG Direct) lives in its own self-contained
+            // panel (MetaChatPanel) — broadcast via window event so it can
+            // listen without coupling to the main contact/message state.
+            // The rest of the new_message pipeline below is for TG/WA/Viber/
+            // TG-bot which DO live in the main contact list, so we exit
+            // early to avoid those side effects.
+            if ((data as { source?: string }).source === 'meta') {
+              try {
+                window.dispatchEvent(new CustomEvent('vidnova:meta_event', { detail: data }))
+              } catch { /* noop */ }
+              return
+            }
             const msg = data.message || {}
             const clientId = data.client_id
             // Business providers (Viber/FB/IG/TG-bot) broadcast business_account_id;

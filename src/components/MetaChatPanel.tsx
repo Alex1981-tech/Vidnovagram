@@ -91,18 +91,61 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     }
   }, [messages.length])
 
-  // Lightweight polling fallback (15s while focused) — until WS handler
-  // for `meta.message` lands. Pauses when document is hidden.
+  // Real-time receive — listens for window events broadcast from the
+  // shared WS connection in useMessengerWebSocket. Backend fans out the
+  // same `messenger.new_message` payload it uses for TG/WA but with
+  // `source: "meta"` and `meta_event` set; the WS hook detects it and
+  // dispatches `vidnova:meta_event` for us.
   useEffect(() => {
-    if (!selectedSender) return
-    const tick = () => {
-      if (document.visibilityState !== 'visible') return
-      loadMessages(selectedSender)
-      refreshContacts()
+    type MetaEventDetail = {
+      account_id?: string
+      meta_event?: 'meta.message' | 'meta.delete' | 'meta.edit' | 'meta.reaction'
+      message?: MetaMessage
     }
-    const id = setInterval(tick, 15000)
-    return () => clearInterval(id)
-  }, [selectedSender, loadMessages, refreshContacts])
+    const handler = (ev: Event) => {
+      const detail = (ev as CustomEvent<MetaEventDetail>).detail
+      if (!detail || detail.account_id !== account.id) return
+      const m = detail.message
+      const evType = detail.meta_event || 'meta.message'
+
+      if (evType === 'meta.message' && m) {
+        // If this conversation is open and the message belongs to it —
+        // append; otherwise just refresh the contacts list so the
+        // sidebar shows the new last_message preview + unread bump.
+        if (selectedSender && m.sender_id === selectedSender) {
+          setMessages(prev => {
+            // Skip dupe (Meta retries OK; we may also have just appended
+            // the optimistic outgoing copy ourselves).
+            if (prev.some(x => x.id === m.id || x.meta_message_id === m.meta_message_id)) return prev
+            return [...prev, m]
+          })
+        }
+        refreshContacts()
+        return
+      }
+      if (evType === 'meta.edit' && m) {
+        setMessages(prev => prev.map(x => x.meta_message_id === m.meta_message_id ? { ...x, ...m } : x))
+        return
+      }
+      if (evType === 'meta.delete' && m) {
+        setMessages(prev => prev.map(x =>
+          x.meta_message_id === m.meta_message_id ? { ...x, is_deleted: true } : x,
+        ))
+        refreshContacts()
+        return
+      }
+      if (evType === 'meta.reaction' && m) {
+        setMessages(prev => prev.map(x =>
+          x.meta_message_id === m.meta_message_id
+            ? { ...x, reactions: m.reactions || x.reactions }
+            : x,
+        ))
+        return
+      }
+    }
+    window.addEventListener('vidnova:meta_event', handler)
+    return () => window.removeEventListener('vidnova:meta_event', handler)
+  }, [account.id, selectedSender, refreshContacts])
 
   const send = useCallback(async () => {
     const text = draft.trim()
