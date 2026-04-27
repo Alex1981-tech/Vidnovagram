@@ -188,14 +188,11 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     }
   }, [draft, selectedSender, sending, token, account.id, account.platform, refreshContacts, replyTo, messageTag])
 
-  // Media send (FB only — IG attachment upload is unsupported by Meta).
+  // Media send. FB uses Meta's reusable attachment_id; IG uses a
+  // signed media_url that our backend hosts publicly for ~2h.
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sendMedia = useCallback(async (file: File) => {
     if (!selectedSender || sending) return
-    if (account.platform === 'instagram') {
-      setSendError('Instagram потребує публічного media URL — поки не підтримуємо.')
-      return
-    }
     const ct = (file.type || '').toLowerCase()
     let kind: 'image' | 'video' | 'audio' | 'file' = 'file'
     if (ct.startsWith('image/')) kind = 'image'
@@ -205,11 +202,16 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     setSendError(null)
     try {
       const upload = await uploadMetaAttachment(token, account.id, file, kind)
-      const r = await sendMetaMessage(token, account.id, {
+      // FB returned attachment_id, IG returned media_url. Backend
+      // picks the strategy by account.platform — caller just forwards.
+      const sendBody: import('../utils/metaApi').SendMetaMessageBody = {
         recipient_id: selectedSender,
-        attachment_id: upload.attachment_id,
         media_type: upload.media_type,
-      })
+      }
+      if (upload.attachment_id) sendBody.attachment_id = upload.attachment_id
+      else if (upload.media_url) sendBody.media_url = upload.media_url
+      else throw new Error('upload returned neither attachment_id nor media_url')
+      const r = await sendMetaMessage(token, account.id, sendBody)
       setMessages(prev => [...prev, r.message])
       refreshContacts()
     } catch (e) {
@@ -217,7 +219,7 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     } finally {
       setSending(false)
     }
-  }, [selectedSender, sending, token, account.id, account.platform, refreshContacts])
+  }, [selectedSender, sending, token, account.id, refreshContacts])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -438,9 +440,9 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={sending || isInactive || account.platform === 'instagram'}
+                disabled={sending || isInactive}
                 className="meta-attach-btn"
-                title={account.platform === 'instagram' ? 'Instagram не підтримує attachment_upload' : 'Прикріпити файл'}
+                title="Прикріпити файл"
               >
                 📎
               </button>

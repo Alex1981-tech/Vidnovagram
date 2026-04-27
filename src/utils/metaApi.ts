@@ -88,13 +88,22 @@ export interface SendMetaMessageBody {
 }
 
 export interface MetaUploadResponse {
-  attachment_id: string
+  // FB Messenger response carries attachment_id (Meta's reusable id).
+  attachment_id?: string
+  // IG response carries media_url (signed, public via cc.vidnova.app).
+  media_url?: string
   media_type: 'image' | 'video' | 'audio' | 'file'
+  stored_path?: string
 }
 
-/** Upload a file → reusable Meta attachment_id (FB Messenger only).
- *  IG Direct doesn't expose this API; for IG we'd hand a public
- *  media_url to sendMetaMessage instead.
+/** Upload a file for Meta DM. Backend picks the right strategy:
+ *    FB Messenger → calls Meta's message_attachments → returns
+ *      { attachment_id, media_type }
+ *    Instagram   → saves to our /media + signs URL → returns
+ *      { media_url, media_type } — Meta will fetch this URL when
+ *      we POST to /me/messages with attachment.payload.url.
+ *  Caller passes whichever field came back as the matching field on
+ *  sendMetaMessage().
  */
 export async function uploadMetaAttachment(
   token: string,
