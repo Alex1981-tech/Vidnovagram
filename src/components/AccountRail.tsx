@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { TelegramIcon, WhatsAppIcon, GmailIcon, ViberIcon, FacebookIcon, InstagramIcon, TelegramBotIcon } from './icons'
 import type { Account, ChatMessage, GmailAccount, MetaAccount } from '../types'
 
@@ -37,6 +38,34 @@ interface Props {
   currentVersion: string
 }
 
+// Persistent collapse/expand state per section. localStorage so the
+// rail remembers what the manager last left collapsed.
+const RAIL_SECTIONS_KEY = 'vg_rail_sections_v1'
+type SectionKey = 'business' | 'social' | 'social_fb' | 'social_ig' | 'messengers' | 'email'
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(RAIL_SECTIONS_KEY)
+    return raw ? JSON.parse(raw) as Record<string, boolean> : {}
+  } catch { return {} }
+}
+function saveCollapsed(state: Record<string, boolean>) {
+  try { localStorage.setItem(RAIL_SECTIONS_KEY, JSON.stringify(state)) } catch { /* noop */ }
+}
+
+function Caret({ open }: { open: boolean }) {
+  return (
+    <svg
+      className="rail-caret"
+      width="10" height="10" viewBox="0 0 16 16"
+      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    >
+      <path d="M6 4l5 4-5 4" />
+    </svg>
+  )
+}
+
 /** Narrow left rail with account icons; expands on hover to show labels. */
 export function AccountRail({
   expanded,
@@ -62,9 +91,49 @@ export function AccountRail({
   onOpenSettings,
   currentVersion,
 }: Props) {
+  // Sections start expanded by default; only sections the manager has
+  // explicitly collapsed are persisted as `true` in localStorage.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
+  useEffect(() => { saveCollapsed(collapsed) }, [collapsed])
+  const isOpen = useCallback((k: SectionKey) => !collapsed[k], [collapsed])
+  const toggle = useCallback((k: SectionKey) => setCollapsed(c => ({ ...c, [k]: !c[k] })), [])
+
+  // Split BusinessAccount by provider — keep "social" providers (FB
+  // Messenger, IG Direct from BusinessAccount) for the Соцмережі section
+  // alongside MetaAccount records. Real "business" providers (TG bot,
+  // Viber, WA Cloud) live in the Бізнес section.
   const SOCIAL_PROVIDERS = new Set(['facebook_messenger', 'instagram_direct'])
   const bizItems = businessAccounts.filter(b => !SOCIAL_PROVIDERS.has(b.provider))
-  const socialItems = businessAccounts.filter(b => SOCIAL_PROVIDERS.has(b.provider))
+  const socialBizItems = businessAccounts.filter(b => SOCIAL_PROVIDERS.has(b.provider))
+
+  // Meta accounts split by platform for FB/IG sub-sections
+  const fbMeta = metaAccounts.filter(m => m.platform === 'facebook')
+  const igMeta = metaAccounts.filter(m => m.platform === 'instagram')
+
+  // Counts that drive whether to show a section header at all
+  const hasBusiness = bizItems.length > 0
+  const hasMessengers = accounts.length > 0
+  const hasEmail = gmailAccounts.length > 0
+  const hasFB = fbMeta.length > 0 || socialBizItems.some(b => b.provider === 'facebook_messenger')
+  const hasIG = igMeta.length > 0 || socialBizItems.some(b => b.provider === 'instagram_direct')
+  const hasSocial = hasFB || hasIG
+
+  // Section header — clickable to toggle; collapsed-rail variant shows
+  // a single letter + a tiny caret so it stays a clear affordance.
+  const SectionHeader = ({ section, label, short, count }:
+    { section: SectionKey; label: string; short: string; count: number }) => (
+    <button
+      type="button"
+      className="rail-section-header"
+      onClick={() => toggle(section)}
+      title={label}
+    >
+      <Caret open={isOpen(section)} />
+      <span className="rail-section-label-text">{expanded ? label : short}</span>
+      {count > 0 && <span className="rail-section-count">{count}</span>}
+    </button>
+  )
+
   const renderBizItem = (b: BusinessAccountSummary) => (
     <button
       key={b.id}
@@ -97,6 +166,78 @@ export function AccountRail({
       )}
     </button>
   )
+
+  const renderMetaItem = (m: MetaAccount) => {
+    const Icon = m.platform === 'facebook' ? FacebookIcon : InstagramIcon
+    const iconColor = m.platform === 'facebook'
+      ? (selectedMeta === m.id ? '#1877F2' : 'currentColor')
+      : (selectedMeta === m.id ? '#E4405F' : 'currentColor')
+    const isInactive = m.status !== 'connected'
+    return (
+      <button
+        key={m.id}
+        className={`rail-item ${selectedMeta === m.id ? 'active' : ''} ${isInactive ? 'inactive' : ''}`}
+        onClick={() => onMetaClick?.(m.id)}
+        title={`${m.label}${isInactive ? ' (' + m.status + ')' : ''}`}
+      >
+        <span className="rail-item-icon">
+          <Icon size={18} color={iconColor} />
+          <span className={`rail-status ${m.status === 'connected' ? 'online' : ''}`} />
+        </span>
+        {expanded && (
+          <span className="rail-item-text">
+            <span className="rail-item-name">{m.label}</span>
+            <span className="rail-item-phone">{m.username || m.brand_group}</span>
+          </span>
+        )}
+      </button>
+    )
+  }
+
+  const renderAccount = (acc: Account) => (
+    <button
+      key={acc.id}
+      className={`rail-item ${selectedAccount === acc.id ? 'active' : ''}`}
+      onClick={() => onAccountClick(acc.id)}
+      title={`${acc.label} ${acc.phone}`}
+    >
+      <span className="rail-item-icon">
+        {acc.type === 'telegram'
+          ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
+          : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
+        }
+        {accountUnreads[acc.id] > 0 && <span className="rail-badge">{accountUnreads[acc.id] > 99 ? '99+' : accountUnreads[acc.id]}</span>}
+        <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
+      </span>
+      {expanded && (
+        <span className="rail-item-text">
+          <span className="rail-item-name">{acc.label}</span>
+          <span className="rail-item-phone">{acc.phone}</span>
+        </span>
+      )}
+    </button>
+  )
+
+  const renderGmail = (gm: GmailAccount) => (
+    <button
+      key={gm.id}
+      className={`rail-item ${selectedGmail === gm.id ? 'active' : ''}`}
+      onClick={() => onGmailClick(gm.id)}
+      title={`${gm.label} — ${gm.email}`}
+    >
+      <span className="rail-item-icon">
+        <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
+        <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
+      </span>
+      {expanded && (
+        <span className="rail-item-text">
+          <span className="rail-item-name">{gm.label}</span>
+          <span className="rail-item-phone">{gm.email}</span>
+        </span>
+      )}
+    </button>
+  )
+
   return (
     <div
       className={`account-rail ${expanded ? 'expanded' : ''}`}
@@ -105,7 +246,7 @@ export function AccountRail({
     >
       <div className="rail-accounts">
         <button
-          className={`rail-item ${!selectedAccount && !selectedBusiness ? 'active' : ''}`}
+          className={`rail-item ${!selectedAccount && !selectedBusiness && !selectedGmail && !selectedMeta ? 'active' : ''}`}
           onClick={() => { setSelectedAccount(''); setSelectedClient(null); setMessages([]) }}
           title="Усі месенджери"
         >
@@ -117,92 +258,90 @@ export function AccountRail({
           </span>
           {expanded && <span className="rail-item-label">Усі месенджери</span>}
         </button>
-        {bizItems.length > 0 && (
+
+        {/* ── Бізнес ── */}
+        {hasBusiness && (
           <>
-            <div className="rail-section-label">{expanded ? 'Бізнес' : 'Б'}</div>
-            {bizItems.map(renderBizItem)}
+            <SectionHeader section="business" label="Бізнес" short="Б" count={bizItems.length} />
+            {isOpen('business') && bizItems.map(renderBizItem)}
           </>
         )}
-        {socialItems.length > 0 && (
+
+        {/* ── Соцмережі (з підгрупами Facebook / Instagram) ── */}
+        {hasSocial && (
           <>
-            <div className="rail-section-label">{expanded ? 'Соцмережі' : 'С'}</div>
-            {socialItems.map(renderBizItem)}
+            <SectionHeader
+              section="social"
+              label="Соцмережі"
+              short="С"
+              count={fbMeta.length + igMeta.length + socialBizItems.length}
+            />
+            {isOpen('social') && (
+              <>
+                {hasFB && (
+                  <>
+                    <button
+                      type="button"
+                      className="rail-section-subheader"
+                      onClick={() => toggle('social_fb')}
+                      title="Facebook"
+                    >
+                      <Caret open={isOpen('social_fb')} />
+                      <FacebookIcon size={14} color="#1877F2" />
+                      {expanded && <span className="rail-section-label-text">Facebook</span>}
+                      <span className="rail-section-count">{fbMeta.length + socialBizItems.filter(b => b.provider === 'facebook_messenger').length}</span>
+                    </button>
+                    {isOpen('social_fb') && (
+                      <>
+                        {socialBizItems.filter(b => b.provider === 'facebook_messenger').map(renderBizItem)}
+                        {fbMeta.map(renderMetaItem)}
+                      </>
+                    )}
+                  </>
+                )}
+                {hasIG && (
+                  <>
+                    <button
+                      type="button"
+                      className="rail-section-subheader"
+                      onClick={() => toggle('social_ig')}
+                      title="Instagram"
+                    >
+                      <Caret open={isOpen('social_ig')} />
+                      <InstagramIcon size={14} color="#E4405F" />
+                      {expanded && <span className="rail-section-label-text">Instagram</span>}
+                      <span className="rail-section-count">{igMeta.length + socialBizItems.filter(b => b.provider === 'instagram_direct').length}</span>
+                    </button>
+                    {isOpen('social_ig') && (
+                      <>
+                        {socialBizItems.filter(b => b.provider === 'instagram_direct').map(renderBizItem)}
+                        {igMeta.map(renderMetaItem)}
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </>
         )}
-        {(bizItems.length > 0 || socialItems.length > 0) && (
-          <div className="rail-section-label">{expanded ? 'Месенджери' : 'М'}</div>
+
+        {/* ── Месенджери (TG/WA) ── */}
+        {hasMessengers && (
+          <>
+            <SectionHeader section="messengers" label="Месенджери" short="М" count={accounts.length} />
+            {isOpen('messengers') && accounts.map(renderAccount)}
+          </>
         )}
-        {accounts.map(acc => (
-          <button
-            key={acc.id}
-            className={`rail-item ${selectedAccount === acc.id ? 'active' : ''}`}
-            onClick={() => onAccountClick(acc.id)}
-            title={`${acc.label} ${acc.phone}`}
-          >
-            <span className="rail-item-icon">
-              {acc.type === 'telegram'
-                ? <TelegramIcon size={18} color={selectedAccount === acc.id ? '#2AABEE' : 'currentColor'} />
-                : <WhatsAppIcon size={18} color={selectedAccount === acc.id ? '#25D366' : 'currentColor'} />
-              }
-              {accountUnreads[acc.id] > 0 && <span className="rail-badge">{accountUnreads[acc.id] > 99 ? '99+' : accountUnreads[acc.id]}</span>}
-              <span className={`rail-status ${acc.status === 'active' || acc.status === 'connected' ? 'online' : ''}`} />
-            </span>
-            {expanded && (
-              <span className="rail-item-text">
-                <span className="rail-item-name">{acc.label}</span>
-                <span className="rail-item-phone">{acc.phone}</span>
-              </span>
-            )}
-          </button>
-        ))}
-        {gmailAccounts.length > 0 && <div className="rail-divider" />}
-        {gmailAccounts.map(gm => (
-          <button
-            key={gm.id}
-            className={`rail-item ${selectedGmail === gm.id ? 'active' : ''}`}
-            onClick={() => onGmailClick(gm.id)}
-            title={`${gm.label} — ${gm.email}`}
-          >
-            <span className="rail-item-icon">
-              <GmailIcon size={18} color={selectedGmail === gm.id ? '#EA4335' : 'currentColor'} />
-              <span className={`rail-status ${gm.status === 'active' ? 'online' : ''}`} />
-            </span>
-            {expanded && (
-              <span className="rail-item-text">
-                <span className="rail-item-name">{gm.label}</span>
-                <span className="rail-item-phone">{gm.email}</span>
-              </span>
-            )}
-          </button>
-        ))}
-        {metaAccounts.length > 0 && <div className="rail-divider" />}
-        {metaAccounts.map(m => {
-          const Icon = m.platform === 'facebook' ? FacebookIcon : InstagramIcon
-          const iconColor = m.platform === 'facebook'
-            ? (selectedMeta === m.id ? '#1877F2' : 'currentColor')
-            : (selectedMeta === m.id ? '#E4405F' : 'currentColor')
-          const isInactive = m.status !== 'connected'
-          return (
-            <button
-              key={m.id}
-              className={`rail-item ${selectedMeta === m.id ? 'active' : ''} ${isInactive ? 'inactive' : ''}`}
-              onClick={() => onMetaClick?.(m.id)}
-              title={`${m.label}${isInactive ? ' (' + m.status + ')' : ''}`}
-            >
-              <span className="rail-item-icon">
-                <Icon size={18} color={iconColor} />
-                <span className={`rail-status ${m.status === 'connected' ? 'online' : ''}`} />
-              </span>
-              {expanded && (
-                <span className="rail-item-text">
-                  <span className="rail-item-name">{m.label}</span>
-                  <span className="rail-item-phone">{m.username || m.brand_group}</span>
-                </span>
-              )}
-            </button>
-          )
-        })}
+
+        {/* ── Email (Gmail) ── */}
+        {hasEmail && (
+          <>
+            <SectionHeader section="email" label="Пошта" short="@" count={gmailAccounts.length} />
+            {isOpen('email') && gmailAccounts.map(renderGmail)}
+          </>
+        )}
       </div>
+
       <div className="rail-bottom">
         <button className="rail-item rail-settings-btn" onClick={onOpenSettings} title="Налаштування">
           <span className="rail-item-icon">

@@ -8954,3 +8954,50 @@ body {
 .dark .cp-btn-sm:hover:not(:disabled) { background: oklch(30% 0 0 / 0.7); }
 .dark .cp-merge-banner { background: oklch(28% 0.06 80 / 0.55); border-color: oklch(50% 0.14 80 / 0.4); }
 .dark .cp-linked-banner { background: oklch(28% 0.07 150 / 0.5); border-color: oklch(50% 0.14 150 / 0.4); color: oklch(80% 0.15 150); }
+
+/* ── AccountRail collapsible sections (Бізнес / Соцмережі / Месенджери / Пошта) ── */
+.rail-section-header,
+.rail-section-subheader {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 8px 10px 6px; margin: 4px 0 0;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--fg); opacity: 0.7;
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-top: 1px solid var(--border);
+  transition: opacity 120ms, background-color 120ms;
+}
+.rail-section-header:hover,
+.rail-section-subheader:hover { opacity: 1; background: oklch(100% 0 0 / 0.04); }
+.dark .rail-section-header:hover,
+.dark .rail-section-subheader:hover { background: oklch(100% 0 0 / 0.05); }
+.rail-section-subheader {
+  padding-left: 22px; /* indent for sub-section under Соцмережі */
+  font-size: 10px;
+  border-top: none;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-weight: 600;
+  opacity: 0.65;
+}
+.rail-section-header:first-child,
+.account-rail .rail-accounts > .rail-section-header:first-of-type { border-top: none; margin-top: 0; }
+.rail-caret { flex-shrink: 0; opacity: 0.5; transition: transform 140ms; }
+.rail-section-label-text { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-section-count {
+  font-size: 9px; padding: 1px 6px; border-radius: 999px;
+  background: oklch(0% 0 0 / 0.08); color: var(--fg);
+  opacity: 0.7; min-width: 16px; text-align: center;
+  font-weight: 700;
+}
+.dark .rail-section-count { background: oklch(100% 0 0 / 0.08); }
+/* Collapsed-rail variant — show only icon/letter+caret */
+.account-rail:not(.expanded) .rail-section-header,
+.account-rail:not(.expanded) .rail-section-subheader {
+  justify-content: center;
+  padding: 6px 4px;
+  gap: 2px;
+}
+.account-rail:not(.expanded) .rail-section-label-text { font-size: 9px; }
+.account-rail:not(.expanded) .rail-section-count { display: none; }
