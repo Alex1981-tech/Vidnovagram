@@ -81,6 +81,7 @@ import { MessageContextMenu } from './components/MessageContextMenu'
 import { ForwardModal } from './components/ForwardModal'
 import { ComposeModal } from './components/ComposeModal'
 import { ContactProfileModal } from './components/ContactProfileModal'
+import { MetaChatPanel } from './components/MetaChatPanel'
 import { LabSendModal } from './components/LabSendModal'
 import {
   CategoryAddModal,
@@ -3839,19 +3840,13 @@ function App() {
           selectedMeta={selectedMeta}
           onMetaClick={(id) => {
             setSelectedMeta(id)
-            // TODO: load Meta messages + show chat-window (next session)
-            const acc = metaAccounts.find(m => m.id === id)
-            if (acc) {
-              addToast(
-                `meta-${id}`,
-                'meta',
-                acc.platform === 'facebook' ? 'Facebook' : 'Instagram',
-                acc.label,
-                `${acc.username} (${acc.status}) — UI чату у наступному оновленні`,
-                false,
-                ''
-              )
-            }
+            // Drop other-mode selections so the rendered pane is unambiguous.
+            setSelectedAccount('')
+            setSelectedBusiness('')
+            setSelectedGmail(null)
+            setSelectedClient(null)
+            setMessages([])
+            setContacts([])
           }}
           onOpenSettings={() => setShowSettingsModal(true)}
           currentVersion={currentVersion}
@@ -4852,6 +4847,24 @@ function App() {
         onClose={() => setDeleteConfirm(null)}
         onDelete={(s) => deleteMessage(s)}
       />
+
+      {/* Meta chat overlay — covers main chat area while a Meta account
+          is selected. Self-contained (own sidebar + chat + input);
+          closing it (via onClose) clears selectedMeta and the rest of
+          the app falls back to its normal sidebar/chat layout. */}
+      {selectedMeta && auth?.token && (() => {
+        const acc = metaAccounts.find(m => m.id === selectedMeta)
+        if (!acc) return null
+        return (
+          <div className="meta-overlay">
+            <MetaChatPanel
+              account={acc}
+              token={auth.token}
+              onClose={() => setSelectedMeta('')}
+            />
+          </div>
+        )
+      })()}
 
       {/* Contact Profile Modal */}
       <ContactProfileModal
