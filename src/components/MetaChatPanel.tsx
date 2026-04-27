@@ -334,7 +334,9 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               {!messagesLoading && messages.length === 0 && (
                 <div className="meta-empty">Поки що порожньо</div>
               )}
-              {messages.map(m => {
+              {messages.filter(m =>
+                m.text || m.media_url || m.is_deleted || m.media_type
+              ).map(m => {
                 // Reactions arrive from Meta as { "<sender>": "love" | … }
                 // We collapse into a list of unique emojis with counts.
                 const reactionEntries = Object.values(m.reactions || {}) as string[]

@@ -316,7 +316,9 @@ body {
   left: 0;
   top: 0;
   bottom: 0;
-  z-index: 50;
+  /* Above .meta-overlay (z-index 90) so the hover-expand keeps working
+     when the Meta chat panel is open. */
+  z-index: 100;
   overflow: hidden;
   transition: width 0.15s ease;
 }
@@ -9195,11 +9197,14 @@ body {
 }
 .dark .meta-send-error { background: oklch(28% 0.06 25 / 0.5); }
 
-/* Meta overlay positioning — covers everything except left rail */
+/* Meta overlay positioning — sits to the right of the collapsed
+   account-rail (48px). When the rail expands on hover, its z-index
+   (100) puts it on top of the overlay so the user can switch
+   accounts without having to close the panel. */
 .meta-overlay {
   position: fixed;
   top: 0; right: 0; bottom: 0;
-  left: 60px;       /* width of collapsed account-rail */
+  left: 48px;
   z-index: 90;
   display: flex;
   background: var(--bg);
