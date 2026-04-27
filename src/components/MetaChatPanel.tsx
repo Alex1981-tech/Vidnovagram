@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { fetchMetaMessages, sendMetaMessage } from '../utils/metaApi'
+import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment } from '../utils/metaApi'
 import { useMetaContacts } from '../hooks/useMetaContacts'
 import { FacebookIcon, InstagramIcon, SendIcon } from './icons'
 import type { MetaAccount, MetaMessage } from '../types'
@@ -168,6 +168,37 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     }
   }, [draft, selectedSender, sending, token, account.id, refreshContacts])
 
+  // Media send (FB only — IG attachment upload is unsupported by Meta).
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const sendMedia = useCallback(async (file: File) => {
+    if (!selectedSender || sending) return
+    if (account.platform === 'instagram') {
+      setSendError('Instagram потребує публічного media URL — поки не підтримуємо.')
+      return
+    }
+    const ct = (file.type || '').toLowerCase()
+    let kind: 'image' | 'video' | 'audio' | 'file' = 'file'
+    if (ct.startsWith('image/')) kind = 'image'
+    else if (ct.startsWith('video/')) kind = 'video'
+    else if (ct.startsWith('audio/')) kind = 'audio'
+    setSending(true)
+    setSendError(null)
+    try {
+      const upload = await uploadMetaAttachment(token, account.id, file, kind)
+      const r = await sendMetaMessage(token, account.id, {
+        recipient_id: selectedSender,
+        attachment_id: upload.attachment_id,
+        media_type: upload.media_type,
+      })
+      setMessages(prev => [...prev, r.message])
+      refreshContacts()
+    } catch (e) {
+      setSendError((e as Error).message)
+    } finally {
+      setSending(false)
+    }
+  }, [selectedSender, sending, token, account.id, account.platform, refreshContacts])
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -300,6 +331,25 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
               </div>
             )}
             <div className="meta-chat-input">
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: 'none' }}
+                accept="image/*,video/*,audio/*,application/pdf,application/zip,.doc,.docx,.xls,.xlsx"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) sendMedia(f)
+                  e.target.value = ''
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || isInactive || account.platform === 'instagram'}
+                className="meta-attach-btn"
+                title={account.platform === 'instagram' ? 'Instagram не підтримує attachment_upload' : 'Прикріпити файл'}
+              >
+                📎
+              </button>
               <textarea
                 value={draft}
                 onChange={e => setDraft(e.target.value)}

@@ -78,7 +78,39 @@ export interface SendMetaMessageBody {
   text?: string
   media_url?: string
   media_type?: string
+  attachment_id?: string         // from prior /api/meta/upload/
   reply_to_msg_id?: string
+}
+
+export interface MetaUploadResponse {
+  attachment_id: string
+  media_type: 'image' | 'video' | 'audio' | 'file'
+}
+
+/** Upload a file → reusable Meta attachment_id (FB Messenger only).
+ *  IG Direct doesn't expose this API; for IG we'd hand a public
+ *  media_url to sendMetaMessage instead.
+ */
+export async function uploadMetaAttachment(
+  token: string,
+  account_id: string,
+  file: File,
+  media_type?: 'image' | 'video' | 'audio' | 'file',
+): Promise<MetaUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (media_type) fd.append('media_type', media_type)
+  // authFetch sets Authorization but lets the browser fill the
+  // multipart Content-Type with boundary itself.
+  const r = await authFetch(`${API_BASE}/meta/upload/${account_id}/`, token, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!r.ok) {
+    const errText = await r.text().catch(() => '')
+    throw new Error(`uploadMetaAttachment ${r.status}: ${errText.slice(0, 200)}`)
+  }
+  return r.json()
 }
 
 export interface SendMetaMessageResponse {

@@ -9204,3 +9204,16 @@ body {
   display: flex;
   background: var(--bg);
 }
+
+.meta-attach-btn {
+  width: 40px; height: 40px; align-self: center;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: oklch(94% 0 0 / 0.6); color: var(--fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  transition: background-color 120ms;
+}
+.meta-attach-btn:hover:not(:disabled) { background: oklch(88% 0 0 / 0.8); }
+.meta-attach-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.dark .meta-attach-btn { background: oklch(28% 0 0 / 0.6); }
+.dark .meta-attach-btn:hover:not(:disabled) { background: oklch(34% 0 0 / 0.8); }
