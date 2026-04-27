@@ -23,6 +23,36 @@ export interface MetaMessagesResponse {
   results: MetaMessage[]
 }
 
+// One row per distinct sender (PSID/IGSID) the operator has chatted
+// with on a given Meta account. Mirrors the shape of /business/contacts/
+// so it slots into the same VG sidebar list rendering.
+export interface MetaContactSummary {
+  client_id: string         // synthetic: "meta:<account_id>:<sender_id>"
+  sender_id: string
+  account_id: string
+  phone: string
+  full_name: string
+  linked_client_id: string | null
+  is_linked: boolean
+  last_message: string
+  last_message_date: string | null
+  last_direction: 'sent' | 'received' | ''
+  unread: number
+  source: 'meta'
+  media_type: string
+}
+
+export async function fetchMetaContacts(
+  token: string,
+  account_id: string,
+): Promise<MetaContactSummary[]> {
+  const qs = new URLSearchParams({ account_id })
+  const r = await authFetch(`${API_BASE}/meta/contacts/?${qs.toString()}`, token)
+  if (!r.ok) throw new Error(`fetchMetaContacts ${r.status}`)
+  const data = await r.json() as { contacts: MetaContactSummary[] }
+  return data.contacts || []
+}
+
 export async function fetchMetaMessages(
   token: string,
   params: {
