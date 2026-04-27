@@ -32,6 +32,7 @@ import { useTauriUpdater } from './hooks/useTauriUpdater'
 import { usePanelResize } from './hooks/usePanelResize'
 import { useWallpapers } from './hooks/useWallpapers'
 import { useGmailNotifications } from './hooks/useGmailNotifications'
+import { useMetaAccounts } from './hooks/useMetaAccounts'
 import { useAuthController } from './hooks/useAuthController'
 import { useVoipController } from './hooks/useVoipController'
 import { VoipOverlays } from './components/VoipOverlays'
@@ -570,6 +571,10 @@ function App() {
   // Gmail
   const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([])
   const [selectedGmail, setSelectedGmail] = useState<string | null>(null) // gmail account id
+
+  // Meta (FB Messenger + Instagram Direct)
+  const { accounts: metaAccounts } = useMetaAccounts(auth?.token ?? null)
+  const [selectedMeta, setSelectedMeta] = useState<string>('')
   const [gmailEmails, setGmailEmails] = useState<GmailEmail[]>([])
   const pendingGmailMsgRef = useRef<string | null>(null) // select after emails load
   const pendingToastChatRef = useRef<{ clientId: string; accountId: string; sender: string } | null>(null)
@@ -3801,6 +3806,24 @@ function App() {
           accountUnreads={accountUnreads}
           onAccountClick={handleAccountClick}
           onGmailClick={handleGmailAccountClick}
+          metaAccounts={metaAccounts}
+          selectedMeta={selectedMeta}
+          onMetaClick={(id) => {
+            setSelectedMeta(id)
+            // TODO: load Meta messages + show chat-window (next session)
+            const acc = metaAccounts.find(m => m.id === id)
+            if (acc) {
+              addToast(
+                `meta-${id}`,
+                'meta',
+                acc.platform === 'facebook' ? 'Facebook' : 'Instagram',
+                acc.label,
+                `${acc.username} (${acc.status}) — UI чату у наступному оновленні`,
+                false,
+                ''
+              )
+            }
+          }}
           onOpenSettings={() => setShowSettingsModal(true)}
           currentVersion={currentVersion}
         />

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { TelegramIcon, WhatsAppIcon, GmailIcon, ViberIcon, FacebookIcon, InstagramIcon, TelegramBotIcon } from './icons'
-import type { Account, ChatMessage, GmailAccount } from '../types'
+import type { Account, ChatMessage, GmailAccount, MetaAccount } from '../types'
 
 export interface BusinessAccountSummary {
   id: string
@@ -30,6 +30,9 @@ interface Props {
   accountUnreads: Record<string, number>
   onAccountClick: (accountId: string) => void
   onGmailClick: (accountId: string) => void
+  metaAccounts?: MetaAccount[]
+  selectedMeta?: string
+  onMetaClick?: (accountId: string) => void
   onOpenSettings: () => void
   currentVersion: string
 }
@@ -53,6 +56,9 @@ export function AccountRail({
   accountUnreads,
   onAccountClick,
   onGmailClick,
+  metaAccounts = [],
+  selectedMeta = '',
+  onMetaClick,
   onOpenSettings,
   currentVersion,
 }: Props) {
@@ -169,6 +175,33 @@ export function AccountRail({
             )}
           </button>
         ))}
+        {metaAccounts.length > 0 && <div className="rail-divider" />}
+        {metaAccounts.map(m => {
+          const Icon = m.platform === 'facebook' ? FacebookIcon : InstagramIcon
+          const iconColor = m.platform === 'facebook'
+            ? (selectedMeta === m.id ? '#1877F2' : 'currentColor')
+            : (selectedMeta === m.id ? '#E4405F' : 'currentColor')
+          const isInactive = m.status !== 'connected'
+          return (
+            <button
+              key={m.id}
+              className={`rail-item ${selectedMeta === m.id ? 'active' : ''} ${isInactive ? 'inactive' : ''}`}
+              onClick={() => onMetaClick?.(m.id)}
+              title={`${m.label}${isInactive ? ' (' + m.status + ')' : ''}`}
+            >
+              <span className="rail-item-icon">
+                <Icon size={18} color={iconColor} />
+                <span className={`rail-status ${m.status === 'connected' ? 'online' : ''}`} />
+              </span>
+              {expanded && (
+                <span className="rail-item-text">
+                  <span className="rail-item-name">{m.label}</span>
+                  <span className="rail-item-phone">{m.username || m.brand_group}</span>
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
       <div className="rail-bottom">
         <button className="rail-item rail-settings-btn" onClick={onOpenSettings} title="Налаштування">
