@@ -9189,13 +9189,49 @@ body {
 .meta-send-btn:hover:not(:disabled) { background: oklch(54% 0.16 280); }
 .meta-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .meta-send-error {
-  padding: 6px 14px;
+  padding: 8px 12px 8px 14px;
   font-size: 12px;
-  color: oklch(50% 0.18 25);
+  line-height: 1.45;
+  color: oklch(45% 0.18 25);
   background: oklch(95% 0.05 25 / 0.5);
   border-top: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
-.dark .meta-send-error { background: oklch(28% 0.06 25 / 0.5); }
+.meta-send-error-icon { font-size: 14px; line-height: 1.2; flex-shrink: 0; margin-top: 1px; }
+.meta-send-error-text { flex: 1; min-width: 0; }
+.meta-send-error-close {
+  flex-shrink: 0;
+  width: 20px; height: 20px;
+  border: none; background: transparent;
+  color: inherit; opacity: 0.6;
+  cursor: pointer; font-size: 16px; line-height: 1;
+  border-radius: 4px;
+}
+.meta-send-error-close:hover { opacity: 1; background: oklch(0% 0 0 / 0.06); }
+.dark .meta-send-error { background: oklch(28% 0.06 25 / 0.5); color: oklch(80% 0.10 25); }
+.dark .meta-send-error-close:hover { background: oklch(100% 0 0 / 0.08); }
+/* Policy-specific accent colors. The base style above is red-ish; for
+   non-blocking policies (rate-limit / 24h) we soften the look. */
+.meta-send-error-rate_limited,
+.meta-send-error-outside_24h {
+  color: oklch(45% 0.13 75);
+  background: oklch(96% 0.05 75 / 0.55);
+}
+.dark .meta-send-error-rate_limited,
+.dark .meta-send-error-outside_24h {
+  color: oklch(82% 0.10 75);
+  background: oklch(28% 0.06 75 / 0.5);
+}
+.meta-send-error-tag_unapproved {
+  color: oklch(40% 0.14 230);
+  background: oklch(95% 0.04 230 / 0.6);
+}
+.dark .meta-send-error-tag_unapproved {
+  color: oklch(80% 0.10 230);
+  background: oklch(28% 0.06 230 / 0.5);
+}
 
 /* Meta overlay — fills the space between the left rail (48px) and
    the right operator panel. CSS variable --vg-rpanel-width is set

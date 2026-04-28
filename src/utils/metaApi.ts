@@ -141,16 +141,68 @@ export async function uploadMetaAttachment(
     method: 'POST',
     body: fd,
   })
-  if (!r.ok) {
-    const errText = await r.text().catch(() => '')
-    throw new Error(`uploadMetaAttachment ${r.status}: ${errText.slice(0, 200)}`)
-  }
+  if (!r.ok) throw await _parseMetaError(r, 'uploadMetaAttachment')
   return r.json()
 }
 
 export interface SendMetaMessageResponse {
   sent: boolean
   message: MetaMessage
+}
+
+/** Structured error from /api/meta/send and /api/meta/upload.
+ *  Backend categorizes Meta failures into stable `policy` codes the
+ *  composer can switch on (e.g. show a "switch to TG" hint when the
+ *  24h window is closed instead of dumping a raw fb_error blob).
+ */
+export type MetaPolicy =
+  | 'outside_24h'
+  | 'tag_unapproved'
+  | 'permissions'
+  | 'invalid_recipient'
+  | 'rate_limited'
+  | 'token'
+  | 'unknown'
+
+export class MetaSendError extends Error {
+  policy: MetaPolicy
+  status: number
+  fb_code?: number | null
+  fb_subcode?: number | null
+  raw?: unknown
+
+  constructor(
+    message: string,
+    policy: MetaPolicy,
+    status: number,
+    fb_code?: number | null,
+    fb_subcode?: number | null,
+    raw?: unknown,
+  ) {
+    super(message)
+    this.name = 'MetaSendError'
+    this.policy = policy
+    this.status = status
+    this.fb_code = fb_code
+    this.fb_subcode = fb_subcode
+    this.raw = raw
+  }
+}
+
+async function _parseMetaError(r: Response, fallbackLabel: string): Promise<MetaSendError> {
+  let body: { error?: string; policy?: MetaPolicy; fb_code?: number | null; fb_subcode?: number | null; fb_error?: unknown } = {}
+  try { body = await r.json() } catch {
+    const txt = await r.text().catch(() => '')
+    return new MetaSendError(`${fallbackLabel} ${r.status}: ${txt.slice(0, 200)}`, 'unknown', r.status)
+  }
+  return new MetaSendError(
+    body.error || `${fallbackLabel} ${r.status}`,
+    body.policy || 'unknown',
+    r.status,
+    body.fb_code,
+    body.fb_subcode,
+    body.fb_error,
+  )
 }
 
 export async function sendMetaMessage(
@@ -163,10 +215,7 @@ export async function sendMetaMessage(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!r.ok) {
-    const errText = await r.text().catch(() => '')
-    throw new Error(`sendMetaMessage ${r.status}: ${errText.slice(0, 200)}`)
-  }
+  if (!r.ok) throw await _parseMetaError(r, 'sendMetaMessage')
   return r.json()
 }
 

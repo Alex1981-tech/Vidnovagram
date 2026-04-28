@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment, metaSenderAction } from '../utils/metaApi'
+import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment, metaSenderAction, MetaSendError, type MetaPolicy } from '../utils/metaApi'
 import { useMetaContacts } from '../hooks/useMetaContacts'
 import { FacebookIcon, InstagramIcon, SendIcon } from './icons'
 import type { MetaAccount, MetaMessage } from '../types'
@@ -72,7 +72,7 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [sendError, setSendError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<{ text: string; policy: MetaPolicy } | null>(null)
   // Reply-to: when set, the next outgoing carries reply_to_msg_id and
   // shows a quoted preview block above the textarea. ESC clears it.
   const [replyTo, setReplyTo] = useState<MetaMessage | null>(null)
@@ -245,7 +245,11 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
       setReplyTo(null)
       refreshContacts()
     } catch (e) {
-      setSendError((e as Error).message)
+      if (e instanceof MetaSendError) {
+        setSendError({ text: e.message, policy: e.policy })
+      } else {
+        setSendError({ text: (e as Error).message, policy: 'unknown' })
+      }
     } finally {
       setSending(false)
     }
@@ -278,7 +282,11 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
       setMessages(prev => [...prev, r.message])
       refreshContacts()
     } catch (e) {
-      setSendError((e as Error).message)
+      if (e instanceof MetaSendError) {
+        setSendError({ text: e.message, policy: e.policy })
+      } else {
+        setSendError({ text: (e as Error).message, policy: 'unknown' })
+      }
     } finally {
       setSending(false)
     }
@@ -309,7 +317,7 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
       setRecordSec(0)
       recordTimerRef.current = setInterval(() => setRecordSec(s => s + 1), 1000)
     } catch (e) {
-      setSendError(`Не вдалося отримати мікрофон: ${(e as Error).message}`)
+      setSendError({ text: `Не вдалося отримати мікрофон: ${(e as Error).message}`, policy: 'unknown' })
     }
   }, [recording, isInactive, selectedSender, sendMedia])
 
@@ -706,7 +714,27 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
                 <SendIcon />
               </button>
             </div>
-            {sendError && <div className="meta-send-error">{sendError}</div>}
+            {sendError && (
+              <div className={`meta-send-error meta-send-error-${sendError.policy}`}>
+                <span className="meta-send-error-icon" aria-hidden="true">
+                  {sendError.policy === 'outside_24h' ? '⏰'
+                    : sendError.policy === 'tag_unapproved' ? '🛡'
+                    : sendError.policy === 'permissions' ? '🚫'
+                    : sendError.policy === 'invalid_recipient' ? '👤'
+                    : sendError.policy === 'rate_limited' ? '⏳'
+                    : sendError.policy === 'token' ? '🔑'
+                    : '⚠️'}
+                </span>
+                <span className="meta-send-error-text">{sendError.text}</span>
+                <button
+                  type="button"
+                  className="meta-send-error-close"
+                  onClick={() => setSendError(null)}
+                  aria-label="Закрити"
+                  title="Закрити"
+                >×</button>
+              </div>
+            )}
           </>
         )}
       </div>
