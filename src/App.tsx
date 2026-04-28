@@ -3725,6 +3725,7 @@ function App() {
     } else {
       setSelectedGmail(accId)
       setSelectedAccount(''); setSelectedClient(null); setMessages([])
+      setSelectedMeta('')   // close Meta overlay if open
       setGmailSelectedMsg(null)
       loadGmailEmails(accId, 1, '', '')
       setGmailDirection(''); setGmailSearch('')
@@ -3736,6 +3737,7 @@ function App() {
     setSelectedAccount(prev => prev === accountId ? '' : accountId)
     telemetry.trackTabSwitch(accountId)
     setSelectedBusiness('')
+    setSelectedMeta('')   // close Meta overlay if open
     setSelectedClient(null)
     setMessages([])
     setSelectedGmail(null); setGmailEmails([]); setGmailSelectedMsg(null)
@@ -3828,6 +3830,7 @@ function App() {
             setSelectedBusiness(id)
             setSelectedAccount('')
             setSelectedGmail(null)
+            setSelectedMeta('')   // close Meta overlay if open
             setSelectedClient(null)
             setMessages([])
             setContacts([])

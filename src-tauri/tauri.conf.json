@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Vidnovagram",
-  "version": "0.20.21",
+  "version": "0.20.22",
   "identifier": "app.vidnova.vidnovagram",
   "build": {
     "frontendDist": "../dist",

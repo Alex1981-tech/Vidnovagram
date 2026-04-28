@@ -324,13 +324,16 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
   // becoming part of its dependency closure.
   useEffect(() => { last24hOkRef.current = last24hOk }, [last24hOk])
 
-  // ESC clears reply-to selection.
+  // ESC: clears reply-to first (if any), otherwise closes the panel.
   useEffect(() => {
-    if (!replyTo) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setReplyTo(null) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (replyTo) { setReplyTo(null); return }
+      onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [replyTo])
+  }, [replyTo, onClose])
 
   // Mark conversation as seen when we open it (FB only).
   useEffect(() => {
