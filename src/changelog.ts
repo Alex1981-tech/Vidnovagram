@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.30': [
+    'Meta-чати: коли надсилаєш фото / гіф / стикер з VG до FB Messenger — картинка тепер одразу видна і у власному чаті (раніше Meta доставляла файл клієнту, але VG показував порожню бабульку, бо ми тримали тільки attachment_id Meta, а локальної копії не було). Backend тепер зберігає файл локально й повертає підписаний URL разом з attachment_id, VG передає обидва на /api/meta/send/.',
+  ],
   '0.20.29': [
     'Соцмережі-rail: FB/IG акаунти більше не дублюються — раніше один FB-акаунт міг з\'явитися двічі (раз із legacy business-стека, раз із Meta-стека). Тепер у секціях «Facebook» і «Instagram» лише MetaAccount як єдине джерело правди.',
   ],

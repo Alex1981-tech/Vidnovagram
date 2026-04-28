@@ -275,9 +275,16 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
         recipient_id: selectedSender,
         media_type: upload.media_type,
       }
+      // FB returns both: attachment_id (for Meta API) + media_url
+      // (signed URL to our local copy, used so the outgoing bubble
+      // renders in our own chat). IG returns only media_url.
+      // attachment_id wins for the Meta send call; media_url is
+      // additionally persisted in DB so the outgoing bubble can show
+      // the picture without depending on Meta's expiring CDN.
       if (upload.attachment_id) sendBody.attachment_id = upload.attachment_id
-      else if (upload.media_url) sendBody.media_url = upload.media_url
-      else throw new Error('upload returned neither attachment_id nor media_url')
+      if (upload.media_url) sendBody.media_url = upload.media_url
+      if (!upload.attachment_id && !upload.media_url)
+        throw new Error('upload returned neither attachment_id nor media_url')
       const r = await sendMetaMessage(token, account.id, sendBody)
       setMessages(prev => [...prev, r.message])
       refreshContacts()
