@@ -9142,6 +9142,21 @@ body {
   border-radius: 8px; display: block;
   margin-bottom: 4px;
 }
+.meta-msg-audio {
+  width: 260px;
+  height: 36px;
+  display: block;
+  margin-bottom: 4px;
+  border-radius: 18px;
+}
+.meta-msg-video {
+  max-width: 320px;
+  max-height: 320px;
+  display: block;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  background: #000;
+}
 .meta-msg-link { color: inherit; text-decoration: underline; font-size: 13px; }
 .meta-msg-meta {
   font-size: 10px; opacity: 0.6;

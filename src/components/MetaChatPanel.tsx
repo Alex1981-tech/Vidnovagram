@@ -557,7 +557,24 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
                           {m.media_url && m.media_type === 'image' && (
                             <img src={m.media_url} alt="" className="meta-msg-image" />
                           )}
-                          {m.media_url && m.media_type !== 'image' && !isStoryReply && (
+                          {m.media_url && m.media_type === 'audio' && (
+                            <audio
+                              src={m.media_url}
+                              controls
+                              preload="metadata"
+                              className="meta-msg-audio"
+                            />
+                          )}
+                          {m.media_url && m.media_type === 'video' && (
+                            <video
+                              src={m.media_url}
+                              controls
+                              preload="metadata"
+                              className="meta-msg-video"
+                              playsInline
+                            />
+                          )}
+                          {m.media_url && !['image','audio','video'].includes(m.media_type || '') && !isStoryReply && (
                             <a href={m.media_url} target="_blank" rel="noreferrer" className="meta-msg-link">
                               📎 {m.media_type || 'attachment'}
                             </a>

@@ -2,6 +2,10 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.31': [
+    'Meta-чати: додано програвач для аудіо- і відео-повідомлень FB Messenger / Instagram Direct (раніше показувалось лише посилання «📎 audio» без можливості послухати). Картинки/фото залишилися як inline preview.',
+    'CSP розширено для Meta CDN (`scontent.xx.fbcdn.net` + `cdn.fbsbx.com`) та `media-src https:` — тепер аудіо/відео з FB лоадиться у плеєр напряму без блокування Tauri.',
+  ],
   '0.20.30': [
     'Meta-чати: коли надсилаєш фото / гіф / стикер з VG до FB Messenger — картинка тепер одразу видна і у власному чаті (раніше Meta доставляла файл клієнту, але VG показував порожню бабульку, бо ми тримали тільки attachment_id Meta, а локальної копії не було). Backend тепер зберігає файл локально й повертає підписаний URL разом з attachment_id, VG передає обидва на /api/meta/send/.',
   ],

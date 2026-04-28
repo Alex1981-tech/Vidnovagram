@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Vidnovagram",
-  "version": "0.20.30",
+  "version": "0.20.31",
   "identifier": "app.vidnova.vidnovagram",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://cc.vidnova.app wss://cc.vidnova.app; img-src 'self' https: data: blob:; media-src 'self' https://cc.vidnova.app data: blob: mediastream:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://cc.vidnova.app wss://cc.vidnova.app https://scontent.xx.fbcdn.net https://cdn.fbsbx.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob: mediastream:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
