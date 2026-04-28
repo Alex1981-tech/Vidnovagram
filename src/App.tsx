@@ -610,6 +610,13 @@ function App() {
   // Panel drag-resize lives in usePanelResize()
   const { sidebarWidth, rightPanelWidth, startResize } = usePanelResize()
 
+  // Expose the right-panel width to CSS so other layouts (Meta overlay)
+  // can leave room for it without prop-drilling. Re-applied whenever the
+  // operator drags the resize handle.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--vg-rpanel-width', `${rightPanelWidth}px`)
+  }, [rightPanelWidth])
+
   // auth persistence lives in useAuthController()
 
   useEffect(() => { selectedClientRef.current = selectedClient }, [selectedClient])
@@ -4864,6 +4871,12 @@ function App() {
               account={acc}
               token={auth.token}
               onClose={() => setSelectedMeta('')}
+              onContactSelected={(linkedClientId) => {
+                // Point the global right panel at the same Client as
+                // the selected Meta contact, so notes / quick replies
+                // / CRM card stay in sync across messengers.
+                setSelectedClient(linkedClientId)
+              }}
             />
           </div>
         )

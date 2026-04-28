@@ -9197,14 +9197,16 @@ body {
 }
 .dark .meta-send-error { background: oklch(28% 0.06 25 / 0.5); }
 
-/* Meta overlay positioning — sits to the right of the collapsed
-   account-rail (48px). When the rail expands on hover, its z-index
-   (100) puts it on top of the overlay so the user can switch
-   accounts without having to close the panel. */
+/* Meta overlay — fills the space between the left rail (48px) and
+   the right operator panel. CSS variable --vg-rpanel-width is set
+   from App.tsx so resizing the right panel keeps the overlay in
+   sync. We don't cover the rpanel so the operator's notes / quick
+   replies / CRM card panel stays usable across all messengers. */
 .meta-overlay {
   position: fixed;
-  top: 0; right: 0; bottom: 0;
+  top: 0; bottom: 0;
   left: 48px;
+  right: var(--vg-rpanel-width, 340px);
   z-index: 90;
   display: flex;
   background: var(--bg);

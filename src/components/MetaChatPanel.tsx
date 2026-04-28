@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment, metaSenderAction } from '../utils/metaApi'
 import { useMetaContacts } from '../hooks/useMetaContacts'
 import { FacebookIcon, InstagramIcon, SendIcon } from './icons'
-import { ContactProfileEditor } from './ContactProfileEditor'
 import type { MetaAccount, MetaMessage } from '../types'
 
 /** Self-contained 2-pane Meta conversation panel. Renders sidebar of
@@ -23,6 +22,11 @@ interface Props {
   account: MetaAccount
   token: string
   onClose: () => void
+  /** Called when the operator picks (or clears) a Meta contact.
+   *  App.tsx uses it to point the global right panel at the
+   *  linked Client so notes / quick replies / CRM card all
+   *  attach to the same person across messengers. */
+  onContactSelected?: (linkedClientId: string | null) => void
 }
 
 function fmtTime(iso: string | null | undefined) {
@@ -42,7 +46,7 @@ function fmtDate(iso: string | null | undefined) {
   } catch { return '' }
 }
 
-export function MetaChatPanel({ account, token, onClose }: Props) {
+export function MetaChatPanel({ account, token, onClose, onContactSelected }: Props) {
   const { contacts, loading: contactsLoading, refresh: refreshContacts } = useMetaContacts(account.id, token)
   const [selectedSender, setSelectedSender] = useState<string | null>(null)
   const [messages, setMessages] = useState<MetaMessage[]>([])
@@ -313,6 +317,16 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
     () => contacts.find(c => c.sender_id === selectedSender),
     [contacts, selectedSender],
   )
+
+  // Keep parent App in sync so the global right operator panel
+  // (notes, quick replies, CRM card) lines up with whatever Meta
+  // contact is currently selected. Falls back to null when nothing
+  // is selected or the contact has no linked Client yet.
+  useEffect(() => {
+    if (!onContactSelected) return
+    onContactSelected(selectedContact?.linked_client_id || null)
+    return () => onContactSelected(null)
+  }, [selectedContact, onContactSelected])
 
   // 24h rule for Meta DMs — outgoing messages outside the 24h window
   // since the last incoming need a message_tag (manager picks one).
@@ -640,51 +654,6 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
         )}
       </div>
 
-      {/* Right panel: same purpose as the operator's sidebar in TG/WA
-          chats — CRM card editor for the selected contact. Shows even
-          when no message thread is selected so the operator can edit
-          the contact's profile from the contacts-list view. */}
-      <div className="meta-panel-rpanel">
-        {selectedContact ? (
-          <div className="meta-rpanel-body">
-            <div className="meta-rpanel-header">
-              <div className="meta-rpanel-avatar">
-                {(selectedContact.full_name || '?')[0].toUpperCase()}
-              </div>
-              <div className="meta-rpanel-name">
-                {selectedContact.full_name || selectedSender || ''}
-              </div>
-              <div className="meta-rpanel-sub">
-                {selectedContact.phone
-                  ? `📞 ${selectedContact.phone}`
-                  : `${account.platform === 'facebook' ? 'PSID' : 'IGSID'}: ${selectedSender}`}
-              </div>
-              {selectedContact.is_linked && (
-                <div className="meta-rpanel-linked">
-                  ✓ Прив'язаний клієнт
-                </div>
-              )}
-            </div>
-            {(selectedContact as { contact_profile_id?: string | null }).contact_profile_id ? (
-              <ContactProfileEditor
-                contactProfileId={
-                  (selectedContact as { contact_profile_id: string }).contact_profile_id
-                }
-                token={token}
-              />
-            ) : (
-              <div className="meta-rpanel-empty">
-                CRM-картка зʼявиться після того, як адмін створить
-                ContactProfile для цього контакту.
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="meta-rpanel-empty">
-            Виберіть діалог зліва, щоб побачити картку контакта.
-          </div>
-        )}
-      </div>
     </div>
   )
 }
