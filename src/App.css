@@ -9406,3 +9406,26 @@ body {
   text-align: center;
   font-size: 13px; opacity: 0.55; line-height: 1.45;
 }
+
+/* ── Meta: date separator + avatar in incoming bubbles ──────────── */
+.meta-date-sep {
+  display: flex; justify-content: center;
+  margin: 12px 0;
+}
+.meta-date-sep span {
+  font-size: 11px; padding: 3px 12px;
+  border-radius: 999px;
+  background: oklch(0% 0 0 / 0.08);
+  color: var(--fg); opacity: 0.7;
+}
+.dark .meta-date-sep span { background: oklch(100% 0 0 / 0.08); }
+
+.meta-msg.received { align-items: flex-end; gap: 8px; }
+.meta-msg-avatar {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, oklch(60% 0.14 280), oklch(55% 0.16 320));
+  color: white; font-weight: 600; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 4px;
+}

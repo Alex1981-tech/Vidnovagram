@@ -42,7 +42,26 @@ function fmtDate(iso: string | null | undefined) {
     const d = new Date(iso)
     const today = new Date()
     if (d.toDateString() === today.toDateString()) return fmtTime(iso)
+    if (d.getFullYear() !== today.getFullYear()) {
+      return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    }
     return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })
+  } catch { return '' }
+}
+
+/** Date separator label between message bubbles. Shows "Today",
+ *  "Yesterday", "27 Apr" (this year), "27 Apr 2024" (older). */
+function fmtDateSeparator(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const today = new Date()
+    const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
+    const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString()
+    if (isSameDay(d, today)) return 'Сьогодні'
+    if (isSameDay(d, yesterday)) return 'Вчора'
+    const fmt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' }
+    if (d.getFullYear() !== today.getFullYear()) fmt.year = 'numeric'
+    return d.toLocaleDateString('uk-UA', fmt)
   } catch { return '' }
 }
 
@@ -456,22 +475,37 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
               {!messagesLoading && messages.length === 0 && (
                 <div className="meta-empty">Поки що порожньо</div>
               )}
-              {messages.filter(m =>
-                m.text || m.media_url || m.is_deleted || m.media_type
-              ).map(m => {
-                // Reactions arrive from Meta as { "<sender>": "love" | … }
-                // We collapse into a list of unique emojis with counts.
-                const reactionEntries = Object.values(m.reactions || {}) as string[]
-                const reactionCounts: Record<string, number> = {}
-                for (const r of reactionEntries) reactionCounts[r] = (reactionCounts[r] || 0) + 1
-                const isStoryReply = m.media_type === 'story_reply' || m.media_type === 'story_mention'
-                return (
+              {(() => {
+                const visible = messages.filter(m =>
+                  m.text || m.media_url || m.is_deleted || m.media_type
+                )
+                let lastDay = ''
+                const peerInitial = (selectedContact?.full_name || selectedSender || '?')[0].toUpperCase()
+                return visible.map((m, idx) => {
+                  // Reactions: collapse {sender: emoji} → emoji counts
+                  const reactionEntries = Object.values(m.reactions || {}) as string[]
+                  const reactionCounts: Record<string, number> = {}
+                  for (const r of reactionEntries) reactionCounts[r] = (reactionCounts[r] || 0) + 1
+                  const isStoryReply = m.media_type === 'story_reply' || m.media_type === 'story_mention'
+                  // Day separator — emit when calendar day rolls over.
+                  const dayKey = new Date(m.message_date).toDateString()
+                  const showDay = dayKey !== lastDay
+                  lastDay = dayKey
+                  return (
+                <div key={m.id || idx}>
+                  {showDay && (
+                    <div className="meta-date-sep">
+                      <span>{fmtDateSeparator(m.message_date)}</span>
+                    </div>
+                  )}
                   <div
-                    key={m.id}
                     className={`meta-msg ${m.direction === 'outgoing' ? 'sent' : 'received'}`}
                     onDoubleClick={() => setReplyTo(m)}
                     title="Подвійний клік — відповісти"
                   >
+                    {m.direction === 'incoming' && (
+                      <div className="meta-msg-avatar">{peerInitial}</div>
+                    )}
                     <div className="meta-msg-bubble">
                       {isStoryReply && (
                         <div className="meta-story-banner">
@@ -523,8 +557,10 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
                       )}
                     </div>
                   </div>
+                </div>
                 )
-              })}
+                })
+              })()}
             </div>
             {!last24hOk && messages.length > 0 && account.platform === 'facebook' && (
               <div className="meta-24h-warning">
