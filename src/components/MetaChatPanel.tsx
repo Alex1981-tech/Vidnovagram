@@ -467,6 +467,15 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
             <div className="meta-chat-header">
               <div className="meta-chat-header-name">
                 {selectedContact?.full_name || selectedSender}
+                <span
+                  className={`meta-platform-badge ${account.platform === 'facebook' ? 'fb' : 'ig'}`}
+                  title={account.platform === 'facebook' ? 'Facebook Messenger' : 'Instagram Direct'}
+                >
+                  {account.platform === 'facebook'
+                    ? <FacebookIcon size={11} color="#fff" />
+                    : <InstagramIcon size={11} color="#fff" />}
+                  <span>{account.platform === 'facebook' ? 'FB' : 'IG'}</span>
+                </span>
               </div>
               <div className="meta-chat-header-sub">
                 {selectedContact?.is_linked && selectedContact?.phone

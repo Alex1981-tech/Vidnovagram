@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.27': [
+    'Meta-чати: у заголовку чату FB Messenger і Instagram Direct тепер є невеличкий брендовий шеврон (FB — синій, IG — фіолетово-помаранчевий градієнт), щоб одразу видно з якого джерела пацієнт.',
+  ],
   '0.20.10': [
     'Виправлено: 11 FB + 7 IG акаунтів реально з\'являються у rail (попередня версія мала помилку 404 у URL до бекенду).',
   ],
