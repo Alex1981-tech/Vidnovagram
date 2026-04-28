@@ -98,13 +98,13 @@ export function AccountRail({
   const isOpen = useCallback((k: SectionKey) => !collapsed[k], [collapsed])
   const toggle = useCallback((k: SectionKey) => setCollapsed(c => ({ ...c, [k]: !c[k] })), [])
 
-  // Split BusinessAccount by provider — keep "social" providers (FB
-  // Messenger, IG Direct from BusinessAccount) for the Соцмережі section
-  // alongside MetaAccount records. Real "business" providers (TG bot,
-  // Viber, WA Cloud) live in the Бізнес section.
-  const SOCIAL_PROVIDERS = new Set(['facebook_messenger', 'instagram_direct'])
-  const bizItems = businessAccounts.filter(b => !SOCIAL_PROVIDERS.has(b.provider))
-  const socialBizItems = businessAccounts.filter(b => SOCIAL_PROVIDERS.has(b.provider))
+  // Phase 1 convergence (2026-04-28): FB/IG live exclusively in
+  // `MetaAccount`. The legacy `BusinessAccount` provider values
+  // facebook_messenger / instagram_direct are no longer surfaced by
+  // the backend (`business_accounts_public` excludes them), so the
+  // Бізнес rail only carries Viber / TG-bot / WA Cloud / etc. and the
+  // social rail is sourced from `metaAccounts` alone.
+  const bizItems = businessAccounts
 
   // Meta accounts split by platform for FB/IG sub-sections
   const fbMeta = metaAccounts.filter(m => m.platform === 'facebook')
@@ -114,8 +114,8 @@ export function AccountRail({
   const hasBusiness = bizItems.length > 0
   const hasMessengers = accounts.length > 0
   const hasEmail = gmailAccounts.length > 0
-  const hasFB = fbMeta.length > 0 || socialBizItems.some(b => b.provider === 'facebook_messenger')
-  const hasIG = igMeta.length > 0 || socialBizItems.some(b => b.provider === 'instagram_direct')
+  const hasFB = fbMeta.length > 0
+  const hasIG = igMeta.length > 0
   const hasSocial = hasFB || hasIG
 
   // Section header — clickable to toggle; collapsed-rail variant shows
@@ -274,7 +274,7 @@ export function AccountRail({
               section="social"
               label="Соцмережі"
               short="С"
-              count={fbMeta.length + igMeta.length + socialBizItems.length}
+              count={fbMeta.length + igMeta.length}
             />
             {isOpen('social') && (
               <>
@@ -289,11 +289,10 @@ export function AccountRail({
                       <Caret open={isOpen('social_fb')} />
                       <FacebookIcon size={14} color="#1877F2" />
                       {expanded && <span className="rail-section-label-text">Facebook</span>}
-                      <span className="rail-section-count">{fbMeta.length + socialBizItems.filter(b => b.provider === 'facebook_messenger').length}</span>
+                      <span className="rail-section-count">{fbMeta.length}</span>
                     </button>
                     {isOpen('social_fb') && (
                       <>
-                        {socialBizItems.filter(b => b.provider === 'facebook_messenger').map(renderBizItem)}
                         {fbMeta.map(renderMetaItem)}
                       </>
                     )}
@@ -310,11 +309,10 @@ export function AccountRail({
                       <Caret open={isOpen('social_ig')} />
                       <InstagramIcon size={14} color="#E4405F" />
                       {expanded && <span className="rail-section-label-text">Instagram</span>}
-                      <span className="rail-section-count">{igMeta.length + socialBizItems.filter(b => b.provider === 'instagram_direct').length}</span>
+                      <span className="rail-section-count">{igMeta.length}</span>
                     </button>
                     {isOpen('social_ig') && (
                       <>
-                        {socialBizItems.filter(b => b.provider === 'instagram_direct').map(renderBizItem)}
                         {igMeta.map(renderMetaItem)}
                       </>
                     )}
