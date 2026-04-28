@@ -9429,3 +9429,11 @@ body {
   display: flex; align-items: center; justify-content: center;
   margin-bottom: 4px;
 }
+
+/* avatar img — fills round container */
+.meta-contact-avatar img,
+.meta-msg-avatar img,
+.meta-rpanel-avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover; border-radius: 50%;
+}

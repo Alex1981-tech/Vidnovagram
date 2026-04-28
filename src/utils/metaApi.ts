@@ -32,6 +32,7 @@ export interface MetaContactSummary {
   account_id: string
   phone: string
   full_name: string
+  avatar_url?: string
   linked_client_id: string | null
   is_linked: boolean
   contact_profile_id?: string | null

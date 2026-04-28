@@ -78,9 +78,13 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
   const [replyTo, setReplyTo] = useState<MetaMessage | null>(null)
   // 24h-rule message_tag dropdown — only shown when last24hOk=false on
   // FB. RESPONSE is the implicit default when this is null.
+  // Default '' = RESPONSE messaging_type (works inside 24h window).
+  // Tags require separate Meta App Review for `pages_messaging_subscriptions`
+  // — until that's approved, picking any of them returns
+  // "(#100) Cannot mark messages as HUMAN_AGENT without prior approval".
   const [messageTag, setMessageTag] = useState<
     '' | 'HUMAN_AGENT' | 'ACCOUNT_UPDATE' | 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE'
-  >('HUMAN_AGENT')
+  >('')
   const [emojiOpen, setEmojiOpen] = useState(false)
   // Voice recorder state — MediaRecorder over webm/opus, the
   // browser-native format. Meta accepts ogg/webm/mp4 audio in
@@ -427,7 +431,9 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
               onClick={() => setSelectedSender(c.sender_id)}
             >
               <div className="meta-contact-avatar">
-                {(c.full_name || '?')[0].toUpperCase()}
+                {c.avatar_url
+                  ? <img src={c.avatar_url} alt="" referrerPolicy="no-referrer" />
+                  : (c.full_name || '?')[0].toUpperCase()}
               </div>
               <div className="meta-contact-body">
                 <div className="meta-contact-row">
@@ -504,7 +510,11 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
                     title="Подвійний клік — відповісти"
                   >
                     {m.direction === 'incoming' && (
-                      <div className="meta-msg-avatar">{peerInitial}</div>
+                      <div className="meta-msg-avatar">
+                        {selectedContact?.avatar_url
+                          ? <img src={selectedContact.avatar_url} alt="" referrerPolicy="no-referrer" />
+                          : peerInitial}
+                      </div>
                     )}
                     <div className="meta-msg-bubble">
                       {isStoryReply && (
@@ -565,14 +575,16 @@ export function MetaChatPanel({ account, token, onClose, onContactSelected }: Pr
             {!last24hOk && messages.length > 0 && account.platform === 'facebook' && (
               <div className="meta-24h-warning">
                 <div className="meta-24h-warning-text">
-                  ⚠ Минуло понад 24 години від останнього повідомлення клієнта. Meta вимагає <strong>message_tag</strong> для нового вихідного.
+                  ⚠ Минуло понад 24 години від останнього повідомлення клієнта.
+                  <br />Meta дозволить надіслати тільки <strong>з message_tag</strong> — а він потребує окремого <strong>App Review</strong> на permission <code>pages_messaging_subscriptions</code>. Поки апрув не отримано, нове повідомлення поза 24-год вікном не пройде. Зачекайте поки клієнт сам напише, або застосуйте інший канал (Telegram / WhatsApp).
                 </div>
                 <div className="meta-24h-warning-row">
-                  <label>Тип:</label>
+                  <label>Тип (потребує App Review):</label>
                   <select
                     value={messageTag}
                     onChange={e => setMessageTag(e.target.value as typeof messageTag)}
                   >
+                    <option value="">— (без тегу = RESPONSE, відмовить поза 24h)</option>
                     <option value="HUMAN_AGENT">HUMAN_AGENT — підтримка клієнта</option>
                     <option value="ACCOUNT_UPDATE">ACCOUNT_UPDATE — оновлення картки</option>
                     <option value="CONFIRMED_EVENT_UPDATE">CONFIRMED_EVENT_UPDATE — нагадування про прийом</option>
