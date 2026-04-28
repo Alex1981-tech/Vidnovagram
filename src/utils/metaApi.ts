@@ -34,6 +34,7 @@ export interface MetaContactSummary {
   full_name: string
   linked_client_id: string | null
   is_linked: boolean
+  contact_profile_id?: string | null
   last_message: string
   last_message_date: string | null
   last_direction: 'sent' | 'received' | ''

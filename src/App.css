@@ -9363,3 +9363,44 @@ body {
   color: oklch(50% 0.18 25);
 }
 .dark .meta-recorder-time { color: oklch(80% 0.16 25); }
+
+/* ── Meta right operator panel (CRM card / contact info) ──────────── */
+.meta-panel { display: flex; }
+.meta-panel-rpanel {
+  width: 320px;
+  border-left: 1px solid var(--border);
+  background: oklch(100% 0 0 / 0.3);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.dark .meta-panel-rpanel { background: oklch(0% 0 0 / 0.2); }
+.meta-rpanel-body { padding: 16px; }
+.meta-rpanel-header {
+  text-align: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.meta-rpanel-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  background: linear-gradient(135deg, oklch(60% 0.14 280), oklch(55% 0.16 320));
+  color: white; font-weight: 600; font-size: 26px;
+  display: flex; align-items: center; justify-content: center;
+}
+.meta-rpanel-name { font-size: 16px; font-weight: 600; }
+.meta-rpanel-sub { font-size: 12px; opacity: 0.65; margin-top: 4px; font-family: ui-monospace, monospace; }
+.meta-rpanel-linked {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px; color: oklch(50% 0.16 150);
+  background: oklch(94% 0.07 150 / 0.55);
+  padding: 2px 10px; border-radius: 999px;
+}
+.dark .meta-rpanel-linked { background: oklch(28% 0.07 150 / 0.5); color: oklch(80% 0.15 150); }
+.meta-rpanel-empty {
+  padding: 24px 18px;
+  text-align: center;
+  font-size: 13px; opacity: 0.55; line-height: 1.45;
+}

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchMetaMessages, sendMetaMessage, uploadMetaAttachment, metaSenderAction } from '../utils/metaApi'
 import { useMetaContacts } from '../hooks/useMetaContacts'
 import { FacebookIcon, InstagramIcon, SendIcon } from './icons'
+import { ContactProfileEditor } from './ContactProfileEditor'
 import type { MetaAccount, MetaMessage } from '../types'
 
 /** Self-contained 2-pane Meta conversation panel. Renders sidebar of
@@ -636,6 +637,52 @@ export function MetaChatPanel({ account, token, onClose }: Props) {
             </div>
             {sendError && <div className="meta-send-error">{sendError}</div>}
           </>
+        )}
+      </div>
+
+      {/* Right panel: same purpose as the operator's sidebar in TG/WA
+          chats — CRM card editor for the selected contact. Shows even
+          when no message thread is selected so the operator can edit
+          the contact's profile from the contacts-list view. */}
+      <div className="meta-panel-rpanel">
+        {selectedContact ? (
+          <div className="meta-rpanel-body">
+            <div className="meta-rpanel-header">
+              <div className="meta-rpanel-avatar">
+                {(selectedContact.full_name || '?')[0].toUpperCase()}
+              </div>
+              <div className="meta-rpanel-name">
+                {selectedContact.full_name || selectedSender || ''}
+              </div>
+              <div className="meta-rpanel-sub">
+                {selectedContact.phone
+                  ? `📞 ${selectedContact.phone}`
+                  : `${account.platform === 'facebook' ? 'PSID' : 'IGSID'}: ${selectedSender}`}
+              </div>
+              {selectedContact.is_linked && (
+                <div className="meta-rpanel-linked">
+                  ✓ Прив'язаний клієнт
+                </div>
+              )}
+            </div>
+            {(selectedContact as { contact_profile_id?: string | null }).contact_profile_id ? (
+              <ContactProfileEditor
+                contactProfileId={
+                  (selectedContact as { contact_profile_id: string }).contact_profile_id
+                }
+                token={token}
+              />
+            ) : (
+              <div className="meta-rpanel-empty">
+                CRM-картка зʼявиться після того, як адмін створить
+                ContactProfile для цього контакту.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="meta-rpanel-empty">
+            Виберіть діалог зліва, щоб побачити картку контакта.
+          </div>
         )}
       </div>
     </div>
