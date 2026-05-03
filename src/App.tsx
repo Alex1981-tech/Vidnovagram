@@ -594,7 +594,7 @@ function App() {
   const [showContactProfile, setShowContactProfile] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{
     msgId: number | string
-    source: 'telegram' | 'whatsapp'
+    source: 'telegram' | 'whatsapp' | 'telegram_bot'
     tgMsgId?: number
     peerId?: number
   } | null>(null)
@@ -1205,6 +1205,33 @@ function App() {
           body.link_file_name = linkFileName
           body.link_file_mime = linkFileMime
         }
+        // Phase-2 chat (TELEGRAM_BOT only): send the right TG method by
+        // file MIME (sendVideo / sendVoice / sendPhoto / sendDocument)
+        // and forward the optional reply target so the bot's outgoing
+        // message appears as a TG reply, with a quote bubble in our UI.
+        const isTgBot = bizAccount?.provider === 'telegram_bot'
+        if (isTgBot && mediaPath && bizFile) {
+          const mime = (bizFile as File).type || ''
+          // mediaType arg from caller wins (used by voice / video-note
+          // recorders that pass the kind explicitly).
+          let kind = mediaType || ''
+          if (!kind) {
+            if (mime.startsWith('image/')) kind = 'photo'
+            else if (mime.startsWith('video/')) kind = 'video'
+            else if (mime === 'audio/ogg' || mime === 'audio/opus') kind = 'voice'
+            else if (mime.startsWith('audio/')) kind = 'document'
+            else kind = 'document'
+          }
+          body.media_type = kind
+        }
+        if (isTgBot) {
+          const rt = (window as any).__replyTo
+          if (rt?.msg_id) {
+            body.reply_to_message_id = String(rt.msg_id)
+            if (rt.text) body.reply_to_text = String(rt.text).slice(0, 300)
+            if (rt.sender) body.reply_to_sender = String(rt.sender).slice(0, 100)
+          }
+        }
 
         const r = await authFetch(`${API_BASE}/business/send/`, auth.token, {
           method: 'POST',
@@ -1216,6 +1243,7 @@ function App() {
           if (data.message) setMessages(prev => [...prev, data.message as ChatMessage])
           setMessageText('')
           setAttachedFiles([])
+          ;(window as any).__replyTo = null
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
           // Scroll to the message we just sent — otherwise it ends up below
           // the input area and the operator has to scroll manually.
@@ -1265,15 +1293,26 @@ function App() {
         return
       }
       try {
-        const resp = await authFetch(`${API_BASE}/telegram/edit-message/`, auth.token, {
+        // Patient-bot channel uses BusinessMessage.id (UUID) and our
+        // own /business/edit/ endpoint (calls editMessageText /
+        // editMessageCaption on TG Bot API). Native TG channel keeps
+        // peer_id + message_id semantics.
+        const isBotChannel = editingMsg.source === 'telegram_bot'
+        const url = isBotChannel
+          ? `${API_BASE}/business/edit/`
+          : `${API_BASE}/telegram/edit-message/`
+        const body = isBotChannel
+          ? { message_id: String(editingMsg.id), text }
+          : {
+              account_id: selectedAccount,
+              peer_id: contacts.find(c => c.client_id === selectedClient)?.tg_peer_id || editingMsg.tg_peer_id,
+              message_id: editingMsg.tg_message_id,
+              text,
+            }
+        const resp = await authFetch(url, auth.token, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_id: selectedAccount,
-            peer_id: contacts.find(c => c.client_id === selectedClient)?.tg_peer_id || editingMsg.tg_peer_id,
-            message_id: editingMsg.tg_message_id,
-            text,
-          }),
+          body: JSON.stringify(body),
         })
         if (resp.ok) {
           setMessages(prev => prev.map(m =>
@@ -1282,6 +1321,9 @@ function App() {
           setMessageText('')
           setEditingMsg(null)
           if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+        } else {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }))
+          alert(`Не вдалось редагувати: ${err.error || resp.statusText}`)
         }
       } catch (e) { console.error('Edit:', e) }
       finally { setSending(false) }
@@ -2784,9 +2826,32 @@ function App() {
   }, [auth?.token, selectedAccount, messages, contacts, selectedClient])
 
   // Delete message
-  const deleteMessage = useCallback(async (target: { msgId: number | string; source: 'telegram' | 'whatsapp'; tgMsgId?: number; peerId?: number }) => {
-    if (!auth?.token || !selectedAccount) return
+  const deleteMessage = useCallback(async (target: { msgId: number | string; source: 'telegram' | 'whatsapp' | 'telegram_bot'; tgMsgId?: number; peerId?: number }) => {
+    if (!auth?.token) return
     try {
+      // Patient-bot channel: route to /business/delete/. Uses BusinessMessage.id
+      // (UUID) as `message_id`, NOT the TG provider message id, because the
+      // backend resolves provider_msg_id internally.
+      if (target.source === 'telegram_bot') {
+        const resp = await authFetch(`${API_BASE}/business/delete/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_id: String(target.msgId) }),
+        })
+        if (resp.ok) {
+          setMessages(prev => prev.map(m =>
+            String(m.id) === String(target.msgId)
+              ? { ...m, is_deleted: true }
+              : m
+          ))
+        } else {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }))
+          alert(`Не вдалось видалити: ${err.error || resp.statusText}`)
+        }
+        setDeleteConfirm(null)
+        return
+      }
+      if (!selectedAccount) return
       const isWhatsapp = target.source === 'whatsapp'
       const resp = await authFetch(
         `${API_BASE}/${isWhatsapp ? 'whatsapp/delete-message/' : 'telegram/delete-message/'}`,

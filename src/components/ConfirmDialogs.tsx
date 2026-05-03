@@ -72,7 +72,7 @@ export function SelectAccountHint({ open, onClose }: SelectAccountHintProps) {
 
 interface DeleteMessageState {
   msgId: string | number
-  source: 'telegram' | 'whatsapp'
+  source: 'telegram' | 'whatsapp' | 'telegram_bot'
   tgMsgId?: number
   peerId?: number
 }

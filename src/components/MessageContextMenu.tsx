@@ -12,7 +12,7 @@ interface CtxMenuState {
 
 interface DeleteConfirmState {
   msgId: string | number
-  source: 'telegram' | 'whatsapp'
+  source: 'telegram' | 'whatsapp' | 'telegram_bot'
   tgMsgId?: number
   peerId?: number
 }
@@ -149,7 +149,7 @@ export function MessageContextMenu({
               if (msg) {
                 setDeleteConfirm({
                   msgId: msg.id,
-                  source: (msg.source || 'telegram') as 'telegram' | 'whatsapp',
+                  source: (msg.source || 'telegram') as 'telegram' | 'whatsapp' | 'telegram_bot',
                   tgMsgId: msg.tg_message_id,
                   peerId: msg.tg_peer_id,
                 })
