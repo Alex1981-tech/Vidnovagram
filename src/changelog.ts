@@ -2,6 +2,11 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.32': [
+    'Чат бота (Telegram): паритет з нативним TG — оператор може надіслати відео, голосове, відеокружок і документ; вони доставляються через TG Bot API (sendVideo / sendVoice / sendVideoNote / sendDocument).',
+    'Чат бота: відповідь на повідомлення (reply / quote) — операторська відповідь з\'являється у пацієнта як цитата.',
+    'Чат бота: редагування і видалення власних повідомлень. TG обмежує deleteMessage до 48 годин — старіші повідомлення повертатимуть помилку від Telegram.',
+  ],
   '0.20.31': [
     'Meta-чати: додано програвач для аудіо- і відео-повідомлень FB Messenger / Instagram Direct (раніше показувалось лише посилання «📎 audio» без можливості послухати). Картинки/фото залишилися як inline preview.',
     'CSP розширено для Meta CDN (`scontent.xx.fbcdn.net` + `cdn.fbsbx.com`) та `media-src https:` — тепер аудіо/відео з FB лоадиться у плеєр напряму без блокування Tauri.',
