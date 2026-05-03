@@ -1106,7 +1106,81 @@ function App() {
       const bizFile = file ?? (attachedFiles.length > 0 ? attachedFiles[0] : null)
       const bizAccount = businessAccounts.find(b => b.id === selectedBusiness)
       const isViber = bizAccount?.provider === 'viber_turbosms'
+      const isTgBotProvider = bizAccount?.provider === 'telegram_bot'
       if (!text && !bizFile) return
+
+      // Phase-2 chat iter 2: TG-bot album. When 2..10 photo/video files
+      // are attached at once for a telegram_bot account, upload each
+      // and send via /business/send-album/ (sendMediaGroup). Single
+      // file or mixed types fall through to the normal one-shot path.
+      const albumFiles = (!file && attachedFiles.length >= 2 && attachedFiles.length <= 10)
+        ? attachedFiles
+        : []
+      const allMedia = albumFiles.every(f => {
+        const m = (f.type || '').toLowerCase()
+        return m.startsWith('image/') || m.startsWith('video/')
+      })
+      if (isTgBotProvider && albumFiles.length >= 2 && allMedia) {
+        setSending(true)
+        try {
+          const items: Array<{ media_type: string; media_path: string; caption?: string }> = []
+          for (let i = 0; i < albumFiles.length; i++) {
+            const f = albumFiles[i]
+            const fd = new FormData()
+            fd.append('account_id', selectedBusiness)
+            fd.append('file', f, f.name || `file_${i + 1}`)
+            const up = await authFetch(`${API_BASE}/business/upload-media/`, auth.token, {
+              method: 'POST',
+              body: fd,
+            })
+            if (!up.ok) {
+              const err = await up.json().catch(() => ({ error: up.statusText }))
+              alert(`Album upload #${i + 1}: ${err.error || up.statusText}`)
+              setSending(false)
+              return
+            }
+            const uData = await up.json()
+            const mime = (f.type || '').toLowerCase()
+            const item: { media_type: string; media_path: string; caption?: string } = {
+              media_type: mime.startsWith('video/') ? 'video' : 'photo',
+              media_path: uData.path || '',
+            }
+            if (i === 0 && text) item.caption = text
+            items.push(item)
+          }
+          const albumBody: Record<string, unknown> = {
+            account_id: selectedBusiness,
+            client_id: selectedClient,
+            items,
+          }
+          const rt = (window as any).__replyTo
+          if (rt?.msg_id) albumBody.reply_to_message_id = String(rt.msg_id)
+          const r = await authFetch(`${API_BASE}/business/send-album/`, auth.token, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(albumBody),
+          })
+          if (r.ok) {
+            const data = await r.json()
+            const arr = Array.isArray(data.messages) ? data.messages : []
+            if (arr.length) setMessages(prev => [...prev, ...arr as ChatMessage[]])
+            setMessageText('')
+            setAttachedFiles([])
+            ;(window as any).__replyTo = null
+            if (chatInputRef.current) chatInputRef.current.style.height = 'auto'
+            requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
+          } else {
+            const err = await r.json().catch(() => ({ error: r.statusText }))
+            alert(`Альбом не відправлено: ${err.error || r.statusText}`)
+          }
+        } catch (e) {
+          console.error('[bot album] send failed:', e)
+          alert(`Альбом не відправлено: ${(e as Error).message || String(e)}`)
+        } finally {
+          setSending(false)
+        }
+        return
+      }
 
       // For Viber — TurboSMS only accepts JPEG/PNG ≤ 1 MB as a native image.
       // For anything else we fall back to "link mode": upload to our storage,

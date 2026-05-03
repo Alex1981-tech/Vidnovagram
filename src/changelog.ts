@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.34': [
+    'Чат бота: альбом фото/відео (2-10 файлів) — додай 2+ зображень у вкладені, надсилаються як TG media-group (sendMediaGroup), у пацієнта в TG зʼявляються одним блоком.',
+  ],
   '0.20.33': [
     'Чат бота: оператор може ставити emoji-реакції на повідомлення пацієнта (TG Bot API setMessageReaction).',
     'Чат бота: закріплення повідомлення (pin / unpin) — як в нативному TG, тільки одне закріплене водночас.',
