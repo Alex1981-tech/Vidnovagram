@@ -41,7 +41,7 @@ interface Props {
 // Persistent collapse/expand state per section. localStorage so the
 // rail remembers what the manager last left collapsed.
 const RAIL_SECTIONS_KEY = 'vg_rail_sections_v1'
-type SectionKey = 'business' | 'social' | 'social_fb' | 'social_ig' | 'messengers' | 'email'
+type SectionKey = 'business' | 'business_viber' | 'business_tgbot' | 'social' | 'social_fb' | 'social_ig' | 'messengers' | 'email'
 
 function loadCollapsed(): Record<string, boolean> {
   try {
@@ -105,6 +105,18 @@ export function AccountRail({
   // Бізнес rail only carries Viber / TG-bot / WA Cloud / etc. and the
   // social rail is sourced from `metaAccounts` alone.
   const bizItems = businessAccounts
+  // Split Бізнес into Viber + Telegram-bot sub-rails so the operator
+  // can collapse one without losing the other. Anything that's neither
+  // (e.g. legacy whatsapp_cloud rows) lands under the parent header.
+  const viberItems = bizItems.filter(b => b.provider === 'viber_turbosms')
+  const tgBotItems = bizItems.filter(b => b.provider === 'telegram_bot')
+  const otherBizItems = bizItems.filter(
+    b => b.provider !== 'viber_turbosms' && b.provider !== 'telegram_bot'
+  )
+  const hasViberBiz = viberItems.length > 0
+  const hasTgBotBiz = tgBotItems.length > 0
+  const sumBizUnreads = (items: BusinessAccountSummary[]) =>
+    items.reduce((acc, b) => acc + (businessUnreads[b.id] || 0), 0)
 
   // Meta accounts split by platform for FB/IG sub-sections
   const fbMeta = metaAccounts.filter(m => m.platform === 'facebook')
@@ -259,11 +271,57 @@ export function AccountRail({
           {expanded && <span className="rail-item-label">Усі месенджери</span>}
         </button>
 
-        {/* ── Бізнес ── */}
+        {/* ── Бізнес (Viber / Telegram-bot / інше) ── */}
         {hasBusiness && (
           <>
             <SectionHeader section="business" label="Бізнес" short="Б" count={bizItems.length} />
-            {isOpen('business') && bizItems.map(renderBizItem)}
+            {isOpen('business') && (
+              <>
+                {hasViberBiz && (
+                  <>
+                    <button
+                      type="button"
+                      className="rail-section-subheader"
+                      onClick={() => toggle('business_viber')}
+                      title="Viber"
+                    >
+                      <Caret open={isOpen('business_viber')} />
+                      <ViberIcon size={14} />
+                      {expanded && <span className="rail-section-label-text">Viber</span>}
+                      <span className="rail-section-count">
+                        {viberItems.length}
+                        {sumBizUnreads(viberItems) > 0 && (
+                          <span className="rail-section-unread"> · {sumBizUnreads(viberItems)}</span>
+                        )}
+                      </span>
+                    </button>
+                    {isOpen('business_viber') && viberItems.map(renderBizItem)}
+                  </>
+                )}
+                {hasTgBotBiz && (
+                  <>
+                    <button
+                      type="button"
+                      className="rail-section-subheader"
+                      onClick={() => toggle('business_tgbot')}
+                      title="Telegram-боти"
+                    >
+                      <Caret open={isOpen('business_tgbot')} />
+                      <TelegramBotIcon size={14} />
+                      {expanded && <span className="rail-section-label-text">Telegram-боти</span>}
+                      <span className="rail-section-count">
+                        {tgBotItems.length}
+                        {sumBizUnreads(tgBotItems) > 0 && (
+                          <span className="rail-section-unread"> · {sumBizUnreads(tgBotItems)}</span>
+                        )}
+                      </span>
+                    </button>
+                    {isOpen('business_tgbot') && tgBotItems.map(renderBizItem)}
+                  </>
+                )}
+                {otherBizItems.length > 0 && otherBizItems.map(renderBizItem)}
+              </>
+            )}
           </>
         )}
 
