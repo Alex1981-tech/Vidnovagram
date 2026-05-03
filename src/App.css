@@ -1718,6 +1718,30 @@ body {
 .msg-status-text.read {
   color: var(--primary);
 }
+/* Scheduled-message tag — distinct from sent/delivered/read so the
+ * operator immediately sees this message is queued, not delivered. */
+.msg-status-text.scheduled {
+  color: oklch(0.66 0.18 50);
+  font-weight: 600;
+}
+/* Scheduled bubble — subtle amber tint + dashed left edge so the
+ * operator scanning the timeline can spot pending sends at a glance. */
+.msg-bubble-scheduled {
+  background: oklch(0.97 0.04 80) !important;
+  border: 1px dashed oklch(0.78 0.13 70) !important;
+}
+.dark .msg-bubble-scheduled {
+  background: oklch(0.30 0.06 70) !important;
+  border-color: oklch(0.55 0.13 70) !important;
+}
+.msg.sent .msg-bubble-scheduled {
+  /* Sent-side bubbles already have a brand colour — override to amber
+   * tint so it doesn't blend with the regular sent stack. */
+  background: oklch(0.94 0.06 80) !important;
+}
+.dark .msg.sent .msg-bubble-scheduled {
+  background: oklch(0.34 0.07 70) !important;
+}
 
 /* Date separator */
 .date-separator {

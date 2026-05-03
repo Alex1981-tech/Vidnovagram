@@ -61,6 +61,19 @@ export function MessageFooter({ message: m }: Props) {
     }
   })()
 
+  // Scheduled TG messages — `is_scheduled` is set by backend when
+  // message_date > now (operator queued the message in TG to be
+  // delivered at a future time). Render the planned delivery time
+  // with a 📅 prefix and override the delivery label so the bubble
+  // doesn't claim it was already «Надіслано».
+  const isScheduled = !!(m.is_scheduled)
+  const scheduledLabel = isScheduled
+    ? new Date(m.message_date).toLocaleString('uk-UA', {
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : ''
+
   return (
     <div className="msg-footer">
       <span className="msg-source">{sourceIcon}</span>
@@ -69,12 +82,12 @@ export function MessageFooter({ message: m }: Props) {
           ред.
         </span>
       )}
-      <span className="msg-time">
-        {new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+      <span className="msg-time" title={isScheduled ? `Заплановано на ${scheduledLabel}` : ''}>
+        {isScheduled ? `📅 ${scheduledLabel}` : new Date(m.message_date).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
       </span>
       {m.direction === 'sent' && (
-        <span className={`msg-status-text ${deliveryClass}`}>
-          {deliveryLabel}
+        <span className={`msg-status-text ${isScheduled ? 'scheduled' : deliveryClass}`}>
+          {isScheduled ? 'Заплановано' : deliveryLabel}
         </span>
       )}
     </div>

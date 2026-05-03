@@ -125,6 +125,10 @@ export interface ChatMessage {
   contact_last_name?: string
   contact_phone?: string
   is_pinned?: boolean
+  /** TG scheduled message — planned for future delivery; backend
+   *  computes this on the fly as `message_date > now`. UI shows a 📅
+   *  badge with the scheduled time instead of «Надіслано». */
+  is_scheduled?: boolean
   // Group / service message fields
   chat_type?: 'private' | 'group' | 'supergroup' | 'channel'
   sender_id?: number | null

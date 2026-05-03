@@ -144,6 +144,7 @@ export function MessageBubble({
     + `${m.is_lab_result ? ' msg-bubble-lab' : ''}`
     + `${m.media_type === 'sticker' && (m.thumbnail || m.media_file) ? ' msg-bubble-sticker' : ''}`
     + `${m.media_type === 'video_note' ? ' msg-bubble-vnote' : ''}`
+    + `${m.is_scheduled ? ' msg-bubble-scheduled' : ''}`
 
   const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault()
