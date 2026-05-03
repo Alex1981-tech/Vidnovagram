@@ -1977,6 +1977,33 @@ function App() {
 
   const executeForward = useCallback(async (toClientId: string) => {
     if (!auth?.token || selectedMsgIds.size === 0 || !selectedClient) return
+    // Patient-bot channel: copyMessage one-by-one through /api/business/forward/
+    // (separate code path because there's no peer_id concept; backend
+    // resolves source/dest chat ids from BusinessMessage rows).
+    const selectedBotMsgs = messages.filter(m => selectedMsgIds.has(m.id) && m.source === 'telegram_bot')
+    if (selectedBotMsgs.length > 0 && selectedBotMsgs.length === selectedMsgIds.size) {
+      try {
+        for (const m of selectedBotMsgs) {
+          const r = await authFetch(`${API_BASE}/business/forward/`, auth.token, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message_id: String(m.id),
+              target_client_id: toClientId,
+              target_account_id: m.account_id || '',
+            }),
+          })
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}))
+            alert(err.error || 'Помилка пересилання')
+            return
+          }
+        }
+        setShowForwardModal(false)
+        exitForwardMode()
+      } catch (e) { console.error('Bot forward:', e) }
+      return
+    }
     // Get tg_message_ids from selected TG messages
     const selectedTgMsgs = messages.filter(m => selectedMsgIds.has(m.id) && m.source === 'telegram' && m.tg_message_id)
     const tgMsgIds = selectedTgMsgs.map(m => m.tg_message_id!)
