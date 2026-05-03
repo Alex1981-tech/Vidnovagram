@@ -2750,11 +2750,33 @@ function App() {
 
   // Pin/unpin message from context menu
   const ctxMenuPin = useCallback(async () => {
-    if (!ctxMenu || !auth?.token || !selectedAccount) return
+    if (!ctxMenu || !auth?.token) return
     const msg = messages.find(m => m.id === ctxMenu.messageId)
-    if (!msg?.tg_message_id || !msg?.tg_peer_id) { setCtxMenu(null); return }
+    if (!msg) { setCtxMenu(null); return }
     const action = msg.is_pinned ? 'unpin' : 'pin'
     try {
+      // Patient-bot channel: BusinessMessage.id (UUID) → /business/pin/.
+      // Native TG channel still uses peer_id + tg_message_id.
+      if (msg.source === 'telegram_bot') {
+        const resp = await authFetch(`${API_BASE}/business/pin/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_id: String(msg.id), action }),
+        })
+        if (resp.ok) {
+          setMessages(prev => prev.map(m => {
+            if (action === 'pin') return { ...m, is_pinned: m.id === msg.id }
+            return m.id === msg.id ? { ...m, is_pinned: false } : m
+          }))
+        } else {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }))
+          alert(`Не вдалось закріпити: ${err.error || resp.statusText}`)
+        }
+        setCtxMenu(null)
+        return
+      }
+      if (!selectedAccount) { setCtxMenu(null); return }
+      if (!msg.tg_message_id || !msg.tg_peer_id) { setCtxMenu(null); return }
       const resp = await authFetch(`${API_BASE}/telegram/pin-message/`, auth.token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2794,6 +2816,17 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             account_id: selectedAccount,
+            message_id: String(msg.id),
+            emoji,
+          }),
+        })
+      } else if (msg?.source === 'telegram_bot') {
+        // Patient-bot channel — Bot API setMessageReaction (Bot ≥ 7.0).
+        // BusinessMessage.id is a UUID; backend resolves chat/msg id.
+        await authFetch(`${API_BASE}/business/reaction/`, auth.token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             message_id: String(msg.id),
             emoji,
           }),

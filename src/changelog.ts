@@ -2,6 +2,12 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.20.33': [
+    'Чат бота: оператор може ставити emoji-реакції на повідомлення пацієнта (TG Bot API setMessageReaction).',
+    'Чат бота: закріплення повідомлення (pin / unpin) — як в нативному TG, тільки одне закріплене водночас.',
+    'Чат бота: коли пацієнт редагує своє повідомлення в TG або ставить реакцію — VG бачить це в реальному часі (через patient-bot webhook → cc_analiz).',
+    'Чат бота: коли пацієнт пише в mini-app, у VG під чатом видно «друкує…» (broadcast через WebSocket).',
+  ],
   '0.20.32': [
     'Чат бота (Telegram): паритет з нативним TG — оператор може надіслати відео, голосове, відеокружок і документ; вони доставляються через TG Bot API (sendVideo / sendVoice / sendVideoNote / sendDocument).',
     'Чат бота: відповідь на повідомлення (reply / quote) — операторська відповідь з\'являється у пацієнта як цитата.',
