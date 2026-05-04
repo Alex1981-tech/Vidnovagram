@@ -696,8 +696,11 @@ function App() {
       if (cancelled) return
       if (urls?.length) {
         pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])
-        applyPendingDeepLink()
       }
+      // Always retry on every effect run — when auth/accounts/contacts
+      // arrive after cold start, applyPendingDeepLink is a fresh memo
+      // and finally has the data to resolve target.clientId/accountId.
+      applyPendingDeepLink()
       unlisten = await onOpenUrl((urls) => {
         if (urls?.length) {
           pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])

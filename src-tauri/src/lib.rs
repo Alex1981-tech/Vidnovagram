@@ -4,8 +4,20 @@ pub fn run() {
 
   #[cfg(desktop)]
   {
-    builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
+    use tauri::Manager;
+    builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
       println!("Vidnovagram reopened with argv: {argv:?}");
+      // Bring the existing window to front when a second instance is
+      // launched (e.g. via vidnovagram:// deep link). Without this the
+      // process exits silently and the user never sees a response. The
+      // URL itself is forwarded to tauri-plugin-deep-link automatically
+      // because the single-instance plugin is built with the
+      // `deep-link` feature.
+      if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+      }
     }));
   }
 
