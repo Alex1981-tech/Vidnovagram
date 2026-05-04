@@ -31,6 +31,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { LoginScreen } from './screens/LoginScreen'
 import { useTauriUpdater } from './hooks/useTauriUpdater'
 import { usePanelResize } from './hooks/usePanelResize'
+import { searchMessages, pruneOldMessages } from './db'
 import { useWallpapers } from './hooks/useWallpapers'
 import { useGmailNotifications } from './hooks/useGmailNotifications'
 import { useMetaAccounts } from './hooks/useMetaAccounts'
@@ -224,6 +225,18 @@ function App() {
     updateReady,
     updateProgress,
   } = useTauriUpdater()
+
+  // Prune SQLite cache once per launch — keep last 365 days of chat
+  // history. Runs in background so it never blocks the UI thread.
+  useEffect(() => {
+    let cancelled = false
+    const t = setTimeout(() => {
+      if (cancelled) return
+      pruneOldMessages(365).catch(() => { /* best-effort */ })
+    }, 30_000)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [])
+
   const [railExpanded, setRailExpanded] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [appSettings, setAppSettings] = useState<AppSettings>(loadSettings)
@@ -4191,6 +4204,33 @@ function App() {
               clearTimeout(globalSearchTimer.current)
               setUsernameSearchResult(null)
               if (q.length >= 3 && auth?.token) {
+                // Phase A: instantly populate from local SQLite cache so
+                // typing feels responsive even on flaky network. Phase B
+                // (the existing 400ms-debounced API call) replaces or
+                // supplements with server-side hits.
+                ;(async () => {
+                  try {
+                    const local = await searchMessages(q, selectedAccount || undefined, 30)
+                    if (local.length) {
+                      const mapped: GlobalSearchResult[] = local.map((m) => {
+                        const cm = m as unknown as { id: string | number; text?: string; message_date?: string | null; direction?: string; account_label?: string; client_name?: string; client_phone?: string }
+                        return {
+                          id: cm.id,
+                          account_id: m.account_id,
+                          client_id: m.client_id,
+                          text: cm.text || '',
+                          message_date: cm.message_date ?? null,
+                          direction: cm.direction || '',
+                          source: 'telegram',
+                          account_label: cm.account_label || '',
+                          client_name: cm.client_name,
+                          client_phone: cm.client_phone,
+                        }
+                      })
+                      setGlobalSearchResults(mapped)
+                    }
+                  } catch { /* offline / non-Tauri */ }
+                })()
                 globalSearchTimer.current = setTimeout(async () => {
                   try {
                     const params = new URLSearchParams({ q, limit: '30' })

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { WS_BASE } from '../constants'
 import { showNotification } from '../utils/notifications'
 import { resolveContactDisplay, getMediaPreviewLabel } from '../utils/contactDisplay'
+import { saveMessages as saveMessagesToDb } from '../db'
 import type {
   Account,
   Contact,
@@ -172,6 +173,17 @@ export function useMessengerWebSocket(opts: MessengerWebSocketOptions): Messenge
             // Business providers (Viber/FB/IG/TG-bot) broadcast business_account_id;
             // TG/WA use account_id. Normalize here so downstream code doesn't care.
             const accountId = data.account_id || data.business_account_id
+
+            // Persist to local SQLite cache so even unread chats build up
+            // a browseable history offline. Channel guess is good enough
+            // for the search index — TG accounts ship account_id, business
+            // providers ship business_account_id.
+            if (clientId && msg && msg.id !== undefined && !(msg as { _media_update?: boolean })._media_update) {
+              const channel: 'tg' | 'business' | 'wa' =
+                data.business_account_id ? 'business' : 'tg'
+              saveMessagesToDb(clientId, accountId || '', channel, [msg as ChatMessage])
+                .catch(() => { /* best-effort */ })
+            }
             const isMediaUpdate = !!msg._media_update
             const selectedClientId = o.selectedClientRef.current
             const selectedContact = selectedClientId
