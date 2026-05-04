@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { API_BASE } from '../constants'
 import { authFetch } from '../utils/authFetch'
 import { MSG_STORE, getJsonCache, putJsonCache } from '../cache'
+import { saveMessages as saveMessagesToDb, loadCachedMessages } from '../db'
 import { setReadTs } from '../utils/readTs'
 import type { ChatMessage } from '../types'
 
@@ -77,14 +78,19 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
     const requestedAccount = account
 
     // Phase 0: instant cache for the initial open.
+    // Prefer SQLite (full history) over the legacy IndexedDB blob,
+    // but fall back when SQLite is unavailable (browser preview).
     if (scrollToEnd) {
-      const cached = await getJsonCache<{
-        messages: ChatMessage[]
-        count: number
-        client_name: string
-        client_phone: string
-        next_cursor?: string | null
-      }>(MSG_STORE, cacheKey)
+      const sqliteMsgs = await loadCachedMessages(clientId, account || '', 500)
+      const cached = sqliteMsgs.length > 0
+        ? { messages: sqliteMsgs, count: sqliteMsgs.length, client_name: '', client_phone: '', next_cursor: null as string | null }
+        : await getJsonCache<{
+            messages: ChatMessage[]
+            count: number
+            client_name: string
+            client_phone: string
+            next_cursor?: string | null
+          }>(MSG_STORE, cacheKey)
       if (cached && cached.messages.length > 0 && reqId === messagesReqSeq) {
         setMessages(cached.messages)
         setMsgCount(cached.count)
@@ -157,6 +163,12 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
         client_phone: data.client_phone || '',
         next_cursor: data.next_cursor ?? null,
       })
+      // Persistent SQLite cache for full history + future search.
+      // Channel detection — TG accounts in opts.account are the
+      // default; the WS layer flags WA/Business via the message
+      // payload, so we can leave 'tg' as the safe default for
+      // messages produced by /telegram/contacts/{id}/messages/.
+      saveMessagesToDb(clientId, account || '', 'tg', msgs)
     } catch (e) {
       console.error('Messages:', e)
     }
@@ -185,6 +197,7 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
         client_phone: data.client_phone || '',
         next_cursor: data.next_cursor ?? null,
       })
+      saveMessagesToDb(clientId, account || '', 'tg', msgs)
     } catch {
       // best-effort
     }

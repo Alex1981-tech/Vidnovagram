@@ -1,7 +1,7 @@
 {
   "name": "vidnovagram",
   "private": true,
-  "version": "0.20.43",
+  "version": "0.20.44",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +20,7 @@
     "@tauri-apps/plugin-notification": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-sql": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "lottie-web": "^5.13.0",
     "pako": "^2.1.0",

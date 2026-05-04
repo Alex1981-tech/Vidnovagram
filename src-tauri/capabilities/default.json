@@ -21,6 +21,11 @@
     },
     "shell:default",
     "deep-link:default",
-    "deep-link:allow-get-current"
+    "deep-link:allow-get-current",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-close"
   ]
 }

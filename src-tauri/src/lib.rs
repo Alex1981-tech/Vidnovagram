@@ -29,6 +29,46 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_deep_link::init())
+    .plugin(
+      tauri_plugin_sql::Builder::default()
+        .add_migrations(
+          "sqlite:vidnovagram.db",
+          vec![
+            tauri_plugin_sql::Migration {
+              version: 1,
+              description: "create messages cache",
+              sql: "
+                CREATE TABLE IF NOT EXISTS messages (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  remote_id TEXT NOT NULL,
+                  client_id TEXT NOT NULL,
+                  account_id TEXT NOT NULL,
+                  channel TEXT NOT NULL DEFAULT 'tg',
+                  message_date TEXT NOT NULL,
+                  direction TEXT NOT NULL,
+                  text TEXT,
+                  has_media INTEGER NOT NULL DEFAULT 0,
+                  media_type TEXT,
+                  media_file TEXT,
+                  thumbnail TEXT,
+                  sender_name TEXT,
+                  raw_json TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                  UNIQUE(remote_id, account_id, channel)
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_chat
+                  ON messages(client_id, account_id, message_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_date
+                  ON messages(message_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_text
+                  ON messages(text);
+              ",
+              kind: tauri_plugin_sql::MigrationKind::Up,
+            },
+          ],
+        )
+        .build(),
+    )
     .setup(|app| {
       #[cfg(any(windows, target_os = "linux"))]
       {
