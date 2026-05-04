@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Vidnovagram",
-  "version": "0.20.38",
+  "version": "0.20.39",
   "identifier": "app.vidnova.vidnovagram",
   "build": {
     "frontendDist": "../dist",
@@ -50,6 +50,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["vidnovagram"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEzQTlCQzQ3N0E5RDYzOUUKUldTZVk1MTZSN3lwbzhZczIvbGVjbHhZUGxUVDh0V1pzZmFhenljV0NFQXEyVTAzVEJzRGg5L2sK",
       "endpoints": [

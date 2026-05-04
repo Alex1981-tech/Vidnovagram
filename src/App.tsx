@@ -4,6 +4,7 @@ import { tempDir, join } from '@tauri-apps/api/path'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import * as telemetry from './telemetry'
 import './App.css'
 import { makeReadTsKey, getReadTs, setReadTs } from './utils/readTs'
@@ -121,6 +122,39 @@ import type {
   GmailAccount,
   GmailEmail,
 } from './types'
+
+type DeepLinkTarget = {
+  clientId: string
+  phone: string
+  accountId: string
+  threadId: string
+  messageId: string
+}
+
+const parseDeepLinkTarget = (url: string): DeepLinkTarget | null => {
+  try {
+    const parsed = new URL(url)
+    const params = parsed.searchParams
+    if (
+      !params.has('client_id') &&
+      !params.has('phone') &&
+      !params.has('account_id') &&
+      !params.has('thread_id') &&
+      !params.has('message_id')
+    ) {
+      return null
+    }
+    return {
+      clientId: (params.get('client_id') || '').trim(),
+      phone: (params.get('phone') || '').trim(),
+      accountId: (params.get('account_id') || '').trim(),
+      threadId: (params.get('thread_id') || '').trim(),
+      messageId: (params.get('message_id') || '').trim(),
+    }
+  } catch {
+    return null
+  }
+}
 
 
 
@@ -398,6 +432,13 @@ function App() {
   const messagesRef = useRef<ChatMessage[]>([])
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const linkSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const pendingDeepLinkRef = useRef<{
+    clientId: string
+    phone: string
+    accountId: string
+    threadId: string
+    messageId: string
+  } | null>(null)
 
   // Lightbox (scale/pan/drag state encapsulated in <LightboxOverlay/>)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -624,6 +665,53 @@ function App() {
   useEffect(() => { messagesRef.current = messages }, [messages])
   useEffect(() => { labPatientsRef.current = labPatients }, [labPatients])
   useEffect(() => { templateCategoriesRef.current = templateCategories }, [templateCategories])
+
+  const applyPendingDeepLink = useCallback(() => {
+    const target = pendingDeepLinkRef.current
+    if (!target || !auth?.authorized || !auth?.token) return false
+
+    const normalizePhone = (value: string) => value.replace(/\D+/g, '')
+    const resolvedClientId = target.clientId ||
+      contactsRef.current.find(contact => normalizePhone(contact.phone) === normalizePhone(target.phone))?.client_id ||
+      ''
+    if (!resolvedClientId) return false
+
+    const resolvedAccountId = target.accountId || selectedAccount || accounts[0]?.id || ''
+    if (!resolvedAccountId) return false
+
+    selectClientRef.current(resolvedClientId, {
+      accountId: resolvedAccountId,
+      jumpToMessageId: target.messageId || undefined,
+    })
+    pendingDeepLinkRef.current = null
+    return true
+  }, [auth?.authorized, auth?.token, selectedAccount, accounts, contacts.length])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const init = async () => {
+      const urls = await getCurrent()
+      if (cancelled) return
+      if (urls?.length) {
+        pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])
+        applyPendingDeepLink()
+      }
+      unlisten = await onOpenUrl((urls) => {
+        if (urls?.length) {
+          pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])
+          applyPendingDeepLink()
+        }
+      })
+    }
+
+    void init()
+    return () => {
+      cancelled = true
+      if (unlisten) unlisten()
+    }
+  }, [applyPendingDeepLink])
 
   // Global drag/drop handler for templates and lab patients
   // WebView2 doesn't reliably fire onDrop on nested scrollable containers
