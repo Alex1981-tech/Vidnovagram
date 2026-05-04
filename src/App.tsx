@@ -452,6 +452,11 @@ function App() {
     threadId: string
     messageId: string
   } | null>(null)
+  // getCurrent() keeps returning the same URL on every effect rerun
+  // (it's the URL the app was opened with, not a one-shot value), so
+  // without this guard we'd re-apply the deep link on every memo
+  // invalidation and selectClient would loop forever, locking the UI.
+  const handledDeepLinkUrlRef = useRef<string>('')
 
   // Lightbox (scale/pan/drag state encapsulated in <LightboxOverlay/>)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -711,21 +716,21 @@ function App() {
 
     const init = async () => {
       const urls = await getCurrent()
-      console.log('[deeplink] init: getCurrent ->', urls)
       if (cancelled) return
-      if (urls?.length) {
+      if (urls?.length && urls[0] !== handledDeepLinkUrlRef.current) {
+        handledDeepLinkUrlRef.current = urls[0]
         pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])
-        console.log('[deeplink] init: parsed target=', pendingDeepLinkRef.current)
       }
-      // Always retry on every effect run — when auth/accounts/contacts
-      // arrive after cold start, applyPendingDeepLink is a fresh memo
-      // and finally has the data to resolve target.clientId/accountId.
-      applyPendingDeepLink()
+      // Retry apply on every effect run while a target is still pending —
+      // when auth/accounts/contacts finally arrive, the memo invalidates
+      // and we get another chance to resolve clientId/accountId. Skip
+      // when there is nothing to apply so we don't loop on the cold-start
+      // URL forever.
+      if (pendingDeepLinkRef.current) applyPendingDeepLink()
       unlisten = await onOpenUrl((urls) => {
-        console.log('[deeplink] onOpenUrl ->', urls)
         if (urls?.length) {
+          handledDeepLinkUrlRef.current = urls[0]
           pendingDeepLinkRef.current = parseDeepLinkTarget(urls[0])
-          console.log('[deeplink] onOpenUrl: parsed target=', pendingDeepLinkRef.current)
           applyPendingDeepLink()
         }
       })

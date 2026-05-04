@@ -47,6 +47,15 @@ interface MsgRow {
   raw_json: string
 }
 
+// Plugin-sql exposes a single connection per Database, and `BEGIN/COMMIT`
+// issued via `execute()` from concurrent JS callers (loadMessages,
+// prefetchMessages, WS new_message arriving simultaneously) interleave
+// and explode with `cannot start a transaction within a transaction` /
+// `database is locked` (SQLite v0.20.45). Serializing every write
+// through one chained promise solves it without depending on the
+// plugin's transaction API (which the JS surface doesn't expose).
+let writeChain: Promise<void> = Promise.resolve()
+
 /** Insert/update a batch of chat messages for one (client_id, account_id, channel). */
 export async function saveMessages(
   clientId: string,
@@ -55,52 +64,55 @@ export async function saveMessages(
   messages: ChatMessage[],
 ): Promise<void> {
   if (!messages.length) return
-  const db = await getDb()
-  if (!db) return
-
-  // SQLite best practice: wrap many inserts in a transaction.
-  try {
-    await db.execute('BEGIN')
+  const next = writeChain.then(async () => {
+    const db = await getDb()
+    if (!db) return
+    // No explicit transaction — every execute is auto-commit. Still
+    // fast for a few hundred rows because the chain serializes them.
     for (const m of messages) {
       const remoteId = String(m.id ?? '')
       if (!remoteId) continue
-      await db.execute(
-        `INSERT INTO messages
-          (remote_id, client_id, account_id, channel, message_date, direction,
-           text, has_media, media_type, media_file, thumbnail, sender_name, raw_json)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT(remote_id, account_id, channel) DO UPDATE SET
-           message_date = excluded.message_date,
-           direction    = excluded.direction,
-           text         = excluded.text,
-           has_media    = excluded.has_media,
-           media_type   = excluded.media_type,
-           media_file   = excluded.media_file,
-           thumbnail    = excluded.thumbnail,
-           sender_name  = excluded.sender_name,
-           raw_json     = excluded.raw_json`,
-        [
-          remoteId,
-          clientId,
-          accountId || '',
-          channel,
-          m.message_date,
-          (m as { direction?: string }).direction || '',
-          (m as { text?: string }).text || '',
-          (m as { has_media?: boolean }).has_media ? 1 : 0,
-          (m as { media_type?: string }).media_type || '',
-          (m as { media_file?: string }).media_file || '',
-          (m as { thumbnail?: string }).thumbnail || '',
-          (m as { sender_name?: string }).sender_name || '',
-          JSON.stringify(m),
-        ],
-      )
+      try {
+        await db.execute(
+          `INSERT INTO messages
+            (remote_id, client_id, account_id, channel, message_date, direction,
+             text, has_media, media_type, media_file, thumbnail, sender_name, raw_json)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           ON CONFLICT(remote_id, account_id, channel) DO UPDATE SET
+             message_date = excluded.message_date,
+             direction    = excluded.direction,
+             text         = excluded.text,
+             has_media    = excluded.has_media,
+             media_type   = excluded.media_type,
+             media_file   = excluded.media_file,
+             thumbnail    = excluded.thumbnail,
+             sender_name  = excluded.sender_name,
+             raw_json     = excluded.raw_json`,
+          [
+            remoteId,
+            clientId,
+            accountId || '',
+            channel,
+            m.message_date,
+            (m as { direction?: string }).direction || '',
+            (m as { text?: string }).text || '',
+            (m as { has_media?: boolean }).has_media ? 1 : 0,
+            (m as { media_type?: string }).media_type || '',
+            (m as { media_file?: string }).media_file || '',
+            (m as { thumbnail?: string }).thumbnail || '',
+            (m as { sender_name?: string }).sender_name || '',
+            JSON.stringify(m),
+          ],
+        )
+      } catch (e) {
+        // Don't break the chain — keep saving the remaining rows.
+        console.warn('[db] saveMessages row failed:', e)
+      }
     }
-    await db.execute('COMMIT')
-  } catch (e) {
-    try { await db.execute('ROLLBACK') } catch { /* ignore */ }
-    console.warn('[db] saveMessages failed:', e)
-  }
+  })
+  // Swallow failures so a poisoned promise can't break the chain.
+  writeChain = next.catch(() => undefined)
+  return next
 }
 
 /** Read up to `limit` newest messages for a chat from local cache. */
