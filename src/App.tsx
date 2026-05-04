@@ -130,6 +130,7 @@ type DeepLinkTarget = {
   accountId: string
   threadId: string
   messageId: string
+  channel: string
 }
 
 const parseDeepLinkTarget = (url: string): DeepLinkTarget | null => {
@@ -151,11 +152,17 @@ const parseDeepLinkTarget = (url: string): DeepLinkTarget | null => {
       accountId: (params.get('account_id') || '').trim(),
       threadId: (params.get('thread_id') || '').trim(),
       messageId: (params.get('message_id') || '').trim(),
+      channel: (params.get('channel') || '').trim().toLowerCase(),
     }
   } catch {
     return null
   }
 }
+
+// Channels that live in BusinessAccount table (selectedBusiness state),
+// not in TelegramAccount (selectedAccount). Driven by CC's
+// vidnovagram://open-chat?channel=... payload.
+const BUSINESS_CHANNELS = new Set(['tg_bot', 'viber', 'meta_fb', 'meta_ig'])
 
 
 
@@ -451,6 +458,7 @@ function App() {
     accountId: string
     threadId: string
     messageId: string
+    channel: string
   } | null>(null)
   // getCurrent() keeps returning the same URL on every effect rerun
   // (it's the URL the app was opened with, not a one-shot value), so
@@ -687,28 +695,46 @@ function App() {
 
   const applyPendingDeepLink = useCallback(() => {
     const target = pendingDeepLinkRef.current
-    console.log('[deeplink] apply called: target=', target, 'authed=', !!auth?.authorized, 'token=', !!auth?.token, 'accounts=', accounts.length, 'contacts=', contacts.length)
     if (!target || !auth?.authorized || !auth?.token) return false
 
     const normalizePhone = (value: string) => value.replace(/\D+/g, '')
     const resolvedClientId = target.clientId ||
       contactsRef.current.find(contact => normalizePhone(contact.phone) === normalizePhone(target.phone))?.client_id ||
       ''
-    console.log('[deeplink] resolvedClientId=', resolvedClientId)
     if (!resolvedClientId) return false
 
-    const resolvedAccountId = target.accountId || selectedAccount || accounts[0]?.id || ''
-    console.log('[deeplink] resolvedAccountId=', resolvedAccountId, 'currentSelected=', selectedAccount)
+    // Channel-aware account routing. CC ships ?channel=tg_user|tg_bot|
+    // viber|wa|meta_fb|meta_ig and accountId points either at a
+    // TelegramAccount (selectedAccount state) or a BusinessAccount
+    // (selectedBusiness state). Without flipping the right state, the
+    // chat would open under whatever account was active before — e.g.
+    // clicking a TG row while VG was on Viber kept showing the Viber
+    // dialog with the same client_id. Pick the right slot first, THEN
+    // call selectClient.
+    const isBusiness = BUSINESS_CHANNELS.has(target.channel || '')
+    const resolvedAccountId =
+      target.accountId ||
+      (isBusiness ? (selectedBusiness || businessAccounts[0]?.id || '') : (selectedAccount || accounts[0]?.id || ''))
     if (!resolvedAccountId) return false
 
-    console.log('[deeplink] calling selectClient(', resolvedClientId, ', { accountId:', resolvedAccountId, '})')
+    if (isBusiness) {
+      // Switching to a Business channel: clear TG/WA selection so the
+      // sidebar and chat panel both render the business-account view.
+      if (selectedAccount) setSelectedAccount('')
+      if (resolvedAccountId !== selectedBusiness) setSelectedBusiness(resolvedAccountId)
+    } else {
+      if (selectedBusiness) setSelectedBusiness('')
+      // selectClient itself will call setSelectedAccount via its
+      // accountChanged branch — no need to flip it twice here.
+    }
+
     selectClientRef.current(resolvedClientId, {
       accountId: resolvedAccountId,
       jumpToMessageId: target.messageId || undefined,
     })
     pendingDeepLinkRef.current = null
     return true
-  }, [auth?.authorized, auth?.token, selectedAccount, accounts, contacts.length])
+  }, [auth?.authorized, auth?.token, selectedAccount, selectedBusiness, accounts, businessAccounts, contacts.length])
 
   useEffect(() => {
     let cancelled = false
