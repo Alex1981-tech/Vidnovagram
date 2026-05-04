@@ -19,6 +19,8 @@
       "identifier": "fs:allow-write",
       "allow": [{ "path": "**" }]
     },
-    "shell:default"
+    "shell:default",
+    "deep-link:default",
+    "deep-link:allow-get-current"
   ]
 }
