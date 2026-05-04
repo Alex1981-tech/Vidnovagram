@@ -9,6 +9,10 @@ import type { ChatMessage } from '../types'
 // don't clobber the current chat state.
 let messagesReqSeq = 0
 
+// Per-cacheKey throttle for prefetchMessages so hover-jitter doesn't
+// fire 100 fetches/second across the contact list.
+const prefetchTimestamps = new Map<string, number>()
+
 export interface UseMessagesOptions {
   token: string | undefined
   account: string
@@ -35,6 +39,12 @@ export interface MessagesController {
   setHasOlder: React.Dispatch<React.SetStateAction<boolean>>
   setMsgCursor: React.Dispatch<React.SetStateAction<string | null>>
   loadMessages: (clientId: string, scrollToEnd?: boolean) => Promise<void>
+  /**
+   * Background prefetch: fetches the chat from the server and stores it
+   * in the IndexedDB cache without touching React state. Wired to
+   * contact-row hover so a click opens instantly from cache.
+   */
+  prefetchMessages: (clientId: string) => Promise<void>
   loadOlderMessages: (selectedClient: string) => Promise<void>
 }
 
@@ -152,6 +162,34 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
     }
   }, [token, account, onUnauthorized, chatContainerRef, chatEndRef, scrollPositionsRef])
 
+  // Module-level dedup cache: same client prefetched within last 30s
+  // shouldn't refire (e.g. mouse jittering across rows).
+  const prefetchMessages = useCallback(async (clientId: string) => {
+    if (!token || !clientId) return
+    const cacheKey = `${clientId}_${account || 'all'}`
+    const last = prefetchTimestamps.get(cacheKey) || 0
+    if (Date.now() - last < 30_000) return
+    prefetchTimestamps.set(cacheKey, Date.now())
+    try {
+      const params = new URLSearchParams({ per_page: '200' })
+      if (account) params.set('account', account)
+      const resp = await authFetch(`${API_BASE}/telegram/contacts/${clientId}/messages/?${params}`, token)
+      if (!resp.ok) return
+      const data = await resp.json()
+      const msgs: ChatMessage[] = data.results || []
+      // Persist directly — no React state, no scroll, no readTs.
+      putJsonCache(MSG_STORE, cacheKey, {
+        messages: msgs,
+        count: data.count || msgs.length,
+        client_name: data.client_name || '',
+        client_phone: data.client_phone || '',
+        next_cursor: data.next_cursor ?? null,
+      })
+    } catch {
+      // best-effort
+    }
+  }, [token, account])
+
   const loadOlderMessages = useCallback(async (selectedClient: string) => {
     if (!token || !selectedClient || loadingOlder || !hasOlder || !msgCursor) return
     setLoadingOlder(true)
@@ -203,6 +241,7 @@ export function useMessages(opts: UseMessagesOptions): MessagesController {
     setHasOlder,
     setMsgCursor,
     loadMessages,
+    prefetchMessages,
     loadOlderMessages,
   }
 }

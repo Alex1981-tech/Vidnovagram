@@ -533,6 +533,7 @@ function App() {
     setHasOlder: setHasOlderMessages,
     setMsgCursor,
     loadMessages: rawLoadMessages,
+    prefetchMessages,
     loadOlderMessages,
   } = messagesCtrl
 
@@ -4272,6 +4273,7 @@ function App() {
               contactCount={contactCount}
               usernameSearchResult={usernameSearchResult}
               globalSearchResults={globalSearchResults}
+              onContactPrefetch={prefetchMessages}
               onSelectClient={(clientId, opts) => {
                 setSearch('')
                 setGlobalSearchResults([])

@@ -52,6 +52,12 @@ interface Props {
   onSelectClient: (clientId: string, opts?: { accountId?: string; jumpToMessageId?: string | number }) => void
   onUsernameSelect: (result: UsernameSearchResult) => void
   onClearSearch: () => void
+  /**
+   * Optional hover-prefetch hook: warms the IndexedDB messages cache
+   * for the row the user is hovering, so a subsequent click renders
+   * instantly. No-op when omitted.
+   */
+  onContactPrefetch?: (clientId: string) => void
 }
 
 /** Messenger sidebar body: contacts + global search + username search + empty state + footer. */
@@ -75,6 +81,7 @@ export function ContactList({
   onSelectClient,
   onUsernameSelect,
   onClearSearch: _onClearSearch,
+  onContactPrefetch,
 }: Props) {
   return (
     <>
@@ -114,6 +121,7 @@ export function ContactList({
                   key={c.client_id}
                   className={`contact ${selectedClient === c.client_id ? 'active' : ''}${isUnread(c) ? ' unread' : ''}${c.has_whatsapp && !c.has_telegram ? ' wa-contact' : ''}`}
                   onClick={() => onSelectClient(c.client_id)}
+                  onMouseEnter={onContactPrefetch ? () => onContactPrefetch(c.client_id) : undefined}
                 >
                   <div className={`avatar${c.has_whatsapp && !c.has_telegram ? ' wa-avatar' : ''}`}>
                     {photoMap[c.client_id]

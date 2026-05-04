@@ -14,7 +14,11 @@ export const MSG_STORE = 'messages'       // key: clientId, value: { messages, c
 export const CONTACTS_STORE = 'contacts'  // key: accountId|'all', value: { contacts, count, ts }
 
 export const CACHE_TTL = 7 * 24 * 60 * 60 * 1000       // 7 days (media blobs)
-export const MSG_CACHE_TTL = 24 * 60 * 60 * 1000       // 24 hours (JSON payloads)
+// JSON payload cache (messages / contacts). 7 days — every chat open
+// triggers a fresh fetch anyway, the cache only saves the cold-start
+// flash. Longer TTL means re-opening a chat you haven't visited in
+// days still renders instantly from disk while the network catches up.
+export const MSG_CACHE_TTL = 7 * 24 * 60 * 60 * 1000   // 7 days
 
 export function openCacheDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
