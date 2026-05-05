@@ -1470,13 +1470,19 @@ function App() {
           const err = await r.json().catch(() => ({ error: r.statusText }))
           console.error('[Viber] send failed:', err)
           const raw = String(err.error || r.statusText)
-          let human = raw
-          if (raw.includes('REQUIRED_MESSAGE_RECIPIENT')) {
-            human = 'Клієнт недоступний у Viber (номер не прив\'язаний до Viber-акаунта або заблокований).'
-          } else if (raw.includes('NOT_ALLOWED_MESSAGE_TEXT')) {
-            human = 'Viber класифікував повідомлення як промо. Відповідати можна лише коли клієнт написав першим за останні 24 години.'
-          } else if (raw.includes('invalid phone')) {
-            human = 'Некоректний формат номера телефону клієнта.'
+          // Backend may attach a ready-to-show explanation in `error_human`
+          // (e.g. lists which forbidden words triggered Viber's promo filter).
+          // Prefer it over the generic substring mapping below.
+          const errHuman = typeof err?.error_human === 'string' ? err.error_human : ''
+          let human = errHuman || raw
+          if (!errHuman) {
+            if (raw.includes('REQUIRED_MESSAGE_RECIPIENT')) {
+              human = 'Клієнт недоступний у Viber (номер не прив\'язаний до Viber-акаунта або заблокований).'
+            } else if (raw.includes('NOT_ALLOWED_MESSAGE_TEXT')) {
+              human = 'Viber відхилив текст як рекламний. Часті причини: згадка інших месенджерів (WhatsApp, Telegram), посилання, промо-слова («акція», «знижка»). Перефразуйте простіше.'
+            } else if (raw.includes('invalid phone')) {
+              human = 'Некоректний формат номера телефону клієнта.'
+            }
           }
           alert(`Viber: ${human}`)
         }
