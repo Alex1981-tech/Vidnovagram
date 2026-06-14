@@ -568,7 +568,9 @@ function App() {
   // selectedBusiness — it must own the chat state to avoid TG polluting it.
   const [businessAccounts, setBusinessAccounts] = useState<{ id: string; provider: string; label: string; sender_name: string; status: string }[]>([])
   const [selectedBusiness, setSelectedBusiness] = useState<string>('')
-  const [businessUnreads] = useState<Record<string, number>>({})
+  // Derived from contacts + isUnread (see below). Не тримаємо окремий state —
+  // інакше при оновленні contacts через WS бейдж би розсинхронізовувався.
+  // useMemo прив'язаний нижче, після того як визначено isUnread.
   const [showViberNewChat, setShowViberNewChat] = useState(false)
   const [bizButtonOpen, setBizButtonOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<{ title?: string; message: string; resolve: (ok: boolean) => void } | null>(null)
@@ -3272,7 +3274,8 @@ function App() {
       const data = await r.json()
       const list = (data.contacts || []) as Array<{
         client_id: string; account_id: string; account_label: string; phone: string;
-        full_name: string; last_message: string; last_message_date: string; unread: number;
+        full_name: string; last_message: string; last_message_date: string;
+        last_direction?: 'sent' | 'received'; unread: number;
         tg_photo_url?: string; is_new_patient?: boolean; source?: string; is_employee?: boolean;
         contact_profile_id?: string | null; is_linked?: boolean;
       }>
@@ -3282,6 +3285,11 @@ function App() {
         full_name: c.full_name,
         last_message_text: c.last_message,
         last_message_date: c.last_message_date,
+        // Без цього `isUnread()` завжди повертає false для Viber/TG-bot:
+        // воно першим ділом перевіряє last_message_direction === 'received'.
+        last_message_direction: c.last_direction,
+        // Зберігаємо account_id — businessUnreads useMemo групує по ньому.
+        account_id: c.account_id,
         tg_photo_url: c.tg_photo_url,
         is_new_patient: c.is_new_patient,
         is_employee: !!c.is_employee,
@@ -3606,6 +3614,19 @@ function App() {
 
   // Total unread count
   const unreadCount = useMemo(() => contacts.filter(c => isUnread(c)).length, [contacts, isUnread])
+
+  // Per-business-account unread badge map. AccountRail reads it as
+  // businessUnreads[b.id]. Derived from contacts (loadBusinessContacts
+  // fills account_id per row) — so коли WS оновлює список, бейдж теж.
+  const businessUnreads = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const c of contacts) {
+      const accId = (c as unknown as { account_id?: string }).account_id
+      if (!accId) continue
+      if (isUnread(c)) map[accId] = (map[accId] || 0) + 1
+    }
+    return map
+  }, [contacts, isUnread])
 
   // Add in-app toast
   useEffect(() => { addToastRef.current = addToast }, [addToast])
