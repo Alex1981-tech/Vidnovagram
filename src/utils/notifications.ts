@@ -1,10 +1,13 @@
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
+import { isTauriRuntime } from './tauriRuntime'
 
 /**
  * Best-effort Tauri desktop notification. Requests permission on first use
  * and silently no-ops if the user denies.
  */
 export async function showNotification(title: string, body: string): Promise<void> {
+  if (!isTauriRuntime()) return
+
   try {
     let granted = await isPermissionGranted()
     if (!granted) {

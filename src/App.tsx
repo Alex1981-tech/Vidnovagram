@@ -3,7 +3,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { tempDir, join } from '@tauri-apps/api/path'
 import { save, open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readFile } from '@tauri-apps/plugin-fs'
-import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { open as tauriShellOpen } from '@tauri-apps/plugin-shell'
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import * as telemetry from './telemetry'
 import './App.css'
@@ -21,6 +21,7 @@ import {
   saveSettings,
 } from './settings'
 import { authFetch } from './utils/authFetch'
+import { isTauriRuntime } from './utils/tauriRuntime'
 import { useTheme } from './utils/theme'
 import {
   THUMB_STORE,
@@ -164,6 +165,15 @@ const parseDeepLinkTarget = (url: string): DeepLinkTarget | null => {
 // vidnovagram://open-chat?channel=... payload.
 const BUSINESS_CHANNELS = new Set(['tg_bot', 'viber', 'meta_fb', 'meta_ig'])
 
+const shellOpen = async (url: string): Promise<void> => {
+  if (isTauriRuntime()) {
+    await tauriShellOpen(url)
+    return
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 
 
 /** Convert OGG/Opus blob to WAV for WebView2 (Edge) which lacks OGG support */
@@ -222,7 +232,7 @@ function App() {
     setSelectedClient(null)
     setAccounts([])
   }, [])
-  const { auth, authLoading, authError, login, logout } = useAuthController({
+  const { auth, authLoading, authError, requestCode, verifyCode, logout } = useAuthController({
     onLogout: onLogoutReset,
   })
   const {
@@ -739,6 +749,8 @@ function App() {
   }, [auth?.authorized, auth?.token, selectedAccount, selectedBusiness, accounts, businessAccounts, contacts.length])
 
   useEffect(() => {
+    if (!isTauriRuntime()) return
+
     let cancelled = false
     let unlisten: (() => void) | null = null
 
@@ -4146,7 +4158,7 @@ function App() {
   }, [voipStartCall, chatContact])
 
   if (!auth?.authorized) {
-    return <LoginScreen onLogin={login} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
+    return <LoginScreen onRequestCode={requestCode} onVerifyCode={verifyCode} loading={authLoading} error={authError} theme={theme} setTheme={setTheme} />
   }
 
   return (

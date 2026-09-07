@@ -2,6 +2,9 @@
 // Keyed by semver string; each entry is a list of user-facing notes.
 
 export const CHANGELOG: Record<string, string[]> = {
+  '0.21.0': [
+    'Вхід за номером телефону + кодом із Telegram — як на cc.vidnova.app. Логін і пароль більше не потрібні: вводите свій номер, код приходить у бот клініки (@Clinical_Photo_bot), і ви в системі.',
+  ],
   '0.20.49': [
     'Viber/TG-бот: у списку контактів знову видно непрочитані повідомлення — рядок з новим вхідним підсвічується і з\'являється unread-dot, як в Telegram. Раніше для бізнес-каналів last_message_direction не пробрасувався з бекенду — і isUnread() завжди повертав false.',
     'Viber/TG-бот: на кнопці акаунта в лівому рейлі тепер показується бейдж з кількістю непрочитаних. Раніше businessUnreads був назавжди порожній (state без setter-а) — лічильник нікуди не доходив.',

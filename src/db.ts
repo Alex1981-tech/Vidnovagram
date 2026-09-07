@@ -21,6 +21,7 @@
  * is undefined and helpers no-op.
  */
 import type { ChatMessage } from './types'
+import { isTauriRuntime } from './utils/tauriRuntime'
 
 // Lazy-imported so non-Tauri builds (vitest, browser preview) don't
 // crash on the missing window.__TAURI__ runtime.
@@ -29,6 +30,7 @@ let dbPromise: Promise<import('@tauri-apps/plugin-sql').default | null> | null =
 async function getDb() {
   if (dbPromise) return dbPromise
   dbPromise = (async () => {
+    if (!isTauriRuntime()) return null
     try {
       const mod = await import('@tauri-apps/plugin-sql')
       const Database = mod.default

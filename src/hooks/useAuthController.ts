@@ -6,7 +6,10 @@ export interface AuthController {
   auth: AuthState | null
   authLoading: boolean
   authError: string
-  login: (username: string, password: string) => Promise<void>
+  /** Крок 1: надіслати код входу в Telegram (через спільний бот клінік). */
+  requestCode: (phone: string) => Promise<boolean>
+  /** Крок 2: перевірити код → отримати DesktopSession-токен. */
+  verifyCode: (phone: string, code: string) => Promise<void>
   logout: () => void
 }
 
@@ -103,26 +106,50 @@ export function useAuthController({ onLogout }: { onLogout?: () => void } = {}):
     onLogout?.()
   }, [onLogout])
 
-  const login = useCallback(async (username: string, password: string) => {
+  // Вхід за номером + кодом у Telegram — той самий флоу, що на
+  // cc.vidnova.app (парольний вхід у CC вимкнено 07.09.2026).
+  const requestCode = useCallback(async (phone: string): Promise<boolean> => {
     setAuthLoading(true)
     setAuthError('')
     try {
-      const resp = await fetch(`${API_BASE}/vidnovagram/login/`, {
+      const resp = await fetch(`${API_BASE}/vidnovagram/request-code/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ phone }),
+      })
+      if (!resp.ok) {
+        setAuthError('Не вдалося надіслати код, спробуйте ще раз')
+        return false
+      }
+      return true
+    } catch {
+      setAuthError("Помилка з'єднання з сервером")
+      return false
+    } finally {
+      setAuthLoading(false)
+    }
+  }, [])
+
+  const verifyCode = useCallback(async (phone: string, code: string) => {
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const resp = await fetch(`${API_BASE}/vidnovagram/verify-code/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code, device_name: 'Vidnovagram Desktop' }),
       })
       const data = await resp.json()
       if (data.status === 'ok' && data.token) {
         setAuth({
           authorized: true,
-          name: data.name || username,
+          name: data.name || phone,
           token: data.token,
           isAdmin: data.is_admin || false,
           loginDate: todayLocal(),
         })
       } else {
-        setAuthError(data.error || 'Невірний логін або пароль')
+        setAuthError(data.error || 'Невірний код')
       }
     } catch {
       setAuthError("Помилка з'єднання з сервером")
@@ -131,5 +158,5 @@ export function useAuthController({ onLogout }: { onLogout?: () => void } = {}):
     }
   }, [])
 
-  return { auth, authLoading, authError, login, logout }
+  return { auth, authLoading, authError, requestCode, verifyCode, logout }
 }
